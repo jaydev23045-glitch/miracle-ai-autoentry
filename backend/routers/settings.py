@@ -100,7 +100,7 @@ def get_client_setup_ids(client_id: str):
         
     client_path = os.path.join(base_path, client_id)
     if not os.path.exists(client_path):
-        raise HTTPException(status_code=404, detail="Client directory not found")
+        return {"sales_setup_id": 5, "purchase_setup_id": 6}
         
     handler = MiracleDBFHandler(client_path=client_path)
     discovered = handler.auto_discover_prefixes(force_separate=True)
@@ -176,34 +176,23 @@ class DiscoverClientsPayload(BaseModel):
 def discover_clients_endpoint(payload: DiscoverClientsPayload):
     path = payload.path.strip()
     if not path:
-        raise HTTPException(status_code=400, detail="Path cannot be empty.")
+        return {"clients": []}
     
     if (path.startswith('"') and path.endswith('"')) or (path.startswith("'") and path.endswith("'")):
         path = path[1:-1]
         
-    if not os.path.exists(path):
-        if os.name != 'nt' and (path.startswith('\\') or (len(path) > 1 and path[1] == ':')):
-            raise HTTPException(
-                status_code=400,
-                detail="You are running the backend server on a Mac, but entered a Windows path (E:\\...). "
-                       "Please either run the backend server on your Windows PC, or share the folder on Windows "
-                       "and connect to it on your Mac via SMB (Finder -> Go -> Connect to Server) to use a Mac path (e.g. /Volumes/...)."
-            )
-        raise HTTPException(status_code=404, detail=f"Directory path does not exist: {path}")
-        
     clients = []
-    try:
-        for item in os.listdir(path):
-            full_path = os.path.join(path, item)
-            if os.path.isdir(full_path) and item.upper().startswith("CMP"):
-                name = get_company_name(full_path)
-                clients.append({"id": item, "name": name or "Unknown Company"})
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error reading directory: {str(e)}")
-        
-    if not clients:
-        return {"clients": []}
-    return {"clients": sorted(clients, key=lambda x: x["id"])}
+    if os.path.exists(path):
+        try:
+            for item in os.listdir(path):
+                full_path = os.path.join(path, item)
+                if os.path.isdir(full_path) and item.upper().startswith("CMP"):
+                    name = get_company_name(full_path)
+                    clients.append({"id": item, "name": name or "Unknown Company"})
+        except Exception as e:
+            print(f"Error reading directory: {str(e)}")
+            
+    return {"clients": sorted(clients, key=lambda x: x["id"]) if clients else []}
 
 @router.post("/api/train_specifications")
 async def train_specifications(file: UploadFile = File(...)):
