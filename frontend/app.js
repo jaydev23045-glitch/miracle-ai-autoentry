@@ -333,8 +333,9 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function populateClientDropdowns(clients, selectedClientId) {
-        clientSelect.innerHTML = '';
-        settingsActiveClient.innerHTML = '';
+        if (!clients || !Array.isArray(clients)) return;
+        if (clientSelect) clientSelect.innerHTML = '';
+        if (settingsActiveClient) settingsActiveClient.innerHTML = '';
         
         if (selectedClientId) {
             activeClientId = selectedClientId;
@@ -348,18 +349,22 @@ document.addEventListener('DOMContentLoaded', () => {
             const cName = typeof client === 'object' ? client.name : client;
             const displayName = (cName && cName !== cId && cName !== 'Unknown Company') ? `${cId} — ${cName}` : cId;
             
-            const opt1 = document.createElement('option');
-            opt1.value = cId;
-            opt1.className = 'bg-slate-800';
-            opt1.innerText = displayName;
-            if (cId === activeClientId) opt1.selected = true;
-            clientSelect.appendChild(opt1);
+            if (clientSelect) {
+                const opt1 = document.createElement('option');
+                opt1.value = cId;
+                opt1.className = 'bg-slate-800';
+                opt1.innerText = displayName;
+                if (cId === activeClientId) opt1.selected = true;
+                clientSelect.appendChild(opt1);
+            }
 
-            const opt2 = document.createElement('option');
-            opt2.value = cId;
-            opt2.innerText = displayName;
-            if (cId === activeClientId) opt2.selected = true;
-            settingsActiveClient.appendChild(opt2);
+            if (settingsActiveClient) {
+                const opt2 = document.createElement('option');
+                opt2.value = cId;
+                opt2.innerText = displayName;
+                if (cId === activeClientId) opt2.selected = true;
+                settingsActiveClient.appendChild(opt2);
+            }
         });
     }
 
