@@ -66,9 +66,9 @@ def load_settings() -> dict:
 
     default_settings = {
         "gemini_api_key": "",
-        "miracle_base_path": "/Users/jaydevnakum/Work Place/WORK/APP DETAILS/Mirracle Auto Entre Sale or Purchase or Bank",
-        "active_client_id": "CMP0003",
-        "memory_path": "/Users/jaydevnakum/Work Place/WORK/APP DETAILS/Mirracle Auto Entre Sale or Purchase or Bank/AI_Memory_Vault",
+        "miracle_base_path": "C:\\Miracle",
+        "active_client_id": "CMP0001",
+        "memory_path": "C:\\Miracle\\AI_Memory_Vault",
         "gemini_model": "gemini-1.5-flash",
         "sales_prefix": "SS,SS",
         "purchase_prefix": "PP,PP",
@@ -235,8 +235,8 @@ def discover_clients(base_path: str) -> List[Dict[str, str]]:
             print(f"Error discovering clients: {e}")
     if not clients:
         clients = [
-            {"id": "CMP0003", "name": "Demo Client CMP0003"},
-            {"id": "CMP0002", "name": "Nakum Digvijay Jayeshbhai"}
+            {"id": "CMP0001", "name": "Miracle Client CMP0001"},
+            {"id": "CMP0002", "name": "Miracle Client CMP0002"}
         ]
     result = sorted(clients, key=lambda x: x["id"])
     

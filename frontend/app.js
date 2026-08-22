@@ -57,9 +57,12 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     
     // --- STATE & SERVER URL CONFIGURATION ---
-    const API_URL = (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
-        ? (window.location.port ? window.location.origin : 'http://localhost:8000')
-        : window.location.origin;
+    let API_URL = window.location.origin;
+    if (!API_URL || API_URL === 'null' || API_URL.startsWith('file://')) {
+        API_URL = 'http://localhost:8000';
+    } else if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+        API_URL = window.location.port ? window.location.origin : 'http://localhost:8000';
+    }
     const LOCAL_BRIDGE_URL = 'http://localhost:9123';
     let isLocalBridgeOnline = false;
 
@@ -363,12 +366,16 @@ document.addEventListener('DOMContentLoaded', () => {
 
     async function fetchLedgers() {
         try {
-            const res = await fetch(`${API_URL}/api/ledgers${activeYearFolder ? '?year=' + activeYearFolder : ''}`);
+            const clientId = getActiveClientId();
+            const targetUrl = isLocalBridgeOnline
+                ? `${LOCAL_BRIDGE_URL}/api/local-ledgers?client_id=${clientId}&year_folder=${activeYearFolder || 'YR25'}`
+                : `${API_URL}/api/ledgers${activeYearFolder ? '?year=' + activeYearFolder : ''}`;
+            const res = await fetch(targetUrl);
             if (!res.ok) throw new Error("Failed to retrieve ledgers.");
             const data = await res.json();
-            clientLedgers = data.data || [];
+            clientLedgers = data.data || data.ledgers || [];
             window.clientLedgers = clientLedgers; // Expose globally for Bank Statement module
-            console.log(`Loaded ${clientLedgers.length} classified ledgers for financial year ${data.year}`);
+            console.log(`Loaded ${clientLedgers.length} classified ledgers for financial year ${data.year || activeYearFolder}`);
             
             // Populate Target Cash Account dropdown
             const targetCashSelect = document.getElementById('targetCashAccount');
@@ -797,12 +804,13 @@ document.addEventListener('DOMContentLoaded', () => {
             refreshClientsStatus.className = 'text-sm text-slate-500 mt-1';
         }
 
-        // Dynamically fetch the latest client folders from disk
-        fetch(`${API_URL}/api/clients`)
+        // Dynamically fetch the latest client folders from disk or local bridge
+        const clientFetchUrl = isLocalBridgeOnline ? `${LOCAL_BRIDGE_URL}/api/local-clients` : `${API_URL}/api/clients`;
+        fetch(clientFetchUrl)
             .then(res => res.json())
             .then(data => {
                 if (data && data.clients) {
-                    discoveredClients = data.clients;
+                    discoveredClients = data.clients.map(c => typeof c === 'string' ? { id: c, name: c } : c);
                     const activeVal = settingsActiveClient ? settingsActiveClient.value : "";
                     populateClientDropdowns(discoveredClients, activeVal);
                 }

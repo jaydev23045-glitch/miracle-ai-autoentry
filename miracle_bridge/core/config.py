@@ -27,9 +27,9 @@ SETTINGS_FILE = Path(__file__).resolve().parents[1] / "settings.json"
 class SystemSettings(BaseModel):
     gemini_api_key: str = ""
     miracle_base_path: str = "C:\\Miracle"
-    active_client_id: str = "CMP0005"
-    memory_path: str = ""
-    gemini_model: str = "gemini-3.1-flash-lite"
+    active_client_id: str = "CMP0001"
+    memory_path: str = "C:\\Miracle\\AI_Memory_Vault"
+    gemini_model: str = "gemini-1.5-flash"
     sales_prefix: str = "SS,SS"
     purchase_prefix: str = "PP,PP"
     sales_setup_id: int = 5
