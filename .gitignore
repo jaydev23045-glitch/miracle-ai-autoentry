@@ -10,10 +10,12 @@ __pycache__/
 *$py.class
 .pytest_cache/
 
-# Local Settings & API Keys
+# Local Settings, API Keys & AI Memory Files
 backend/settings.json
 backend/exhausted_models.json
 backend/extraction_status.json
+AI_Memory_Vault/*.json
+backend/AI_Memory_Vault/*.json
 .env
 
 # Client Data & Local DBF Folders

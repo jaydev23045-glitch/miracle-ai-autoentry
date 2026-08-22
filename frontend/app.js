@@ -236,15 +236,15 @@ document.addEventListener('DOMContentLoaded', () => {
             }
 
             let savedMiraclePath = settings.miracle_base_path || localStorage.getItem('miracleBasePath') || '';
-            if (!savedMiraclePath || savedMiraclePath.includes('C:\\Miracle') || savedMiraclePath.includes('STOCK MARKET')) {
-                savedMiraclePath = '/Users/jaydevnakum/Work Place/WORK/APP DETAILS/Mirracle Auto Entre Sale or Purchase or Bank';
+            if (!savedMiraclePath || savedMiraclePath.includes('/Users/') || savedMiraclePath.includes('/home/')) {
+                savedMiraclePath = 'C:\\Miracle';
             }
             miracleBasePathInput.value = savedMiraclePath;
             localStorage.setItem('miracleBasePath', savedMiraclePath);
 
             let savedMemoryPath = settings.memory_path || localStorage.getItem('memoryPath') || '';
-            if (!savedMemoryPath || savedMemoryPath === './AI_Memory_Vault' || savedMemoryPath.includes('STOCK MARKET')) {
-                savedMemoryPath = '/Users/jaydevnakum/Work Place/WORK/APP DETAILS/Mirracle Auto Entre Sale or Purchase or Bank/AI_Memory_Vault';
+            if (!savedMemoryPath || savedMemoryPath.includes('/Users/') || savedMemoryPath.includes('/home/')) {
+                savedMemoryPath = 'C:\\Miracle\\AI_Memory_Vault';
             }
             memoryPathInput.value = savedMemoryPath;
             localStorage.setItem('memoryPath', savedMemoryPath);
