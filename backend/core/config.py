@@ -100,35 +100,14 @@ def load_settings() -> dict:
             print(f"Error reading settings: {e}")
 
     base_path_str = default_settings.get("miracle_base_path", "")
-    base_path = Path(base_path_str) if base_path_str else None
-    if not base_path or not base_path.exists():
-        has_cmp = False
-        try:
-            if parent_dir.exists():
-                for item in parent_dir.iterdir():
-                    if item.name.upper().startswith("CMP") and item.is_dir():
-                        has_cmp = True
-                        break
-        except Exception:
-            pass
-        if has_cmp:
-            default_settings["miracle_base_path"] = str(parent_dir)
-            modified = True
+    if not base_path_str or "/Users/" in base_path_str or "/home/" in base_path_str:
+        default_settings["miracle_base_path"] = "C:\\Miracle"
+        modified = True
             
     mem_path_str = default_settings.get("memory_path", "")
-    mem_path = Path(mem_path_str) if mem_path_str else None
-    if not mem_path or not mem_path.exists():
-        fallback_mem = parent_dir / "AI_Memory_Vault"
-        if fallback_mem.exists():
-            default_settings["memory_path"] = str(fallback_mem)
-            modified = True
-        elif parent_dir.exists():
-            try:
-                fallback_mem.mkdir(parents=True, exist_ok=True)
-                default_settings["memory_path"] = str(fallback_mem)
-                modified = True
-            except Exception:
-                pass
+    if not mem_path_str or "/Users/" in mem_path_str or "/home/" in mem_path_str:
+        default_settings["memory_path"] = "C:\\Miracle\\AI_Memory_Vault"
+        modified = True
 
     curr_base_path_str = default_settings.get("miracle_base_path", "")
     curr_base_path = Path(curr_base_path_str) if curr_base_path_str else None

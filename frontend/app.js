@@ -934,19 +934,24 @@ document.addEventListener('DOMContentLoaded', () => {
             }
             
             try {
-                const res = await fetch(`${API_URL}/api/discover-clients`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ path: path })
-                });
+                let res;
+                if (isLocalBridgeOnline) {
+                    res = await fetch(`${LOCAL_BRIDGE_URL}/api/local-clients?base_path=${encodeURIComponent(path)}`);
+                } else {
+                    res = await fetch(`${API_URL}/api/discover-clients`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ path: path })
+                    });
+                }
                 
                 if (!res.ok) {
                     const errorData = await res.json().catch(() => ({}));
-                    throw new Error(errorData.detail || "Failed to scan directory. Make sure the path exists.");
+                    throw new Error(errorData.detail || errorData.error || "Failed to scan directory. Make sure the path exists.");
                 }
                 
                 const data = await res.json();
-                const clients = data.clients || [];
+                const clients = (data.clients || []).map(c => typeof c === 'string' ? { id: c, name: c } : c);
                 
                 if (clients.length === 0) {
                     if (refreshClientsStatus) {

@@ -201,14 +201,20 @@ def health_check():
 @app.get("/api/local-clients")
 def get_local_clients(base_path: str = "C:\\Miracle"):
     """Lists all available client folders starting with CMP in local Miracle directory"""
-    if not os.path.exists(base_path):
+    if not base_path or not os.path.exists(base_path):
         return {"clients": [], "error": f"Base path '{base_path}' not found."}
     
-    clients = [
-        d for d in os.listdir(base_path)
-        if os.path.isdir(os.path.join(base_path, d)) and d.upper().startswith("CMP")
-    ]
-    return {"clients": sorted(clients)}
+    clients = []
+    for d in os.listdir(base_path):
+        full_p = os.path.join(base_path, d)
+        if os.path.isdir(full_p) and d.upper().startswith("CMP"):
+            try:
+                handler = MiracleDBFHandler(base_path, d)
+                company_name = handler.get_company_name()
+                clients.append({"id": d, "name": company_name or d})
+            except Exception:
+                clients.append({"id": d, "name": d})
+    return {"clients": sorted(clients, key=lambda x: x["id"])}
 
 @app.get("/api/local-ledgers")
 def get_local_ledgers(base_path: str = "C:\\Miracle", client_id: str = "CMP0005", year_folder: str = "YR25"):

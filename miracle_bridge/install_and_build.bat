@@ -20,6 +20,11 @@ echo  Miracle AI Auto-Entry -- 1-Click Auto Setup & Builder
 echo =================================================================
 echo.
 
+:: 0. Automatically stop any old running MiracleBridge.exe process
+echo 🛑 Stopping any running MiracleBridge.exe instance...
+taskkill /F /IM MiracleBridge.exe >nul 2>&1
+timeout /t 1 /nobreak >nul
+
 :: 1. Check if Python is installed
 python --version >nul 2>&1
 if %errorlevel% equ 0 goto HAS_PYTHON
@@ -58,10 +63,13 @@ python build_bridge_exe.py
 echo.
 echo =================================================================
 if exist "dist\MiracleBridge.exe" (
-    echo 🎉 SUCCESS! MiracleBridge.exe is built and ready in:
+    echo 🎉 SUCCESS! MiracleBridge.exe built successfully at:
     echo 👉 %cd%\dist\MiracleBridge.exe
     echo.
-    echo You can now copy MiracleBridge.exe to any client PC!
+    echo 🚀 Auto-launching new MiracleBridge.exe in background...
+    start "" "%cd%\dist\MiracleBridge.exe"
+    echo.
+    echo ✅ MiracleBridge.exe is now ACTIVE and running on port 9123!
 ) else (
     echo ⚠️ Build complete. Check output above.
 )
