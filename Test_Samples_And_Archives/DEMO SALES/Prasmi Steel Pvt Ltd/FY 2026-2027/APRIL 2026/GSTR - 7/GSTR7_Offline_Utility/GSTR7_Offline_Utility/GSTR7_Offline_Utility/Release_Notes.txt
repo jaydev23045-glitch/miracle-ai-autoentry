@@ -1,0 +1,31 @@
+####################################################################################################
+# PLEASE KEEP THE WIDTH OF THE LINES BELOW WITHIN 100 CHARACTERS.                                  #
+# MOST RECENT CHANGE AT THE TOP.                                                                   #                                                                                 #                                                          					   #
+####################################################################################################
+Release 4.1
+-New FY 26-27 is added
+
+Release 4.0
+-In Table 3-TDS, invoice level fields are added from Jul'25 onwards
+-In Table 4-TDS Amendment, invoice level fields are added from Jul'25 onwards
+
+Release 3.4
+-New FY 25-26 is added
+
+Release 3.3
+-New FY 24-25 is added
+
+Release 3.2
+-New FY 23-24 is added
+
+Release 3.1
+-New FY 22-23 is added
+
+Release 3.0
+-New FY 21-22 is added
+
+Release 2.0
+-Master Sheet is added to the utility
+
+Release 1.0
+-GSTR7 offline utility is released

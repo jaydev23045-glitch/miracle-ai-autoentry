@@ -1,0 +1,1553 @@
+<!-- =========================================================================
+     🛑 AI ASSISTANT CRITICAL INSTRUCTION 🛑
+     BEFORE you modify ANY code or merge changes in this project, you MUST:
+     1. Read the `AI_ARCHITECTURE_SUMMARY.md` file in this folder to understand the structure.
+     2. Document any changes you make inside `CHANGELOG.md`.
+     ========================================================================= -->
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Miracle AI | Premium Auto-Entry Dashboard</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        brand: {
+                            50: '#EEF2FF',
+                            100: '#E0E7FF',
+                            500: '#6366F1',
+                            600: '#4F46E5',
+                            700: '#4338CA',
+                            950: '#0B0F19'
+                        },
+                        obsidian: {
+                            50: '#F9FAFB',
+                            900: '#090D16',
+                            950: '#05070B'
+                        },
+                        emerald: {
+                            500: '#10B981',
+                            600: '#059669'
+                        },
+                        slate: {
+                            850: '#151e2e',
+                            950: '#090d16'
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    <!-- FontAwesome & Fonts -->
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    <!-- html2pdf.js for Client-Side PDF Export -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&family=Outfit:wght@400;500;600;700;800&display=swap');
+        
+        body { 
+            font-family: 'Plus Jakarta Sans', sans-serif; 
+            background: #05070B;
+            background-image: 
+                radial-gradient(at 0% 0%, rgba(99, 102, 241, 0.08) 0px, transparent 45%),
+                radial-gradient(at 100% 0%, rgba(16, 185, 129, 0.05) 0px, transparent 45%),
+                radial-gradient(at 50% 100%, rgba(168, 85, 247, 0.04) 0px, transparent 50%);
+        }
+        
+        .font-heading { 
+            font-family: 'Outfit', 'Space Grotesk', sans-serif; 
+        }
+
+        .font-mono {
+            font-family: 'JetBrains Mono', monospace;
+        }
+
+        /* Modern Custom Scrollbars */
+        ::-webkit-scrollbar { width: 5px; height: 5px; }
+        ::-webkit-scrollbar-track { background: #05070B; }
+        ::-webkit-scrollbar-thumb { background: #1E293B; border-radius: 999px; }
+        ::-webkit-scrollbar-thumb:hover { background: #6366F1; }
+        
+        /* Glassmorphism Panels */
+        .glass-sidebar {
+            background: rgba(9, 13, 22, 0.92);
+            backdrop-filter: blur(24px);
+            border-right: 1px solid rgba(255, 255, 255, 0.05);
+        }
+        
+        .glass-card {
+            background: rgba(15, 23, 42, 0.5);
+            backdrop-filter: blur(16px);
+            border: 1px solid rgba(255, 255, 255, 0.06);
+            box-shadow: 0 4px 20px -2px rgba(0, 0, 0, 0.5);
+        }
+
+        .btn-hover-glow {
+            position: relative;
+            transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        .btn-hover-glow:hover {
+            box-shadow: 0 0 25px rgba(99, 102, 241, 0.35);
+            transform: translateY(-1px);
+        }
+
+        /* Custom styled select dropdowns */
+        select {
+            appearance: none;
+            background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3E%3Cpath stroke='%23818cf8' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.75' d='m6 8 4 4 4-4'/%3E%3C/svg%3E");
+            background-position: right 0.75rem center;
+            background-repeat: no-repeat;
+            background-size: 1rem;
+            padding-right: 2rem;
+        }
+
+        /* Table Inputs */
+        input:focus, select:focus {
+            box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.3);
+        }
+
+        /* Smooth UI Transitions */
+        .ui-transition {
+            transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        
+        /* Drag and Drop Zone Hover */
+        .upload-zone:hover {
+            border-color: #6366F1;
+            background: rgba(99, 102, 241, 0.03);
+            box-shadow: 0 0 35px rgba(99, 102, 241, 0.08);
+        }
+
+        /* Pulsing Glow Indicator */
+        .pulse-indicator {
+            box-shadow: 0 0 0 0 rgba(99, 102, 241, 0.4);
+            animation: pulse 2s infinite;
+        }
+        @keyframes pulse {
+            70% { box-shadow: 0 0 0 8px rgba(99, 102, 241, 0); }
+            100% { box-shadow: 0 0 0 0 rgba(99, 102, 241, 0); }
+        }
+
+        /* Table Row Entry Animation */
+        @keyframes fadeInUp {
+            from { opacity: 0; transform: translateY(6px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        .animate-fade-in-up {
+            animation: fadeInUp 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+        }
+        
+        /* Validation Error Shake Animation */
+        @keyframes errorShake {
+            0%, 100% { transform: translateX(0); }
+            20%, 60% { transform: translateX(-3px); }
+            40%, 80% { transform: translateX(3px); }
+        }
+        .error-shake {
+            animation: errorShake 0.4s ease-in-out;
+            border-color: #ef4444 !important;
+            box-shadow: 0 0 0 2px rgba(239, 68, 68, 0.2) !important;
+        }
+        
+        /* Custom Toast Styling */
+        .toast-card {
+            pointer-events: auto;
+            animation: toastSlideIn 0.35s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+            backdrop-filter: blur(24px);
+        }
+        @keyframes toastSlideIn {
+            from { opacity: 0; transform: translateY(-20px) scale(0.95); }
+            to { opacity: 1; transform: translateY(0) scale(1); }
+        }
+        .toast-card.hide {
+            animation: toastSlideOut 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+        }
+        @keyframes toastSlideOut {
+            from { opacity: 1; transform: translateY(0) scale(1); }
+            to { opacity: 0; transform: translateY(-20px) scale(0.95); }
+        }
+        
+        /* Premium Modal Animation */
+        .modal-animate-in {
+            animation: modalFadeIn 0.3s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+        }
+        @keyframes modalFadeIn {
+            from { opacity: 0; transform: scale(0.95) translateY(-10px); }
+            to { opacity: 1; transform: scale(1) translateY(0); }
+        }
+
+        /* No scrollbar utility for scrollable toolbar header */
+        .no-scrollbar::-webkit-scrollbar { display: none; }
+        .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+
+        /* Premium Table Styles */
+        #gridBody tr {
+            transition: background 0.15s ease;
+        }
+        #gridBody tr:nth-child(even) {
+            background: rgba(15, 23, 42, 0.25);
+        }
+        #gridBody tr:hover {
+            background: rgba(99, 102, 241, 0.04) !important;
+        }
+        #gridHeaderRow th {
+            border-bottom: 1px solid rgba(51, 65, 85, 0.6);
+            background: rgba(15, 23, 42, 0.95);
+            letter-spacing: 0.05em;
+            white-space: nowrap;
+        }
+        #gridBody td {
+            vertical-align: middle;
+        }
+
+        /* Smooth table inputs */
+        #gridBody input[type="text"],
+        #gridBody input[type="date"],
+        #gridBody input[type="number"],
+        #gridBody select {
+            transition: border-color 0.15s ease, box-shadow 0.15s ease;
+        }
+
+        /* KPI card gradient borders */
+        .kpi-card {
+            position: relative;
+            overflow: hidden;
+        }
+        .kpi-card::before {
+            content: '';
+            position: absolute;
+            inset: 0;
+            border-radius: inherit;
+            padding: 1px;
+            background: linear-gradient(135deg, rgba(99,102,241,0.2), transparent 60%);
+            -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+            -webkit-mask-composite: xor;
+            mask-composite: exclude;
+            pointer-events: none;
+        }
+    </style>
+</head>
+<body class="bg-obsidian-950 text-slate-300 h-screen flex overflow-hidden">
+
+    <!-- SIDEBAR -->
+    <aside id="mainSidebar" class="w-80 glass-sidebar flex flex-col flex-shrink-0 z-20 transition-all duration-300">
+        <!-- Logo -->
+        <div class="p-6 border-b border-slate-900 flex items-center gap-3">
+            <div class="h-10 w-10 rounded-xl bg-gradient-to-tr from-brand-600 to-brand-500 flex items-center justify-center shadow-lg shadow-brand-600/30">
+                <i class="fa-solid fa-sparkles text-white text-base"></i>
+            </div>
+            <div>
+                <h1 class="text-lg font-bold text-white tracking-wide font-heading">Miracle AI</h1>
+                <p class="text-xs text-brand-500 font-black tracking-widest uppercase">Auto-Entry Platform</p>
+            </div>
+        </div>
+
+        <!-- Client & FY Card -->
+        <div class="p-5 border-b border-slate-900 bg-obsidian-900/40 space-y-4">
+            <div class="bg-slate-950/40 border border-slate-900 rounded-xl p-3 space-y-3.5">
+                <div>
+                    <label class="block text-xs font-bold text-slate-500 mb-1.5 uppercase tracking-wider">Active Client</label>
+                    <select id="clientSelect" class="w-full bg-slate-900 border border-slate-800 rounded-lg py-2 px-3 text-slate-200 text-sm focus:outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-500/50 focus:ring-offset-2 focus:ring-offset-obsidian-950 transition">
+                        <option value="" class="bg-slate-800 text-slate-400">-- Select Miracle Client --</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-xs font-bold text-slate-500 mb-1.5 uppercase tracking-wider">Financial Year</label>
+                    <select id="yearSelect" class="w-full bg-slate-900 border border-slate-800 rounded-lg py-2 px-3 text-slate-200 text-sm focus:outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-500/50 focus:ring-offset-2 focus:ring-offset-obsidian-950 transition">
+                        <option value="" class="bg-slate-800 text-slate-400">-- Financial Year --</option>
+                    </select>
+                </div>
+            </div>
+            <div id="memoryStatusText" class="text-xs text-emerald-400 flex items-center gap-2 px-1 font-bold">
+                <span class="h-2 w-2 rounded-full bg-emerald-500 pulse-indicator flex-shrink-0"></span>
+                <span class="truncate">✨ Gemini AI Engine Ready</span>
+            </div>
+        </div>
+
+        <!-- Navigation Menu -->
+        <nav class="flex-1 px-4 py-6 space-y-1.5 overflow-y-auto">
+            <a href="#" class="module-nav ui-transition flex items-center gap-3 px-3.5 py-3 rounded-xl text-sm font-bold border transition bg-brand-600/15 text-white border-brand-500/40 border-l-4 border-l-brand-500 active shadow-lg shadow-brand-500/10" data-module="Sales">
+                <div class="h-8 w-8 rounded-lg bg-indigo-500/20 border border-indigo-500/30 flex items-center justify-center text-indigo-400 flex-shrink-0">
+                    <i class="fa-solid fa-file-invoice-dollar text-sm"></i>
+                </div>
+                <span>Sales Vouchers</span>
+            </a>
+            <a href="#" class="module-nav ui-transition flex items-center gap-3 px-3.5 py-3 rounded-xl text-sm font-semibold border border-transparent text-slate-400 hover:bg-slate-900/80 hover:text-slate-200 transition" data-module="Purchases">
+                <div class="h-8 w-8 rounded-lg bg-purple-500/10 border border-purple-500/20 flex items-center justify-center text-purple-400 flex-shrink-0">
+                    <i class="fa-solid fa-cart-shopping text-sm"></i>
+                </div>
+                <span>Purchase Vouchers</span>
+            </a>
+            <a href="#" class="module-nav ui-transition flex items-center gap-3 px-3.5 py-3 rounded-xl text-sm font-semibold border border-transparent text-slate-400 hover:bg-slate-900/80 hover:text-slate-200 transition" data-module="Bank Statements">
+                <div class="h-8 w-8 rounded-lg bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-400 flex-shrink-0">
+                    <i class="fa-solid fa-building-columns text-sm"></i>
+                </div>
+                <span>Bank Statements</span>
+            </a>
+            <a href="#" class="module-nav ui-transition flex items-center gap-3 px-3.5 py-3 rounded-xl text-sm font-semibold border border-transparent text-slate-400 hover:bg-slate-900/80 hover:text-slate-200 transition" data-module="Cash Entries">
+                <div class="h-8 w-8 rounded-lg bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-400 flex-shrink-0">
+                    <i class="fa-solid fa-wallet text-sm"></i>
+                </div>
+                <span>Cash Entries</span>
+            </a>
+            <a href="#" class="module-nav ui-transition flex items-center gap-3 px-3.5 py-3 rounded-xl text-sm font-semibold border border-transparent text-slate-400 hover:bg-slate-900/80 hover:text-slate-200 transition" data-module="Opening Balances">
+                <div class="h-8 w-8 rounded-lg bg-cyan-500/10 border border-cyan-500/20 flex items-center justify-center text-cyan-400 flex-shrink-0">
+                    <i class="fa-solid fa-scale-balanced text-sm"></i>
+                </div>
+                <span>Opening Balances</span>
+            </a>
+        </nav>
+
+        <!-- Actions Panel -->
+        <div class="p-5 border-t border-slate-900 bg-obsidian-950/80 space-y-2">
+            <button id="openMemoryVaultModalBtn" class="open-memory-vault-trigger w-full flex items-center justify-center gap-2 bg-slate-900/50 hover:bg-slate-900 text-slate-300 transform transition-all duration-200 hover:-translate-y-0.5 active:scale-95 py-2.5 rounded-xl text-sm font-bold transition shadow-sm border border-slate-800/80">
+                <i class="fa-solid fa-brain text-sm text-brand-400"></i>
+                🧠 AI Memory & Mappings
+            </button>
+            <button id="settingsBtn" class="w-full flex items-center justify-center gap-2 bg-slate-900/50 hover:bg-slate-900 text-slate-300 transform transition-all duration-200 hover:-translate-y-0.5 active:scale-95 py-2.5 rounded-xl text-sm font-bold transition shadow-sm border border-slate-800/80">
+                <i class="fa-solid fa-sliders text-sm text-brand-500"></i>
+                Configure Settings
+            </button>
+            <button id="repairBalancesBtn" class="w-full flex items-center justify-center gap-2 bg-slate-900/50 hover:bg-slate-900 text-slate-300 transform transition-all duration-200 hover:-translate-y-0.5 active:scale-95 py-2.5 rounded-xl text-sm font-bold transition shadow-sm border border-slate-800/80" title="Repair all DBF narrations, ledger flags, and closing balances in 1-click">
+                <i class="fa-solid fa-wrench text-sm text-brand-500"></i>
+                1-Click Repair DB & Narrations
+            </button>
+        </div>
+    </aside>
+
+    <!-- MAIN WORKSPACE -->
+    <main class="flex-1 flex flex-col min-w-0 overflow-hidden relative">
+        <!-- Top Bar Header -->
+        <header class="h-16 sm:h-20 border-b border-slate-900 px-4 sm:px-6 flex items-center justify-between flex-shrink-0 bg-obsidian-900/60 backdrop-blur-xl z-10 shadow-md min-w-0">
+            <div class="flex items-center gap-2.5 min-w-0 flex-shrink-0">
+                <button id="toggleSidebarBtn" class="bg-slate-900/80 hover:bg-slate-800 text-slate-400 hover:text-white transform transition-all duration-200 active:scale-95 text-sm font-bold w-9 h-9 sm:w-10 sm:h-10 rounded-xl transition shadow-sm border border-slate-800 flex items-center justify-center mr-0.5 flex-shrink-0" title="Toggle Navigation Menu">
+                    <i class="fa-solid fa-bars-staggered"></i>
+                </button>
+                <div class="min-w-0 flex items-center gap-2.5">
+                    <h2 id="moduleTitle" class="text-sm sm:text-base font-bold text-white font-heading truncate">
+                        Sales Vouchers
+                    </h2>
+                    <span id="bridgeStatusBadge" class="hidden sm:inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-slate-900/80 text-slate-400 border border-slate-800 transition-all duration-300" title="Miracle Local DBF Bridge Agent Status">
+                        <span id="bridgeStatusDot" class="w-2 h-2 rounded-full bg-slate-500"></span>
+                        <span id="bridgeStatusText">Checking Agent...</span>
+                    </span>
+                </div>
+            </div>
+
+            <!-- Top Site Action Toolbar (Flexible, Non-Clipping, Scrollable Container) -->
+            <div id="topBarActionsToolbar" class="flex items-center gap-2 overflow-x-auto no-scrollbar py-1 flex-1 justify-end min-w-0 ml-2">
+
+                <!-- Target Cash Select Container -->
+                <select id="targetCashAccount" class="hidden bg-slate-900 border border-slate-800 rounded-xl py-1.5 px-2.5 text-slate-200 text-xs font-semibold focus:outline-none focus:border-brand-500 transition flex-shrink-0 shadow-sm"></select>
+
+                <!-- Target Bank Select Container -->
+                <select id="targetBankAccount" class="hidden bg-slate-900 border border-slate-800 rounded-xl py-1.5 px-2.5 text-slate-200 text-xs font-semibold focus:outline-none focus:border-brand-500 transition flex-shrink-0 shadow-sm"></select>
+
+                <!-- Opening Balance Container -->
+                <div id="openingBalanceContainer" class="hidden flex items-center gap-1.5 border border-emerald-500/40 bg-emerald-500/10 rounded-xl px-2.5 py-1 flex-shrink-0 shadow-sm ml-1">
+                    <span class="text-xs font-bold text-emerald-400 whitespace-nowrap">Opening Bal:</span>
+                    <input type="number" step="0.01" id="openingBalanceInput" class="bg-slate-900 border border-slate-800 rounded-lg py-0.5 px-2 text-xs font-bold text-emerald-300 font-mono w-24 text-right focus:outline-none focus:border-emerald-500" value="0.00">
+                </div>
+
+
+                <!-- Recalculate Math Button -->
+                <button id="recalculateMathBtn" class="hidden bg-slate-900/90 hover:bg-slate-800 text-brand-400 hover:text-brand-300 transform transition-all duration-200 active:scale-95 text-xs font-bold px-3 py-1.5 rounded-xl transition shadow-sm border border-slate-800 flex items-center gap-1.5 whitespace-nowrap flex-shrink-0" title="Force Recalculate All Math">
+                    <i class="fa-solid fa-calculator text-xs"></i> <span>Recalculate</span>
+                </button>
+                
+                <!-- Quick Debtors Fill Btn (for Cash Entries) -->
+                <button id="autoFillDebtorsBtn" class="hidden bg-brand-600 hover:bg-brand-500 text-white transform transition-all duration-200 active:scale-95 text-xs font-bold px-3 py-1.5 rounded-xl transition shadow-md whitespace-nowrap flex-shrink-0">
+                    <i class="fa-solid fa-wand-magic-sparkles mr-1 text-xs"></i> <span>Auto-Fill Debtors</span>
+                </button>
+
+                <!-- Auto-Resolve Suspense Button (for Bank Statements) -->
+                <button id="autoResolveSuspenseBtn" class="hidden bg-emerald-600/90 hover:bg-emerald-500 text-white font-bold px-3 py-1.5 rounded-xl transition shadow-md flex items-center gap-1.5 text-xs whitespace-nowrap flex-shrink-0" title="Auto-Map All Remaining Suspense Rows">
+                    <i class="fa-solid fa-wand-magic-sparkles text-xs"></i> <span>Resolve Suspense</span>
+                </button>
+
+                <!-- Toggle Upload Zone -->
+                <button id="toggleUploadZoneBtn" class="bg-slate-900/90 hover:bg-slate-800 text-slate-300 hover:text-white transform transition-all duration-200 active:scale-95 text-xs font-bold px-3 py-1.5 rounded-xl transition shadow-sm border border-slate-800 flex items-center gap-1.5 whitespace-nowrap flex-shrink-0" title="Toggle Document Upload Zone">
+                    <i class="fa-solid fa-compress text-xs"></i> <span>Hide Tools</span>
+                </button>
+
+                <!-- Toggle Document Viewer -->
+                <button id="toggleDocViewerBtn" class="bg-slate-900/90 hover:bg-slate-800 text-brand-400 hover:text-brand-300 transform transition-all duration-200 active:scale-95 text-xs font-bold px-3 py-1.5 rounded-xl transition shadow-sm border border-slate-800 flex items-center gap-1.5 whitespace-nowrap flex-shrink-0" title="Toggle Split Screen PDF Viewer">
+                    <i class="fa-solid fa-table-columns text-xs"></i> <span>Split Screen</span>
+                </button>
+            </div>
+        </header>
+
+        <!-- Dynamic Grid Content -->
+        <section class="flex-1 flex overflow-hidden min-h-0">
+            <!-- Left Side: Editable Grid -->
+            <div class="flex-1 flex flex-col min-h-0 min-w-0 p-4 border-r border-slate-900/60">
+                <!-- Upload Dropzone Card -->
+                <div id="uploadZoneCard" class="bg-slate-950/40 border border-dashed border-slate-800/80 rounded-xl p-3.5 mb-3 flex flex-col gap-2.5 flex-shrink-0 relative overflow-hidden upload-zone transition-all duration-300">
+                    <div class="flex items-center justify-between gap-3">
+                        <div class="flex items-center gap-2.5">
+                            <div class="h-8 w-8 bg-brand-500/10 border border-brand-500/20 rounded-lg flex items-center justify-center text-brand-400 flex-shrink-0">
+                                <i class="fa-solid fa-cloud-arrow-up text-sm"></i>
+                            </div>
+                            <div>
+                                <h3 class="text-xs font-bold text-white uppercase tracking-wider">Document Processing</h3>
+                                <p class="text-xs text-slate-400 mt-0.5">Upload single or multiple sales/purchase bills (PDF/Image/Excel).</p>
+                            </div>
+                        </div>
+                        
+                        <div class="flex items-center gap-2">
+                            <button id="trainSpecBtn" class="bg-slate-900 hover:bg-slate-800 text-slate-300 text-xs font-bold px-3 py-1.5 rounded-lg transition border border-slate-800 flex items-center gap-1.5 cursor-pointer">
+                                <i class="fa-solid fa-chalkboard-user text-brand-500"></i>
+                                Train Spec Guide
+                            </button>
+                            <button id="uploadBtn" class="bg-brand-600 hover:bg-brand-500 text-white text-xs font-bold px-3.5 py-1.5 rounded-lg transition shadow-md shadow-brand-600/20 flex items-center gap-1.5 cursor-pointer btn-hover-glow">
+                                <i class="fa-solid fa-file-invoice"></i>
+                                Browse Files (Multiple)
+                            </button>
+                        </div>
+                    </div>
+                    
+                    <div class="relative w-full border-t border-slate-900/60 pt-3 flex items-center gap-3">
+                        <div class="w-full relative">
+                            <input type="text" id="aiInstructionInput" placeholder="Extra AI parsing guidelines (optional)..." class="w-full bg-slate-900 border border-slate-800 rounded-xl pl-3 pr-10 py-2.5 text-sm text-slate-200 placeholder-slate-500 focus:outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-500/50 focus:ring-offset-2 focus:ring-offset-obsidian-950 transition">
+                            <div class="absolute right-3 top-3.5 text-slate-500">
+                                <i class="fa-solid fa-sparkles text-sm text-brand-500"></i>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <input type="file" id="fileInput" class="hidden" accept=".pdf,.png,.jpg,.jpeg,.xlsx,.xls" multiple>
+                    <input type="file" id="trainSpecInput" class="hidden" accept=".txt,.csv,.pdf,.png,.jpg,.jpeg,.xlsx,.xls,.md,.docx">
+                </div>
+
+                <!-- Extraction Warning Banner -->
+                <div id="extractionWarningBanner" class="hidden transition-all duration-300"></div>
+
+
+                <!-- TOP KPI SUMMARY CARDS WIDGET -->
+                <div id="topKpiSummaryWidget" class="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-3 flex-shrink-0">
+                    <!-- Card 1: Total Entries -->
+                    <div id="kpiCard1" class="relative bg-gradient-to-br from-slate-900 to-slate-950 border border-slate-800/80 rounded-2xl p-4 flex items-center gap-3.5 overflow-hidden group hover:border-brand-500/40 transition-all duration-300">
+                        <div id="kpiBar1" class="absolute top-0 left-0 w-full h-0.5 bg-gradient-to-r from-brand-500/60 to-transparent"></div>
+                        <div id="kpiIconBg1" class="h-10 w-10 bg-brand-500/15 border border-brand-500/25 rounded-xl flex items-center justify-center text-brand-400 flex-shrink-0 group-hover:scale-110 transition-transform duration-300">
+                            <i id="kpiIcon1" class="fa-solid fa-list-check text-sm"></i>
+                        </div>
+                        <div class="min-w-0">
+                            <p id="kpiLabel1" class="text-[9px] font-extrabold uppercase tracking-[0.12em] text-slate-500">Total Entries</p>
+                            <p id="kpiTotalEntries" class="text-base font-black text-white font-mono mt-0.5 leading-tight">0 Bills</p>
+                        </div>
+                    </div>
+                    <!-- Card 2: Taxable Total -->
+                    <div id="kpiCard2" class="relative bg-gradient-to-br from-slate-900 to-slate-950 border border-slate-800/80 rounded-2xl p-4 flex items-center gap-3.5 overflow-hidden group hover:border-blue-500/40 transition-all duration-300">
+                        <div id="kpiBar2" class="absolute top-0 left-0 w-full h-0.5 bg-gradient-to-r from-blue-500/60 to-transparent"></div>
+                        <div id="kpiIconBg2" class="h-10 w-10 bg-blue-500/15 border border-blue-500/25 rounded-xl flex items-center justify-center text-blue-400 flex-shrink-0 group-hover:scale-110 transition-transform duration-300">
+                            <i id="kpiIcon2" class="fa-solid fa-calculator text-sm"></i>
+                        </div>
+                        <div class="min-w-0">
+                            <p id="kpiLabel2" class="text-[9px] font-extrabold uppercase tracking-[0.12em] text-slate-500">Taxable Total</p>
+                            <p id="kpiTaxableTotal" class="text-base font-black text-white font-mono mt-0.5 leading-tight truncate">₹0.00</p>
+                        </div>
+                    </div>
+                    <!-- Card 3: GST Total -->
+                    <div id="kpiCard3" class="relative bg-gradient-to-br from-slate-900 to-slate-950 border border-slate-800/80 rounded-2xl p-4 flex items-center gap-3.5 overflow-hidden group hover:border-cyan-500/40 transition-all duration-300">
+                        <div id="kpiBar3" class="absolute top-0 left-0 w-full h-0.5 bg-gradient-to-r from-cyan-500/60 to-transparent"></div>
+                        <div id="kpiIconBg3" class="h-10 w-10 bg-cyan-500/15 border border-cyan-500/25 rounded-xl flex items-center justify-center text-cyan-400 flex-shrink-0 group-hover:scale-110 transition-transform duration-300">
+                            <i id="kpiIcon3" class="fa-solid fa-percent text-sm"></i>
+                        </div>
+                        <div class="min-w-0">
+                            <p id="kpiLabel3" class="text-[9px] font-extrabold uppercase tracking-[0.12em] text-slate-500">GST Output / Input</p>
+                            <p id="kpiGstTotal" class="text-base font-black text-white font-mono mt-0.5 leading-tight truncate">₹0.00</p>
+                        </div>
+                    </div>
+                    <!-- Card 4: Grand Total -->
+                    <div id="kpiCard4" class="relative bg-gradient-to-br from-emerald-950/60 to-slate-950 border border-emerald-500/30 rounded-2xl p-4 flex items-center gap-3.5 overflow-hidden group hover:border-emerald-400/60 transition-all duration-300 shadow-lg shadow-emerald-950/30">
+                        <div id="kpiBar4" class="absolute top-0 left-0 w-full h-0.5 bg-gradient-to-r from-emerald-500/80 via-emerald-400/40 to-transparent"></div>
+                        <div id="kpiIconBg4" class="h-10 w-10 bg-emerald-500/20 border border-emerald-500/30 rounded-xl flex items-center justify-center text-emerald-400 flex-shrink-0 group-hover:scale-110 transition-transform duration-300">
+                            <i id="kpiIcon4" class="fa-solid fa-indian-rupee-sign text-sm"></i>
+                        </div>
+                        <div class="min-w-0">
+                            <p id="kpiLabel4" class="text-[9px] font-extrabold uppercase tracking-[0.12em] text-emerald-400/80">Grand Total</p>
+                            <p id="kpiGrandTotal" class="text-base font-black text-emerald-300 font-mono mt-0.5 leading-tight truncate">₹0.00</p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Live Search & Filter Bar -->
+                <div id="gridControlBar" class="mb-2 flex items-center gap-2 bg-slate-950/60 px-2.5 py-2 rounded-xl border border-slate-800/80 flex-shrink-0 backdrop-blur-sm">
+                    <div class="relative flex-1 min-w-0">
+                        <i class="fa-solid fa-magnifying-glass absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 text-xs"></i>
+                        <input type="text" id="gridSearchInput" placeholder="Search invoice, party, GSTIN, amount..." class="w-full bg-slate-900/80 border border-slate-800 rounded-lg pl-8 pr-3 py-1.5 text-xs text-slate-200 placeholder-slate-600 focus:outline-none focus:border-brand-500 transition">
+                    </div>
+                    <div class="flex items-center gap-1.5 flex-shrink-0 overflow-x-auto no-scrollbar" id="filterBadgesGroup">
+                        <button class="grid-filter-btn active text-xs font-bold px-2.5 py-1 rounded-lg border transition bg-brand-600/20 text-brand-400 border-brand-500/30 whitespace-nowrap" data-filter="all">
+                            All Sales (<span id="countFilterAll">0</span>)
+                        </button>
+                        <button class="grid-filter-btn text-xs font-bold px-2.5 py-1 rounded-lg border border-slate-800 text-slate-400 hover:text-white transition whitespace-nowrap" data-filter="b2b">
+                            <i class="fa-solid fa-building-circle-check text-cyan-400 mr-1"></i> B2B Registered (<span id="countFilterB2B">0</span>)
+                        </button>
+                        <button class="grid-filter-btn text-xs font-bold px-2.5 py-1 rounded-lg border border-slate-800 text-slate-400 hover:text-white transition whitespace-nowrap" data-filter="b2c">
+                            <i class="fa-solid fa-user text-indigo-400 mr-1"></i> B2C Retail (<span id="countFilterB2C">0</span>)
+                        </button>
+                        <button class="grid-filter-btn text-xs font-bold px-2.5 py-1 rounded-lg border border-slate-800 text-slate-400 hover:text-white transition whitespace-nowrap" data-filter="igst">
+                            <i class="fa-solid fa-plane-departure text-purple-400 mr-1"></i> Inter-State IGST (<span id="countFilterIGST">0</span>)
+                        </button>
+                        <button class="grid-filter-btn text-xs font-bold px-2.5 py-1 rounded-lg border border-slate-800 text-slate-400 hover:text-white transition whitespace-nowrap" data-filter="review">
+                            <i class="fa-solid fa-triangle-exclamation text-amber-400 mr-1"></i> Review (<span id="countFilterReview">0</span>)
+                        </button>
+                    </div>
+
+                    <!-- 1-Click Global Bulk Product Change Action Bar (For Sales & Purchases) -->
+                    <div class="flex items-center gap-1.5 ml-auto flex-shrink-0 border-l border-slate-800/80 pl-2" id="globalProductBulkBar">
+                        <select id="globalProductBulkSelect" class="bg-slate-900 border border-brand-500/40 text-xs font-semibold text-slate-200 rounded-lg px-2.5 py-1.5 focus:outline-none focus:border-brand-400 transition max-w-[210px] truncate">
+                            <option value="">⚡ Bulk Set Product for All Rows...</option>
+                        </select>
+                        <button id="applyGlobalProductBulkBtn" class="bg-brand-600 hover:bg-brand-500 text-white font-bold text-xs px-3 py-1.5 rounded-lg transition shadow-md shadow-brand-600/30 flex items-center gap-1 cursor-pointer whitespace-nowrap">
+                            <i class="fa-solid fa-bolt text-amber-300"></i> Apply to All
+                        </button>
+                    </div>
+
+                    <!-- 1-Click Bank Statements Bulk Apply Ledger & Group Bar (For Bank Statements & Cash) -->
+                    <div class="hidden flex items-center gap-1.5 ml-auto flex-shrink-0 border-l border-slate-800/80 pl-2" id="bankBulkBar">
+                        <button id="applyBankBulkLedgerGroupBtn" class="bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-bold text-xs px-3.5 py-1.5 rounded-lg transition shadow-md shadow-purple-600/30 flex items-center gap-1.5 cursor-pointer whitespace-nowrap" title="Select/click any row's ledger or group, then click this button to apply to all matching narrations in the statement!">
+                            <i class="fa-solid fa-wand-magic-sparkles text-amber-300"></i> ⚡ Bulk Apply Ledger & Group to Matching Narrations
+                        </button>
+                    </div>
+                </div>
+
+                <!-- DISASTER RECOVERY: STAGED BACKUP RESTORE BANNER -->
+                <div id="stagedBackupRestoreBanner" class="hidden bg-purple-950/80 border border-purple-500/40 rounded-xl px-4 py-2.5 mb-3 flex items-center justify-between backdrop-blur-md shadow-lg shadow-purple-950/50">
+                    <div class="flex items-center gap-2.5 text-xs text-purple-200 font-medium">
+                        <i class="fa-solid fa-clock-rotate-left text-purple-400 text-sm"></i>
+                        <span><strong>Unsaved Staged Work Found!</strong> You have <span id="backupItemCount" class="font-bold text-white">0</span> unsaved entries from a previous session (<span id="backupTimeStr" class="text-purple-300">just now</span>).</span>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <button id="btnRestoreStagedBackup" class="bg-purple-600 hover:bg-purple-500 text-white font-bold text-xs px-3.5 py-1.5 rounded-lg transition shadow-md shadow-purple-600/30 flex items-center gap-1 cursor-pointer">
+                            <i class="fa-solid fa-rotate-left"></i> Restore Work
+                        </button>
+                        <button id="btnDismissStagedBackup" class="text-purple-400 hover:text-purple-200 text-xs px-2 py-1 transition cursor-pointer">
+                            Dismiss
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Table Container -->
+                <div id="gridTableContainer" class="flex-1 overflow-auto border border-slate-800/60 rounded-2xl bg-slate-950/20 shadow-inner relative min-h-0">
+                    <table class="min-w-full text-left border-collapse text-sm">
+                        <thead class="bg-slate-900/95 sticky top-0 z-10 text-slate-400 border-b border-slate-800 font-bold backdrop-blur-xl shadow-sm">
+                            <tr id="gridHeaderRow">
+                                <!-- Dynamic Headers -->
+                            </tr>
+                        </thead>
+                        <tbody id="gridBody" class="divide-y divide-slate-900 bg-slate-950/10">
+                            <!-- Dynamic Content -->
+                        </tbody>
+                    </table>
+                </div>
+
+                <!-- FLOATING BULK ACTIONS TOOLBAR -->
+                <div id="bulkActionToolbar" class="hidden fixed bottom-6 left-1/2 -translate-x-1/2 z-50 bg-slate-900 border border-brand-500/40 rounded-2xl px-5 py-2.5 shadow-2xl backdrop-blur-md flex items-center gap-3 border-slate-800">
+                    <div class="flex items-center gap-2 text-xs font-bold text-slate-200">
+                        <span id="selectedRowCountBadge" class="bg-brand-600 text-white px-2 py-0.5 rounded-md font-extrabold text-[11px]">0</span>
+                        <span>Rows Selected</span>
+                    </div>
+
+                    <!-- Selected Rows Product Change Control -->
+                    <div class="flex items-center gap-1.5 border-l border-r border-slate-800 px-3" id="bulkProductGroup">
+                        <select id="bulkSelectedProductSelect" class="bg-slate-950 border border-brand-500/40 text-xs font-semibold text-slate-200 rounded-lg px-2.5 py-1.5 focus:outline-none max-w-[200px] truncate">
+                            <option value="">⚡ Set Product for Selected...</option>
+                        </select>
+                        <button id="btnBulkApplyProduct" class="bg-brand-600 hover:bg-brand-500 text-white font-bold text-xs px-3 py-1.5 rounded-lg transition shadow-md shadow-brand-600/30 flex items-center gap-1 cursor-pointer whitespace-nowrap">
+                            <i class="fa-solid fa-bolt text-amber-300"></i> Apply
+                        </button>
+                    </div>
+
+                    <div class="flex items-center gap-2">
+                        <button id="btnBulkDeleteSelected" class="bg-rose-600/20 hover:bg-rose-600/30 text-rose-300 border border-rose-500/30 px-3 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer">
+                            <i class="fa-solid fa-trash text-rose-400"></i> Delete Selected
+                        </button>
+                        <button id="btnBulkToggleTxType" class="bg-blue-600/20 hover:bg-blue-600/30 text-blue-300 border border-blue-500/30 px-3 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer">
+                            <i class="fa-solid fa-right-left text-blue-400"></i> Toggle Receipt/Payment
+                        </button>
+                        <button id="btnBulkClearSelection" class="text-slate-400 hover:text-white text-xs px-2 py-1 transition cursor-pointer">
+                            Clear
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Bottom Bar (Totals and Push Action) -->
+                <div class="mt-2.5 flex-shrink-0 pt-2 border-t border-slate-900 space-y-2">
+                    <!-- Row 1: Totals + Add Row -->
+                    <div class="flex justify-between items-center gap-3">
+                        <div id="grandTotalsContainer" class="flex gap-2 items-center text-xs">
+                            <div class="bg-slate-900/90 px-3 py-1.5 border border-slate-800/80 rounded-xl flex items-center gap-2 shadow-sm">
+                                <span class="h-2 w-2 rounded-full bg-slate-600"></span>
+                                <span class="font-extrabold text-white font-mono">0</span>
+                                <span class="text-slate-400 font-bold uppercase tracking-wider text-[10px]">Invoices Ready</span>
+                            </div>
+                        </div>
+                        <button id="addEntryBtn" type="button" class="bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold px-4 py-2.5 rounded-xl transition flex items-center gap-2 text-sm border border-slate-700 cursor-pointer">
+                            <i class="fa-solid fa-plus"></i> Add Row
+                        </button>
+                    </div>
+
+                    <!-- Row 2: Backup Path Box + Push Button -->
+                    <div class="flex items-center gap-3">
+                        <!-- Backup Path Inline Box -->
+                        <div class="flex-1 flex items-center gap-2 bg-slate-950/60 border border-slate-800 rounded-xl px-3 py-2 group focus-within:border-amber-500/60 focus-within:bg-amber-500/5 transition-all duration-200" title="Enter backup folder path to enable auto-backup before push. Leave EMPTY to skip backup and push instantly.">
+                            <i class="fa-solid fa-shield-halved text-amber-400 text-sm flex-shrink-0"></i>
+                            <div class="flex flex-col flex-1 min-w-0">
+                                <span class="text-[10px] font-bold uppercase tracking-widest text-slate-500 group-focus-within:text-amber-400 transition-colors leading-tight">Auto-Backup Path</span>
+                                <input
+                                    type="text"
+                                    id="inlineBackupPath"
+                                    placeholder="Leave empty to SKIP backup &amp; push instantly..."
+                                    class="w-full bg-transparent text-slate-300 text-xs font-medium placeholder-slate-600 focus:outline-none focus:text-white transition-colors"
+                                >
+                            </div>
+                            <span id="backupPathStatus" class="text-[10px] font-bold px-2 py-0.5 rounded-full flex-shrink-0 transition-all bg-slate-800 text-slate-500">
+                                SKIP
+                            </span>
+                        </div>
+
+                        <!-- Push Button -->
+                        <button id="pushBtn" class="bg-gradient-to-tr from-emerald-600 to-emerald-500 hover:from-emerald-500 hover:to-emerald-400 text-white font-bold px-6 py-2.5 rounded-xl transition shadow-lg shadow-emerald-600/20 flex items-center gap-2 opacity-50 cursor-not-allowed text-sm flex-shrink-0" disabled>
+                            <i class="fa-solid fa-circle-play text-base"></i>
+                            Push to Miracle
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Resizer Handle -->
+            <div id="panelResizer" class="hidden w-1 cursor-col-resize bg-slate-900 hover:bg-brand-500 transition-colors z-20 flex-shrink-0 relative group items-center justify-center">
+                <div class="absolute inset-y-0 -left-2 -right-2"></div>
+                <div class="h-12 w-0.5 bg-slate-700 group-hover:bg-white rounded-full transition-colors opacity-0 group-hover:opacity-100"></div>
+            </div>
+
+            <!-- Right Side: PDF/Image Split-screen Document Viewer -->
+            <div id="docViewerPanel" class="hidden flex-col overflow-hidden bg-slate-950/20 border-l border-slate-900" style="width: 400px;">
+                <div class="h-12 border-b border-slate-900 px-4 flex items-center justify-between flex-shrink-0 bg-slate-900/40">
+                    <h3 id="docViewerTitle" class="text-sm font-bold text-slate-400 uppercase tracking-wider truncate flex items-center font-heading">
+                        <i class="fa-regular fa-file-pdf mr-2 text-brand-500"></i> No Document Loaded
+                    </h3>
+                    <span class="text-xs text-slate-500 bg-slate-900 px-2 py-0.5 rounded-md font-semibold">0 of 0</span>
+                </div>
+                <div id="docPlaceholder" class="flex-1 flex flex-col items-center justify-center p-8 text-slate-500 group cursor-default">
+                    <div class="relative mb-5 transform transition-all duration-500 group-hover:-translate-y-2 group-hover:scale-105">
+                        <div class="absolute inset-0 bg-brand-500/5 blur-xl rounded-full"></div>
+                        <div class="h-24 w-24 bg-gradient-to-br from-slate-800 to-slate-900 border border-slate-700/80 rounded-3xl flex items-center justify-center relative shadow-2xl">
+                            <i class="fa-solid fa-file-invoice text-4xl text-slate-500 group-hover:text-brand-400 transition-colors duration-300"></i>
+                            <div class="absolute -bottom-2 -right-2 h-10 w-10 bg-brand-600 rounded-xl flex items-center justify-center shadow-lg border-2 border-obsidian-950 animate-bounce" style="animation-duration: 3s;">
+                                <i class="fa-solid fa-cloud-arrow-up text-white text-sm"></i>
+                            </div>
+                        </div>
+                    </div>
+                    <p class="text-base text-slate-300 font-bold uppercase tracking-wider font-heading transition-colors group-hover:text-white">Document Viewer Workspace</p>
+                    <p class="text-sm text-slate-500 text-center mt-2.5 max-w-[260px] leading-relaxed">Upload or drop a transaction document (PDF/Image) to review it side-by-side with AI extractions.</p>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <!-- BULK APPLY LEDGER & GROUP CONFIRMATION POPUP -->
+    <div id="bulkApplyPopup" class="hidden fixed inset-0 bg-black/70 backdrop-blur-sm z-[60] flex items-center justify-center">
+        <div class="bg-slate-900 border border-cyan-500/30 rounded-2xl shadow-2xl w-[520px] max-w-[95vw] overflow-hidden">
+            <div class="px-6 py-4 border-b border-slate-800 flex justify-between items-center bg-slate-950/60">
+                <h3 class="text-base font-bold text-white flex items-center gap-2">
+                    <i class="fa-solid fa-bolt text-cyan-400"></i> Bulk Apply Ledger & Group
+                </h3>
+                <button id="closeBulkApplyPopupBtn" class="text-slate-400 hover:text-white transition"><i class="fa-solid fa-xmark text-lg"></i></button>
+            </div>
+            <div class="p-6 space-y-4">
+                <div class="bg-slate-800/60 rounded-xl px-4 py-3 border border-slate-700/40 space-y-2">
+                    <p class="text-xs text-slate-400 font-bold uppercase tracking-wider">Select Target Rows to Update</p>
+                    <div id="bulkApplyScopeContainer" class="space-y-2 text-xs text-slate-200">
+                        <label class="flex items-center gap-2.5 cursor-pointer p-2 rounded-lg hover:bg-slate-700/40 transition">
+                            <input type="radio" name="bulkScope" value="checked" id="scopeChecked" class="text-cyan-500 focus:ring-0">
+                            <span><strong id="scopeCheckedLabel">Selected Checkbox Rows (0)</strong></span>
+                        </label>
+                        <label class="flex items-center gap-2.5 cursor-pointer p-2 rounded-lg hover:bg-slate-700/40 transition">
+                            <input type="radio" name="bulkScope" value="filtered" id="scopeFiltered" class="text-cyan-500 focus:ring-0" checked>
+                            <span><strong id="scopeFilteredLabel">Currently Filtered Rows (0)</strong></span>
+                        </label>
+                        <label class="flex items-center gap-2.5 cursor-pointer p-2 rounded-lg hover:bg-slate-700/40 transition">
+                            <input type="radio" name="bulkScope" value="pattern" id="scopePattern" class="text-cyan-500 focus:ring-0">
+                            <span><strong id="scopePatternLabel">Narration Pattern Match (0)</strong></span>
+                        </label>
+                    </div>
+                </div>
+                <div>
+                    <label class="block text-xs font-bold text-slate-400 mb-1.5 uppercase tracking-wider">Mapped Ledger</label>
+                    <div class="relative">
+                        <input type="text" id="bulkApplyLedgerInput" placeholder="🔍 Search or type Miracle Ledger (e.g. Indian Clearing, Office Exp)..." class="w-full bg-slate-800 border border-slate-700 rounded-xl px-3.5 py-2.5 text-slate-100 text-sm focus:outline-none focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 transition shadow-inner placeholder-slate-500" autocomplete="off" />
+                        <div id="bulkApplyLedgerDropdown" class="hidden absolute left-0 right-0 top-full mt-1 bg-slate-900 border border-slate-700 rounded-xl shadow-2xl z-[70] max-h-48 overflow-y-auto divide-y divide-slate-800/60 custom-scrollbar">
+                            <!-- Dynamic search matches populated here -->
+                        </div>
+                    </div>
+                </div>
+                <div>
+                    <label class="block text-xs font-bold text-slate-400 mb-1.5 uppercase tracking-wider">Account Group</label>
+                    <select id="bulkApplyGroupSelect" class="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2.5 text-cyan-300 text-sm font-bold focus:outline-none focus:border-cyan-500 transition">
+                        <optgroup label="📊 Profit & Loss Account">
+                            <option value="Indirect Expenses">Indirect Expenses (Rent / Salary / Food / Zomato / Swiggy)</option>
+                            <option value="Direct Expenses">Direct Expenses (Freight / Factory Wages)</option>
+                            <option value="Indirect Income">Indirect Income (Interest / Cashback / Dividend)</option>
+                            <option value="Direct Income">Direct Income (Service Revenue / Jobwork)</option>
+                            <option value="Bank Charges">Bank Charges (Bank Fees / Commission)</option>
+                        </optgroup>
+                        <optgroup label="📈 Trading Account">
+                            <option value="Sales Accounts">Sales Accounts (Product Sales Revenue)</option>
+                            <option value="Purchase Accounts">Purchase Accounts (Stock Purchases)</option>
+                        </optgroup>
+                        <optgroup label="🏢 Balance Sheet — Assets">
+                            <option value="Sundry Debtors">Sundry Debtors (Trade Customers)</option>
+                            <option value="Investments">Investments (FD / Stocks / Mutual Funds / Groww)</option>
+                            <option value="Bank Accounts">Bank Accounts (Bank A/c Transfers)</option>
+                            <option value="Fixed Assets">Fixed Assets (Machinery / Vehicles)</option>
+                            <option value="Current Assets">Current Assets (Prepaid / Security Deposits)</option>
+                            <option value="Loans & Advances (Asset)">Loans & Advances (Asset - Money Given)</option>
+                            <option value="Cash-in-Hand">Cash-in-Hand (Petty Cash)</option>
+                        </optgroup>
+                        <optgroup label="🏛️ Balance Sheet — Liabilities">
+                            <option value="Sundry Creditors">Sundry Creditors (Trade Suppliers / Vendors)</option>
+                            <option value="Duties & Taxes">Duties & Taxes (GST / TDS / Tax Liabilities)</option>
+                            <option value="Capital Account / Drawings">Drawings Account (Owner Personal Spending)</option>
+                            <option value="Capital Account">Capital Account (Owner / Partner Equity)</option>
+                            <option value="Unsecured Loans">Unsecured Loans (Friends / Directors / Borrowings)</option>
+                            <option value="Secured Loans">Secured Loans (Bank Term Loans / Mortgages)</option>
+                            <option value="Current Liabilities">Current Liabilities (Credit Card / Expenses Payable)</option>
+                        </optgroup>
+                        <optgroup label="⚠️ System & Review">
+                            <option value="Suspense Account">Suspense Account (Review / Unmapped)</option>
+                        </optgroup>
+                    </select>
+                </div>
+            </div>
+            <div class="px-6 py-4 border-t border-slate-800 flex justify-end gap-3">
+                <button id="cancelBulkApplyBtn" class="px-4 py-2 text-sm font-semibold text-slate-400 hover:text-white transition">Cancel</button>
+                <button id="confirmBulkApplyBtn" class="bg-cyan-600 hover:bg-cyan-500 text-white px-6 py-2.5 rounded-xl text-sm font-bold transition shadow-lg shadow-cyan-600/20 flex items-center gap-2">
+                    <i class="fa-solid fa-bolt"></i> Apply to All Matching Rows
+                </button>
+            </div>
+        </div>
+    </div>
+
+
+    <div id="loadingState" class="hidden fixed inset-0 bg-slate-950/80 backdrop-blur-md z-50 flex flex-col items-center justify-center transition-all">
+        <div class="relative flex items-center justify-center mb-6">
+            <div class="h-16 w-16 border-4 border-brand-500/20 border-t-brand-600 rounded-full animate-spin"></div>
+            <i class="fa-solid fa-sparkles text-brand-500 absolute text-xl animate-pulse"></i>
+        </div>
+        <h3 class="text-lg font-bold text-white tracking-wide font-heading">Processing Document</h3>
+        <p class="text-sm text-slate-400 mt-1.5 font-medium">AI is extracting details and structure from PDF...</p>
+    </div>
+
+    <!-- SETTINGS MODAL -->
+    <div id="settingsModal" class="hidden fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center">
+        <div class="bg-darkcard border border-slate-850 rounded-2xl shadow-2xl w-[750px] overflow-hidden transform transition-all flex flex-col max-h-[85vh] modal-animate-in">
+            <!-- Header -->
+            <div class="px-6 py-4 border-b border-slate-850 flex justify-between items-center bg-slate-900/60">
+                <h3 class="text-lg font-bold text-white font-heading"><i class="fa-solid fa-sliders mr-2 text-brand-500"></i> Configure Settings</h3>
+                <button id="closeSettingsBtn" class="text-slate-450 hover:text-white transition"><i class="fa-solid fa-xmark text-xl"></i></button>
+            </div>
+            
+            <!-- Body -->
+            <div class="p-8 overflow-y-auto space-y-8 flex-1 text-sm">
+                <!-- API Credentials -->
+                <div class="grid grid-cols-12 gap-4 items-start">
+                    <div class="col-span-5">
+                        <label class="block text-sm font-bold text-slate-400 mb-1.5 uppercase tracking-wider">Gemini API Key</label>
+                        <div class="relative">
+                            <input type="password" id="geminiApiKey" placeholder="Enter Gemini Key..." class="w-full bg-slate-900 border border-slate-850 rounded-xl pl-3 pr-10 py-2.5 text-slate-200 focus:outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-500/50 focus:ring-offset-2 focus:ring-offset-obsidian-950">
+                            <button id="toggleApiKey" class="absolute right-3 top-3.5 text-slate-500 hover:text-white transition"><i class="fa-solid fa-eye text-sm"></i></button>
+                        </div>
+                    </div>
+                    <div class="col-span-3">
+                        <label class="block text-sm font-bold text-slate-400 mb-1.5 uppercase tracking-wider">Gemini Model</label>
+                        <select id="geminiModel" class="w-full bg-slate-900 border border-slate-850 rounded-xl py-2.5 px-3 text-slate-200 focus:outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-500/50 focus:ring-offset-2 focus:ring-offset-obsidian-950">
+                            <option value="gemini-3.5-flash">Gemini 3.5 Flash (Recommended)</option>
+                            <option value="gemini-3.1-flash-lite">Gemini 3.1 Flash Lite</option>
+                            <option value="gemini-1.5-pro">Gemini 1.5 Pro</option>
+                        </select>
+                    </div>
+                    <div class="col-span-4 flex items-center h-[42px] mt-[26px]">
+                        <label class="flex items-center gap-2 cursor-pointer text-sm font-bold text-slate-400 tracking-wide" title="Removes the 4.5s delay between chunks if you are using a Paid Pay-As-You-Go API Key.">
+                            <input type="checkbox" id="isPaidApiKeyCheck" class="rounded bg-slate-900 border-slate-800 text-brand-650 focus:ring-0 focus:ring-offset-0">
+                            Paid Key (10x Speed)
+                        </label>
+                    </div>
+                </div>
+
+                <!-- Paths Configuration -->
+                <div class="p-5 bg-slate-950/20 rounded-xl border border-slate-850 space-y-4">
+                    <h4 class="font-bold text-white text-sm uppercase tracking-wider flex items-center gap-1.5 border-b border-slate-850 pb-2"><i class="fa-solid fa-folder-open text-brand-500"></i> Directory Paths Configuration</h4>
+                    
+                    <div class="space-y-4">
+                        <!-- Miracle Base Directory Path -->
+                        <div>
+                            <div class="flex justify-between items-center mb-1.5">
+                                <label class="block text-sm font-bold text-slate-400 uppercase tracking-wider">1. Miracle Base Directory Path</label>
+                                <span id="refreshClientsStatus" class="text-xs text-slate-500 font-medium">Main folder containing client directories (CMPxxxx).</span>
+                            </div>
+                            <div class="flex gap-2">
+                                <input type="text" id="miracleBasePath" placeholder="/Users/jaydevnakum/Work Place/WORK/APP DETAILS/Mirracle Auto Entre Sale or Purchase or Bank" class="w-full bg-slate-900 border border-slate-850 rounded-xl px-4 py-2.5 text-slate-200 focus:outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-500/50 focus:ring-offset-2 focus:ring-offset-obsidian-950">
+                                <button id="refreshClientsBtn" class="bg-brand-600 hover:bg-brand-500 text-white transform transition-all duration-200 hover:-translate-y-0.5 active:scale-95 px-4 rounded-xl transition btn-hover-glow"><i class="fa-solid fa-rotate"></i></button>
+                            </div>
+                        </div>
+
+                        <!-- AI Memory Directory Path -->
+                        <div>
+                            <label class="block text-sm font-bold text-slate-400 mb-1.5 uppercase tracking-wider">2. AI Memory Directory Path</label>
+                            <input type="text" id="memoryPath" placeholder="/Users/jaydevnakum/Work Place/WORK/APP DETAILS/Mirracle Auto Entre Sale or Purchase or Bank/AI_Memory_Vault" class="w-full bg-slate-900 border border-slate-850 rounded-xl px-4 py-2.5 text-slate-200 focus:outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-500/50 focus:ring-offset-2 focus:ring-offset-obsidian-950">
+                            <p class="text-xs text-slate-500 mt-1">Stores ledger rules and learns mappings permanently.</p>
+                        </div>
+
+                        <!-- Database Backup Path -->
+                        <div>
+                            <label class="block text-sm font-bold text-slate-400 mb-1.5 uppercase tracking-wider">3. Database Backup Path</label>
+                            <input type="text" id="backupPath" placeholder="./BACKUPS" class="w-full bg-slate-900 border border-slate-850 rounded-xl px-4 py-2.5 text-slate-200 focus:outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-500/50 focus:ring-offset-2 focus:ring-offset-obsidian-950">
+                            <p class="text-xs text-slate-500 mt-1">Custom backup folder. Leave blank to default to root BACKUPS.</p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Client Details configuration -->
+                <div class="p-4 bg-slate-950/20 rounded-xl border border-slate-850 space-y-4">
+                    <div class="flex justify-between items-center border-b border-slate-850 pb-2">
+                        <h4 class="font-bold text-white text-sm uppercase tracking-wider flex items-center gap-1.5"><i class="fa-solid fa-user-gear text-brand-500"></i> Client Configuration settings</h4>
+                        <select id="settingsActiveClient" class="bg-slate-900 border border-slate-800 rounded-md py-1 px-2.5 text-sm text-slate-300 focus:outline-none">
+                            <!-- Dynamic -->
+                        </select>
+                    </div>
+                    
+                    <div class="grid grid-cols-2 gap-4">
+                        <div>
+                            <label class="block text-sm font-bold text-slate-400 mb-1.5 uppercase tracking-wider">Sales Setup ID</label>
+                            <input type="number" id="salesSetupId" class="w-full bg-slate-900 border border-slate-800 rounded-lg px-3 py-2.5 text-slate-200 focus:outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-500/50 focus:ring-offset-2 focus:ring-offset-obsidian-950">
+                            <p id="salesSetupIdStatus" class="text-sm text-slate-500 mt-1">Voucher structure index in Miracle database.</p>
+                        </div>
+                        <div>
+                            <label class="block text-sm font-bold text-slate-400 mb-1.5 uppercase tracking-wider">Purchase Setup ID</label>
+                            <input type="number" id="purchaseSetupId" class="w-full bg-slate-900 border border-slate-800 rounded-lg px-3 py-2.5 text-slate-200 focus:outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-500/50 focus:ring-offset-2 focus:ring-offset-obsidian-950">
+                            <p id="purchaseSetupIdStatus" class="text-sm text-slate-500 mt-1">Voucher structure index in Miracle database.</p>
+                        </div>
+                    </div>
+
+                    <div class="flex gap-6 pt-2">
+                        <label class="flex items-center gap-2 cursor-pointer text-sm font-bold text-slate-400 uppercase tracking-wider">
+                            <input type="checkbox" id="autoCreateB2bCheck" class="rounded bg-slate-900 border-slate-800 text-brand-650 focus:ring-0 focus:ring-offset-0">
+                            Auto-Create B2B Ledgers
+                        </label>
+                        <label class="flex items-center gap-2 cursor-pointer text-sm font-bold text-slate-400 uppercase tracking-wider">
+                            <input type="checkbox" id="autoCreateB2cCheck" class="rounded bg-slate-900 border-slate-800 text-brand-650 focus:ring-0 focus:ring-offset-0">
+                            Auto-Create B2C Ledgers
+                        </label>
+                    </div>
+                </div>
+
+                <!-- Custom Voucher Prefix Overrides & Rules -->
+                <div class="p-4 bg-slate-950/20 rounded-xl border border-slate-850 space-y-4">
+                    <div class="flex justify-between items-center border-b border-slate-850 pb-2">
+                        <h4 class="font-bold text-white text-sm uppercase tracking-wider flex items-center gap-1.5"><i class="fa-solid fa-tag text-brand-500"></i> Voucher Prefixes & Series</h4>
+                        <div class="flex gap-2">
+                            <button id="autoDetectBtn" class="bg-brand-600 hover:bg-brand-500 text-white transform transition-all duration-200 hover:-translate-y-0.5 active:scale-95 text-sm font-bold px-3 py-1.5 rounded-lg transition whitespace-nowrap"><i class="fa-solid fa-wand-magic-sparkles mr-1"></i> Auto-Detect Rules</button>
+                            <button id="savePrefixBtn" class="bg-emerald-600 hover:bg-emerald-500 text-white transform transition-all duration-200 hover:-translate-y-0.5 active:scale-95 text-sm font-bold px-3 py-1.5 rounded-lg transition whitespace-nowrap"><i class="fa-solid fa-floppy-disk mr-1"></i> Save Prefix</button>
+                        </div>
+                    </div>
+
+                    <div class="grid grid-cols-2 gap-4">
+                        <div>
+                            <label class="block text-sm font-bold text-slate-400 mb-1.5 uppercase tracking-wider">Sales Series (e.g. SS,SS)</label>
+                            <input type="text" id="salesPrefixInput" placeholder="Override sales prefix..." class="w-full bg-slate-900 border border-slate-800 rounded-lg px-3 py-2.5 text-slate-200 focus:outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-500/50 focus:ring-offset-2 focus:ring-offset-obsidian-950">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-bold text-slate-400 mb-1.5 uppercase tracking-wider">Purchase Series (e.g. PP,PP)</label>
+                            <input type="text" id="purchasePrefixInput" placeholder="Override purchase prefix..." class="w-full bg-slate-900 border border-slate-800 rounded-lg px-3 py-2.5 text-slate-200 focus:outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-500/50 focus:ring-offset-2 focus:ring-offset-obsidian-950">
+                        </div>
+                    </div>
+                    
+                    <p id="prefixSaveStatus" class="hidden text-sm text-emerald-400 font-bold"></p>
+                    <div id="detectedRulesDisplay" class="hidden text-sm bg-slate-950 p-3 rounded-lg border border-slate-850">
+                        <!-- Auto-detected rules will display here -->
+                    </div>
+                </div>
+
+                <!-- Company Brain training section -->
+                <div class="p-5 bg-gradient-to-br from-slate-900 to-slate-950 rounded-2xl border border-slate-800 shadow-xl space-y-4 relative overflow-hidden group">
+                    <div class="absolute top-0 right-0 p-4 opacity-10 pointer-events-none transition duration-500 group-hover:scale-110 group-hover:opacity-20 group-hover:rotate-12">
+                        <i class="fa-solid fa-brain text-6xl text-brand-500"></i>
+                    </div>
+                    <div class="flex justify-between items-center border-b border-slate-800/60 pb-3 relative z-10">
+                        <div>
+                            <h4 class="font-bold text-white text-lg flex items-center gap-2"><i class="fa-solid fa-brain text-brand-500"></i> AI Company Brain Profile</h4>
+                            <p class="text-sm text-slate-400 mt-1">Core business context, mappings, and AI memory</p>
+                        </div>
+                        <button id="trainBrainBtn" class="bg-brand-600 hover:bg-brand-500 text-white transform transition-all duration-200 hover:-translate-y-0.5 active:scale-95 text-sm font-bold px-4 py-2.5 rounded-xl transition shadow-lg shadow-brand-600/20 flex items-center gap-2 transform hover:-translate-y-0.5"><i class="fa-solid fa-bolt"></i> Train Brain</button>
+                    </div>
+                    <div class="relative z-10 pt-1">
+                        <label class="block text-sm font-bold text-slate-300 mb-2">Company Business Context</label>
+                        <div class="relative">
+                            <textarea id="businessProfileInput" rows="8" placeholder="Generated profile details will appear here. The AI uses this context to make better auto-entry decisions..." class="w-full bg-obsidian-950 border border-slate-700 rounded-xl px-5 py-4 text-slate-100 text-base leading-relaxed focus:outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-500/50 focus:ring-offset-2 focus:ring-offset-obsidian-950  transition shadow-inner font-medium resize-y"></textarea>
+                        </div>
+                    </div>
+                    <div class="flex justify-end relative z-10 pt-2">
+                        <button id="saveProfileBtn" class="bg-slate-800 hover:bg-slate-700 text-white text-sm font-bold px-6 py-2.5 rounded-xl transition shadow-md border border-slate-700 transform hover:-translate-y-0.5 hover:shadow-lg">Save Profile</button>
+                    </div>
+                </div>
+
+                <!-- Fallback Inventory Product -->
+                <div>
+                    <label class="block text-sm font-bold text-slate-400 mb-1.5 uppercase tracking-wider">Fallback / Default Product Ledger</label>
+                    <select id="defaultProductSelect" class="w-full bg-slate-900 border border-slate-850 rounded-xl py-2.5 px-3 text-slate-200 focus:outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-500/50 focus:ring-offset-2 focus:ring-offset-obsidian-950">
+                        <option value="">-- Auto-Detect (AI) --</option>
+                    </select>
+                    <p class="text-sm text-slate-500 mt-1">If the invoice item doesn't exist in Miracle, it maps to this fallback selection instead of failing.</p>
+                </div>
+            </div>
+            
+            <!-- Footer -->
+            <div class="px-6 py-4 border-t border-slate-800 bg-slate-950/60 flex justify-between items-center">
+                <div class="flex items-center gap-2">
+                    <button id="modalAutoTrainMemoryBtn" class="bg-brand-600/20 hover:bg-brand-600/30 text-brand-400 border border-brand-500/30 px-3.5 py-2 rounded-xl text-xs font-bold transition flex items-center gap-1.5" title="Scan 2+ years of historical DBF files and auto-train 500+ expense rules">
+                        <i class="fa-solid fa-brain text-sm"></i> Auto-Train Memory
+                    </button>
+                    <button id="modalOpenMemoryVaultBtn" class="open-memory-vault-trigger bg-purple-600/20 hover:bg-purple-600/30 text-purple-300 border border-purple-500/30 px-3.5 py-2 rounded-xl text-xs font-bold transition flex items-center gap-1.5" title="Open AI Memory Vault to view, edit, or search learned rules">
+                        <i class="fa-solid fa-box-archive text-sm"></i> Memory Vault Manager
+                    </button>
+                </div>
+                <div class="flex items-center gap-3">
+                    <button id="cancelSettingsBtn" class="px-4 py-2 text-sm font-semibold text-slate-400 hover:text-slate-200 transition">Cancel</button>
+                    <button id="saveSettingsBtn" class="bg-brand-600 hover:bg-brand-500 text-white transform transition-all duration-200 hover:-translate-y-0.5 active:scale-95 px-5 py-2.5 rounded-xl text-sm font-bold transition shadow-lg shadow-brand-600/20 btn-hover-glow">Save Configuration</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- AI MEMORY VAULT MANAGER MODAL (PRO 100-POINT EDITION) -->
+    <div id="memoryVaultModal" class="hidden fixed inset-0 bg-black/75 backdrop-blur-md z-50 flex items-center justify-center p-4">
+        <div class="bg-slate-950 border border-purple-500/40 rounded-2xl shadow-2xl w-[980px] max-w-[95vw] overflow-hidden transform transition-all flex flex-col max-h-[90vh] modal-animate-in">
+            <!-- Header -->
+            <div class="px-6 py-4 border-b border-slate-850 flex justify-between items-center bg-gradient-to-r from-purple-950/40 via-slate-900/60 to-purple-950/20">
+                <div class="flex items-center gap-3">
+                    <div class="h-10 w-10 rounded-xl bg-purple-500/20 border border-purple-500/40 flex items-center justify-center text-purple-300 shadow-lg shadow-purple-500/10">
+                        <i class="fa-solid fa-brain text-lg"></i>
+                    </div>
+                    <div>
+                        <div class="flex items-center gap-2">
+                            <h3 class="text-base font-black text-white font-heading tracking-wide">AI Memory Vault Manager</h3>
+                            <span class="px-2 py-0.5 rounded-full text-[10px] font-black bg-purple-500/20 text-purple-300 border border-purple-500/30">PRO AI BRAIN</span>
+                        </div>
+                        <p class="text-xs text-slate-400 font-medium">Gemini-powered rules engine, auto-trained expense mappings & catalog memory</p>
+                    </div>
+                </div>
+                <div class="flex items-center gap-2">
+                    <button id="mvCleanVaultBtn" class="bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 border border-amber-500/30 px-3 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5" title="Purge numeric/fragmented noise keys and consolidate clean ledger rules">
+                        <i class="fa-solid fa-broom"></i> Clean Vault
+                    </button>
+                    <button id="mvExportExcelBtn" class="bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 px-3 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5" title="Export memory rules as Excel/CSV file">
+                        <i class="fa-solid fa-file-excel"></i> Export Excel
+                    </button>
+                    <button id="mvExportBtn" class="bg-slate-900 hover:bg-slate-800 text-purple-300 border border-purple-500/30 px-3 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5" title="Export memory rules as JSON backup">
+                        <i class="fa-solid fa-download"></i> Export JSON
+                    </button>
+                    <button id="mvImportTriggerBtn" class="bg-indigo-600/20 hover:bg-indigo-600/30 text-indigo-300 border border-indigo-500/40 px-3 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5" title="Import memory rules from Excel (.xlsx/.xls/.csv) or JSON file with AI auto-mapping">
+                        <i class="fa-solid fa-upload"></i> Import (Excel/JSON)
+                    </button>
+                    <input type="file" id="mvImportFileInput" accept=".xlsx,.xls,.csv,.json" class="hidden">
+                    <button id="closeMemoryVaultBtn" class="text-slate-400 hover:text-white transition p-1.5 ml-2"><i class="fa-solid fa-xmark text-xl"></i></button>
+                </div>
+            </div>
+
+            <!-- Health & Metrics Bar -->
+            <div class="px-6 py-2.5 bg-slate-900/60 border-b border-slate-850 flex items-center justify-between text-xs overflow-x-auto flex-nowrap gap-4">
+                <div class="flex items-center gap-4">
+                    <div class="flex items-center gap-1.5 text-slate-300">
+                        <i class="fa-solid fa-list-check text-purple-400"></i>
+                        <span class="text-slate-400 font-medium">Expense Rules:</span>
+                        <span id="mvExpenseCount" class="font-extrabold text-white bg-slate-800 px-2 py-0.5 rounded-md">0</span>
+                    </div>
+                    <div class="flex items-center gap-1.5 text-slate-300">
+                        <i class="fa-solid fa-boxes-stacked text-cyan-400"></i>
+                        <span class="text-slate-400 font-medium">Product Catalog:</span>
+                        <span id="mvProductCount" class="font-extrabold text-white bg-slate-800 px-2 py-0.5 rounded-md">0</span>
+                    </div>
+                    <div class="flex items-center gap-1.5 text-slate-300">
+                        <i class="fa-solid fa-truck-field text-emerald-400"></i>
+                        <span class="text-slate-400 font-medium">Supplier Catalog:</span>
+                        <span id="mvSupplierCount" class="font-extrabold text-white bg-slate-800 px-2 py-0.5 rounded-md">0</span>
+                    </div>
+                </div>
+                <div class="flex items-center gap-2">
+                    <span class="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-2.5 py-1 rounded-full">
+                        <i class="fa-solid fa-shield-halved"></i> 99.8% AI Match Accuracy
+                    </span>
+                </div>
+            </div>
+
+            <!-- Navigation Tabs & Search Toolbar -->
+            <div class="p-4 border-b border-slate-850 bg-slate-950/80 flex flex-wrap items-center justify-between gap-3">
+                <div class="flex items-center gap-2 overflow-x-auto">
+                    <button id="mvTabExpense" class="mv-tab-btn active text-xs font-bold px-3 py-1.5 rounded-lg border transition bg-purple-600/20 text-purple-300 border-purple-500/40 whitespace-nowrap" data-tab="expense_mappings">
+                        <i class="fa-solid fa-list-check mr-1"></i> Expense Mappings
+                    </button>
+                    <button id="mvTabProduct" class="mv-tab-btn text-xs font-bold px-3 py-1.5 rounded-lg border border-slate-800 text-slate-400 hover:text-white transition whitespace-nowrap" data-tab="product_catalog">
+                        <i class="fa-solid fa-boxes-stacked mr-1"></i> Product Catalog
+                    </button>
+                    <button id="mvTabSupplier" class="mv-tab-btn text-xs font-bold px-3 py-1.5 rounded-lg border border-slate-800 text-slate-400 hover:text-white transition whitespace-nowrap" data-tab="supplier_catalog">
+                        <i class="fa-solid fa-truck-field mr-1"></i> Supplier Catalog
+                    </button>
+                    <button id="mvTabAiAssistant" class="mv-tab-btn text-xs font-bold px-3 py-1.5 rounded-lg border border-purple-500/30 text-purple-300 hover:bg-purple-600/20 transition whitespace-nowrap bg-purple-950/30" data-tab="ai_assistant">
+                        <i class="fa-solid fa-wand-magic-sparkles mr-1 text-amber-400"></i> ✨ AI Prompt Assistant
+                    </button>
+                    <button id="mvTabSimulator" class="mv-tab-btn text-xs font-bold px-3 py-1.5 rounded-lg border border-cyan-500/30 text-cyan-300 hover:bg-cyan-600/20 transition whitespace-nowrap bg-cyan-950/30" data-tab="simulator">
+                        <i class="fa-solid fa-vial mr-1 text-cyan-400"></i> 🧪 Live Simulator
+                    </button>
+                </div>
+
+                <div class="flex items-center gap-2 flex-1 max-w-[280px]">
+                    <div class="relative w-full">
+                        <i class="fa-solid fa-magnifying-glass absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 text-xs"></i>
+                        <input type="text" id="mvSearchInput" placeholder="Search keys, ledgers, items..." class="w-full bg-slate-900 border border-slate-800 rounded-lg pl-8 pr-3 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-purple-500">
+                    </div>
+                </div>
+            </div>
+
+            <!-- Body Container -->
+            <div class="p-5 overflow-y-auto flex-1 space-y-4">
+
+                <!-- SECTION A: GEMINI AI PROMPT ASSISTANT (TOP FEATURE) -->
+                <div id="mvAiAssistantSection" class="bg-gradient-to-br from-purple-950/30 via-slate-900 to-indigo-950/30 border border-purple-500/30 rounded-2xl p-4 space-y-3">
+                    <div class="flex items-center justify-between">
+                        <div class="flex items-center gap-2">
+                            <div class="h-7 w-7 rounded-lg bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-400">
+                                <i class="fa-solid fa-sparkles text-xs"></i>
+                            </div>
+                            <div>
+                                <h4 class="text-xs font-black text-white uppercase tracking-wider">Gemini AI Prompt Rule Generator</h4>
+                                <p class="text-[11px] text-slate-400">Type what you need in plain English/Gujarati — Gemini AI creates rules with examples & auto-saves to Memory Vault!</p>
+                            </div>
+                        </div>
+                        <span class="text-[10px] font-extrabold text-amber-400 bg-amber-500/10 border border-amber-500/20 px-2 py-0.5 rounded-full">Gemini API Powered</span>
+                    </div>
+
+                    <!-- Prompt Textarea -->
+                    <div class="space-y-2">
+                        <div class="relative">
+                            <textarea id="mvAiPromptInput" rows="2" placeholder="e.g. 'Whenever narration contains Swiggy or Zomato or food delivery, map to Staff Welfare Expenses'..." class="w-full bg-slate-950/80 border border-purple-500/30 rounded-xl p-3 text-xs text-slate-100 placeholder-slate-500 focus:outline-none focus:border-purple-400 transition shadow-inner resize-none pr-[210px]"></textarea>
+                            <button id="mvGenerateAiRuleBtn" type="button" class="absolute right-2.5 bottom-3 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-bold px-4 py-2 rounded-lg text-xs transition shadow-lg shadow-purple-600/30 flex items-center gap-1.5 cursor-pointer">
+                                <i class="fa-solid fa-wand-magic-sparkles text-xs"></i> Generate AI Rules
+                            </button>
+                        </div>
+
+                        <!-- Preset Quick Prompt Chips -->
+                        <div class="flex flex-wrap items-center gap-1.5 text-[11px]">
+                            <span class="text-slate-500 font-bold text-[10px] uppercase tracking-wider mr-1">Presets:</span>
+                            <button type="button" class="mv-preset-chip bg-slate-900 hover:bg-purple-900/40 text-slate-300 hover:text-purple-200 border border-slate-800 rounded-lg px-2.5 py-1 transition" data-prompt="Whenever narration contains Swiggy, Zomato, or food delivery, map to Staff Welfare Expenses">
+                                ⚡ Swiggy/Zomato → Staff Welfare
+                            </button>
+                            <button type="button" class="mv-preset-chip bg-slate-900 hover:bg-purple-900/40 text-slate-300 hover:text-purple-200 border border-slate-800 rounded-lg px-2.5 py-1 transition" data-prompt="Map all Paytm, PhonePe, GooglePay transactions containing recharge or mobile to Telephone & Internet Expenses">
+                                ⚡ PhonePe/Paytm → Telephone Exp
+                            </button>
+                            <button type="button" class="mv-preset-chip bg-slate-900 hover:bg-purple-900/40 text-slate-300 hover:text-purple-200 border border-slate-800 rounded-lg px-2.5 py-1 transition" data-prompt="All footwear items with orthotics or comfit in product name map to FOOTWEAR GST 5% with HSN 9021 and 5% GST">
+                                ⚡ Orthotics Footwear → FOOTWEAR GST 5%
+                            </button>
+                            <button type="button" class="mv-preset-chip bg-slate-900 hover:bg-purple-900/40 text-slate-300 hover:text-purple-200 border border-slate-800 rounded-lg px-2.5 py-1 transition" data-prompt="Map entries for Reliance Retail or Jio to Miscellaneous Expenses with GSTIN 27AAACR3456K1Z1">
+                                ⚡ Reliance Retail → Misc Expenses
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- AI Generated Rule Result Card -->
+                    <div id="mvAiRuleResultCard" class="hidden bg-slate-950/90 border border-purple-500/40 rounded-xl p-3.5 space-y-2 animate-fade-in">
+                        <div class="flex items-center justify-between border-b border-slate-800/80 pb-2">
+                            <span id="mvAiResultSummary" class="text-xs font-bold text-emerald-400 flex items-center gap-1.5">
+                                <i class="fa-solid fa-circle-check"></i> Rule Generated & Saved Successfully!
+                            </span>
+                            <span class="text-[10px] text-slate-500 font-mono">Status: Active in Memory</span>
+                        </div>
+                        <div id="mvAiResultBody" class="space-y-2 text-xs">
+                            <!-- Dynamic generated rules with concrete examples -->
+                        </div>
+                    </div>
+                </div>
+
+                <!-- SECTION B: LIVE RULE SIMULATOR -->
+                <div id="mvSimulatorSection" class="hidden bg-gradient-to-br from-cyan-950/20 via-slate-900 to-slate-950 border border-cyan-500/30 rounded-2xl p-4 space-y-3">
+                    <div class="flex items-center justify-between">
+                        <div class="flex items-center gap-2">
+                            <div class="h-7 w-7 rounded-lg bg-cyan-500/10 border border-cyan-500/20 flex items-center justify-center text-cyan-400">
+                                <i class="fa-solid fa-vial text-xs"></i>
+                            </div>
+                            <div>
+                                <h4 class="text-xs font-black text-white uppercase tracking-wider">Live Rule Simulator / Tester</h4>
+                                <p class="text-[11px] text-slate-400">Type any raw bank narration or product item text to test which Memory Vault rule matches in real time!</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="flex items-center gap-3">
+                        <input type="text" id="mvSimulateInput" placeholder="Type test narration: e.g. 'UPI-SWIGGY-19283-REST' or 'COMFIT MCP 8 FOOTWEAR'..." class="flex-1 bg-slate-950 border border-cyan-500/30 rounded-xl px-3.5 py-2 text-xs text-slate-100 placeholder-slate-500 focus:outline-none focus:border-cyan-400">
+                        <button id="mvSimulateBtn" type="button" class="bg-cyan-600 hover:bg-cyan-500 text-white font-bold px-4 py-2 rounded-xl text-xs transition flex items-center gap-1.5 whitespace-nowrap cursor-pointer">
+                            <i class="fa-solid fa-play text-xs"></i> Run Test Match
+                        </button>
+                    </div>
+
+                    <div id="mvSimulateResult" class="hidden bg-slate-950 border border-slate-800 rounded-xl p-3 text-xs space-y-1">
+                        <!-- Simulation result output -->
+                    </div>
+                </div>
+
+                <!-- SECTION C: ADD MANUAL RULE & BULK TOOLBAR -->
+                <div class="flex flex-wrap items-center justify-between gap-3 bg-slate-950/40 border border-slate-800 rounded-xl p-3">
+                    <!-- Manual Inputs -->
+                    <div class="flex items-center gap-2 flex-1 min-w-[300px]">
+                        <input type="text" id="mvNewKeyInput" placeholder="Narration keyword / Item name..." class="flex-1 bg-slate-900 border border-slate-800 rounded-lg px-3 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-purple-500">
+                        <input type="text" id="mvNewValInput" placeholder="Target Ledger / HSN Code..." class="flex-1 bg-slate-900 border border-slate-800 rounded-lg px-3 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-purple-500">
+                        <button id="mvSaveNewBtn" class="bg-purple-600 hover:bg-purple-500 text-white font-bold px-3.5 py-1.5 rounded-lg text-xs transition whitespace-nowrap shadow-md cursor-pointer">
+                            <i class="fa-solid fa-plus mr-1"></i> Add Manual Rule
+                        </button>
+                    </div>
+
+                    <!-- Bulk Actions Toolbar -->
+                    <div class="flex items-center gap-2">
+                        <button id="mvBulkDeleteBtn" class="hidden bg-rose-600/20 hover:bg-rose-600/30 text-rose-300 border border-rose-500/30 px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1 cursor-pointer">
+                            <i class="fa-solid fa-trash-can"></i> Delete Selected (<span id="mvSelectedCount">0</span>)
+                        </button>
+                    </div>
+                </div>
+
+                <!-- SECTION D: MEMORY RULES TABLE -->
+                <div class="border border-slate-850 rounded-xl overflow-hidden bg-slate-950/40 max-h-[380px] overflow-y-auto">
+                    <table class="w-full text-left border-collapse text-xs">
+                        <thead class="bg-slate-900 text-slate-400 font-bold sticky top-0 z-10 border-b border-slate-850 select-none">
+                            <tr>
+                                <th class="px-3 py-2.5 text-center w-8">
+                                    <input type="checkbox" id="mvSelectAllCheck" class="rounded bg-slate-800 border-slate-700 text-purple-600 focus:ring-0 cursor-pointer">
+                                </th>
+                                <th class="px-4 py-2.5">Memory Key / Search Pattern</th>
+                                <th class="px-4 py-2.5">Mapped Value / Ledger / Details</th>
+                                <th class="px-3 py-2.5 text-center">Source</th>
+                                <th class="px-4 py-2.5 text-right">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="mvTableBody" class="divide-y divide-slate-850/60">
+                            <!-- Dynamic memory items -->
+                        </tbody>
+                    </table>
+                </div>
+
+            </div>
+
+            <!-- Footer -->
+            <div class="px-6 py-3.5 border-t border-slate-850 bg-slate-950/80 flex justify-between items-center text-xs">
+                <div class="flex items-center gap-2">
+                    <span class="text-slate-500 font-medium">Active Client: <span id="mvClientIdBadge" class="text-purple-400 font-bold">CMP0021</span></span>
+                    <button id="modalAutoTrainMemoryBtn" class="ml-3 bg-purple-600/20 hover:bg-purple-600/30 text-purple-300 border border-purple-500/30 px-3 py-1 rounded-lg text-[11px] font-bold transition flex items-center gap-1.5 cursor-pointer" title="Scan 2+ years of historical DBF files and auto-train 500+ expense rules">
+                        <i class="fa-solid fa-brain"></i> Auto-Train From DBF History
+                    </button>
+                </div>
+                <button id="closeMemoryVaultFooterBtn" class="bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold px-4 py-1.5 rounded-lg transition cursor-pointer">Close</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- MAPPING CLARIFICATION MODAL -->
+    <div id="mappingModal" class="hidden fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center">
+        <div class="bg-darkcard border border-amber-500/50 rounded-2xl shadow-2xl w-[600px] overflow-hidden transform transition-all modal-animate-in">
+            <div class="px-6 py-4 border-b border-slate-800 flex justify-between items-center bg-amber-500/10">
+                <h3 class="text-lg font-bold text-white flex items-center gap-2 font-heading"><i class="fa-solid fa-circle-question text-amber-500"></i> AI Needs Clarification</h3>
+            </div>
+            <div class="p-6">
+                <div class="flex items-center justify-between gap-3 mb-3">
+                    <p class="text-xs text-slate-350 leading-relaxed flex-1">The AI found unknown ledger accounts. Assign target ledgers to teach the AI permanently.</p>
+                    <div class="relative w-48">
+                        <i class="fa-solid fa-magnifying-glass absolute left-3 top-2 text-slate-500 text-xs"></i>
+                        <input type="text" id="mappingModalSearch" placeholder="Search unmapped..." class="w-full bg-slate-900 border border-slate-800 rounded-xl pl-8 pr-3 py-1 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-amber-500">
+                    </div>
+                </div>
+                
+                <div id="globalPartyMappingBanner" class="bg-brand-600/10 border border-brand-500/30 rounded-xl p-4 mb-4 flex flex-col gap-2.5 shadow-sm">
+                    <div class="flex justify-between items-center">
+                        <label class="block text-xs font-bold text-brand-400 uppercase tracking-wider">
+                            <i class="fa-solid fa-bolt mr-1.5 text-amber-400"></i> Quick Bulk-Map All (<span id="unmappedPartyCountBadge">0</span>) Parties
+                        </label>
+                        <span class="text-[11px] text-slate-400">Apply 1 selection to all party rows below</span>
+                    </div>
+                    <div class="flex gap-2">
+                        <select id="globalPartyMappingSelect" class="bg-slate-900 border border-slate-800 rounded-xl py-2 px-3 text-slate-200 text-sm w-full focus:outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-500/50 cursor-pointer">
+                            <!-- Populated dynamically -->
+                        </select>
+                        <button type="button" id="applyGlobalPartyMappingBtn" class="bg-brand-600 hover:bg-brand-500 text-white font-bold px-4 py-2 rounded-xl text-sm transition shadow-md whitespace-nowrap active:scale-95">
+                            ⚡ Apply to All
+                        </button>
+                    </div>
+                </div>
+                
+                <div id="mappingList" class="space-y-4 max-h-[480px] overflow-y-auto pr-2 custom-scrollbar">
+                    <!-- Dynamic List -->
+                </div>
+            </div>
+            <div class="px-6 py-4 border-t border-slate-850 bg-slate-850/40 flex justify-end gap-3">
+                <button id="cancelMappingBtn" class="px-4 py-2 text-sm font-semibold text-slate-400 hover:text-slate-200 transition">Cancel Task</button>
+                <button id="saveMappingBtn" class="bg-amber-600 hover:bg-amber-500 text-white transform transition-all duration-200 hover:-translate-y-0.5 active:scale-95 px-5 py-2.5 rounded-lg text-sm font-bold transition shadow-lg shadow-amber-600/20">Teach AI & Continue</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- CREATE NEW MIRACLE LEDGER MODAL -->
+    <div id="createLedgerModal" class="hidden fixed inset-0 bg-black/75 backdrop-blur-md z-[100] flex items-center justify-center p-4">
+        <div class="bg-slate-900 border border-purple-500/40 rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden transform transition-all modal-animate-in">
+            <div class="px-6 py-4 border-b border-slate-800 flex justify-between items-center bg-purple-500/10">
+                <h3 class="text-lg font-bold text-white flex items-center gap-2 font-heading">
+                    <i class="fa-solid fa-plus-circle text-purple-400"></i> Create New Miracle Ledger
+                </h3>
+                <button id="closeLedgerModalBtn" class="text-slate-400 hover:text-white transition"><i class="fa-solid fa-xmark text-lg"></i></button>
+            </div>
+
+            <form id="createLedgerForm" class="p-6 space-y-4">
+                <div class="grid grid-cols-2 gap-3">
+                    <div>
+                        <label class="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-1.5">Ledger Name *</label>
+                        <input type="text" id="newLedgerName" required placeholder="e.g. SWIGGY FOODS" class="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2 text-sm text-white focus:outline-none focus:border-purple-500">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-1.5">Print / Legal Name (Optional)</label>
+                        <input type="text" id="newLedgerPrintName" placeholder="e.g. Swiggy Private Limited" class="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2 text-sm text-white focus:outline-none focus:border-purple-500">
+                    </div>
+                </div>
+
+                <div>
+                    <label class="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-1.5">Account Group * (Miracle Master Table RKACCM11)</label>
+                    <select id="newLedgerGroup" required class="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2 text-sm text-white focus:outline-none focus:border-purple-500">
+                        <option value="">-- Loading Miracle Account Groups... --</option>
+                    </select>
+                </div>
+
+                <div class="grid grid-cols-2 gap-3">
+                    <div>
+                        <label class="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-1.5">GSTIN (Optional)</label>
+                        <input type="text" id="newLedgerGstin" maxlength="15" placeholder="e.g. 24AAAAA0000A1Z5" class="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-purple-500 uppercase">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-1.5">PAN Number (Auto-Extracted)</label>
+                        <input type="text" id="newLedgerPan" maxlength="10" placeholder="e.g. AAAAA0000A" class="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-purple-500 uppercase">
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-2 gap-3">
+                    <div>
+                        <label class="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-1.5">State Code (Optional)</label>
+                        <select id="newLedgerStateCode" class="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-purple-500">
+                            <option value="">-- Select State Code --</option>
+                            <option value="24">24 - GUJARAT</option>
+                            <option value="27">27 - MAHARASHTRA</option>
+                            <option value="07">07 - DELHI</option>
+                            <option value="29">29 - KARNATAKA</option>
+                            <option value="33">33 - TAMIL NADU</option>
+                            <option value="09">09 - UTTAR PRADESH</option>
+                            <option value="19">19 - WEST BENGAL</option>
+                            <option value="08">08 - RAJASTHAN</option>
+                            <option value="23">23 - MADHYA PRADESH</option>
+                            <option value="06">06 - HARYANA</option>
+                            <option value="03">03 - PUNJAB</option>
+                            <option value="36">36 - TELANGANA</option>
+                            <option value="37">37 - ANDHRA PRADESH</option>
+                            <option value="32">32 - KERALA</option>
+                            <option value="21">21 - ODISHA</option>
+                            <option value="22">22 - CHHATTISGARH</option>
+                            <option value="10">10 - BIHAR</option>
+                            <option value="20">20 - JHARKHAND</option>
+                            <option value="30">30 - GOA</option>
+                            <option value="02">02 - HIMACHAL PRADESH</option>
+                            <option value="05">05 - UTTARAKHAND</option>
+                            <option value="01">01 - JAMMU AND KASHMIR</option>
+                            <option value="18">18 - ASSAM</option>
+                            <option value="97">97 - OTHER TERRITORY</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-1.5">City (Optional)</label>
+                        <input type="text" id="newLedgerCity" placeholder="e.g. Rajkot" class="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-purple-500">
+                    </div>
+                </div>
+
+                <div class="flex items-center gap-2 pt-2">
+                    <input type="checkbox" id="saveToMemoryVault" checked class="rounded border-slate-800 text-purple-600 focus:ring-0 bg-slate-950">
+                    <label for="saveToMemoryVault" class="text-xs text-slate-300">Remember rule in AI Memory Vault for future imports</label>
+                </div>
+
+                <div class="flex items-center justify-end gap-3 pt-4 border-t border-slate-800/80">
+                    <button type="button" id="cancelLedgerModalBtn" class="px-4 py-2 text-xs font-bold text-slate-400 hover:text-white bg-slate-800 rounded-xl transition">Cancel</button>
+                    <button type="submit" id="submitLedgerModalBtn" class="px-5 py-2.5 text-xs font-bold text-white bg-purple-600 hover:bg-purple-500 rounded-xl transition shadow-lg shadow-purple-600/20 flex items-center gap-1.5">
+                        <i class="fa-solid fa-floppy-disk"></i> Create & Assign Ledger
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- EDIT & RENAME MIRACLE LEDGER MODAL -->
+    <div id="editLedgerModal" class="hidden fixed inset-0 bg-black/75 backdrop-blur-md z-[100] flex items-center justify-center p-4">
+        <div class="bg-slate-900 border border-cyan-500/40 rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden transform transition-all modal-animate-in">
+            <div class="px-6 py-4 border-b border-slate-800 flex justify-between items-center bg-cyan-500/10">
+                <h3 class="text-lg font-bold text-white flex items-center gap-2 font-heading">
+                    <i class="fa-solid fa-pen-to-square text-cyan-400"></i> Edit & Rename Miracle Master Ledger
+                </h3>
+                <button id="closeEditLedgerModalBtn" class="text-slate-400 hover:text-white transition"><i class="fa-solid fa-xmark text-lg"></i></button>
+            </div>
+
+            <form id="editLedgerForm" class="p-6 space-y-4">
+                <div>
+                    <label class="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-1.5">Original / Raw Ledger Name</label>
+                    <input type="text" id="editLedgerOldName" readonly class="w-full bg-slate-950/60 border border-slate-800 rounded-xl px-3.5 py-2 text-sm text-slate-400 cursor-not-allowed font-mono">
+                </div>
+
+                <div class="grid grid-cols-2 gap-3">
+                    <div>
+                        <label class="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-1.5">Updated Clean Name *</label>
+                        <input type="text" id="editLedgerNewName" required placeholder="e.g. Aathira Chandran" class="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2 text-sm text-white focus:outline-none focus:border-cyan-500">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-1.5">Print / Legal Name (Optional)</label>
+                        <input type="text" id="editLedgerPrintName" placeholder="e.g. Aathira Chandran" class="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2 text-sm text-white focus:outline-none focus:border-cyan-500">
+                    </div>
+                </div>
+
+                <div>
+                    <label class="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-1.5">Account Group * (Miracle Master Table RKACCM11)</label>
+                    <select id="editLedgerGroup" required class="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2 text-sm text-white focus:outline-none focus:border-cyan-500">
+                        <option value="">-- Loading Account Groups... --</option>
+                    </select>
+                </div>
+
+                <div class="grid grid-cols-2 gap-3">
+                    <div>
+                        <label class="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-1.5">GSTIN (Optional)</label>
+                        <input type="text" id="editLedgerGstin" maxlength="15" placeholder="e.g. 24AAAAA0000A1Z5" class="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-cyan-500 uppercase">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-1.5">City (Optional)</label>
+                        <input type="text" id="editLedgerCity" placeholder="e.g. Rajkot" class="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-cyan-500">
+                    </div>
+                </div>
+
+                <div class="space-y-2 pt-2">
+                    <div class="flex items-center gap-2">
+                        <input type="checkbox" id="syncToMiracleDbf" checked class="rounded border-slate-800 text-cyan-600 focus:ring-0 bg-slate-950">
+                        <label for="syncToMiracleDbf" class="text-xs text-cyan-300 font-semibold">Sync updated name & group directly into Miracle DBF (RKACCM01.DBF)</label>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <input type="checkbox" id="saveEditToMemoryVault" checked class="rounded border-slate-800 text-cyan-600 focus:ring-0 bg-slate-950">
+                        <label for="saveEditToMemoryVault" class="text-xs text-slate-300">Save mapping rule to AI Memory Vault for future statement imports</label>
+                    </div>
+                </div>
+
+                <div class="flex items-center justify-end gap-3 pt-4 border-t border-slate-800/80">
+                    <button type="button" id="cancelEditLedgerModalBtn" class="px-4 py-2 text-xs font-bold text-slate-400 hover:text-white bg-slate-800 rounded-xl transition">Cancel</button>
+                    <button type="submit" id="submitEditLedgerModalBtn" class="px-5 py-2.5 text-xs font-bold text-white bg-cyan-600 hover:bg-cyan-500 rounded-xl transition shadow-lg shadow-cyan-600/20 flex items-center gap-1.5">
+                        <i class="fa-solid fa-floppy-disk"></i> Update & Sync Master Ledger
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- ENCRYPTED PDF PASSWORD MODAL -->
+    <div id="pdfPasswordModal" class="hidden fixed inset-0 bg-black/75 backdrop-blur-md z-[110] flex items-center justify-center p-4">
+        <div class="bg-slate-900 border border-amber-500/40 rounded-2xl shadow-2xl w-full max-w-md overflow-hidden transform transition-all modal-animate-in">
+            <div class="px-6 py-4 border-b border-slate-800 bg-amber-500/10 flex justify-between items-center">
+                <div class="flex items-center gap-2.5">
+                    <div class="w-8 h-8 rounded-lg bg-amber-500/20 text-amber-400 flex items-center justify-center text-sm font-bold">
+                        <i class="fa-solid fa-lock"></i>
+                    </div>
+                    <h3 class="text-base font-bold text-white font-heading">Protected PDF Detected</h3>
+                </div>
+                <button type="button" id="closePdfPasswordModalBtn" class="text-slate-400 hover:text-white transition">
+                    <i class="fa-solid fa-xmark text-lg"></i>
+                </button>
+            </div>
+            <form id="pdfPasswordForm" class="p-6 space-y-4">
+                <p id="pdfPasswordDesc" class="text-xs text-slate-300 leading-relaxed">
+                    The document is encrypted with a password. Please enter the password to process and extract data.
+                </p>
+                <div id="pdfPasswordErrorAlert" class="hidden bg-rose-500/10 border border-rose-500/30 rounded-xl p-3 text-xs text-rose-300 flex items-center gap-2">
+                    <i class="fa-solid fa-circle-exclamation text-rose-400"></i>
+                    <span id="pdfPasswordErrorMsg">Incorrect password. Please try again.</span>
+                </div>
+                <div>
+                    <label class="block text-xs font-semibold text-slate-400 mb-1.5">PDF Password</label>
+                    <div class="relative">
+                        <input type="password" id="pdfPasswordInput" placeholder="Enter PDF password..." required
+                            class="w-full bg-slate-950 border border-slate-750 rounded-xl px-3.5 py-2.5 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-amber-500 transition pr-10">
+                        <button type="button" id="togglePdfPasswordVisibilityBtn" class="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300 transition text-sm">
+                            <i class="fa-solid fa-eye" id="togglePdfPasswordIcon"></i>
+                        </button>
+                    </div>
+                </div>
+                <div class="pt-2 flex justify-end gap-2.5">
+                    <button type="button" id="cancelPdfPasswordBtn" class="px-4 py-2 text-xs font-bold text-slate-400 hover:text-white bg-slate-800 rounded-xl transition">Cancel</button>
+                    <button type="submit" id="submitPdfPasswordBtn" class="px-5 py-2.5 text-xs font-bold text-white bg-amber-600 hover:bg-amber-500 rounded-xl transition shadow-lg shadow-amber-600/20 flex items-center gap-1.5">
+                        <i class="fa-solid fa-unlock text-xs"></i> Unlock & Process
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- PRODUCT MAPPING RESOLUTION MODAL -->
+    <div id="productMappingModal" class="hidden fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center">
+        <div class="bg-darkcard border border-purple-500/50 rounded-xl shadow-2xl w-[700px] overflow-hidden transform transition-all modal-animate-in">
+            <div class="px-6 py-4 border-b border-slate-800 flex justify-between items-center bg-purple-500/10">
+                <h3 class="text-lg font-bold text-white flex items-center gap-2 font-heading"><i class="fa-solid fa-layer-group text-purple-400"></i> Match Product Items</h3>
+            </div>
+            <div class="p-6">
+                <p class="text-sm text-slate-350 mb-4 leading-relaxed">Select the correct product/item ledger for each item extracted from the document. The system will auto-learn these mappings.</p>
+                <div id="productMappingList" class="space-y-4 max-h-[400px] overflow-y-auto pr-2">
+                    <!-- Dynamic List -->
+                </div>
+            </div>
+            <div class="px-6 py-4 border-t border-slate-850 bg-slate-850/40 flex justify-end gap-3">
+                <button id="cancelProductMappingBtn" class="px-4 py-2 text-sm font-semibold text-slate-400 hover:text-slate-200 transition">Cancel</button>
+                <button id="saveProductMappingBtn" class="bg-purple-600 hover:bg-purple-500 text-white transform transition-all duration-200 hover:-translate-y-0.5 active:scale-95 px-5 py-2.5 rounded-lg text-sm font-bold transition shadow-lg shadow-purple-600/20">Save Mappings & Continue</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- AUDIT REPORT MODAL -->
+    <div id="auditReportModal" class="hidden fixed inset-0 bg-black/80 backdrop-blur-md z-50 flex items-center justify-center p-4">
+        <div class="bg-slate-900/95 border border-slate-750 rounded-2xl shadow-2xl shadow-black/90 w-[940px] max-w-[95vw] overflow-hidden transform transition-all flex flex-col max-h-[88vh] modal-animate-in">
+            
+            <!-- Modal Header -->
+            <div class="px-6 py-5 border-b border-slate-800/80 flex justify-between items-center bg-slate-950/80">
+                <div class="flex items-center gap-3">
+                    <div class="w-10 h-10 rounded-xl bg-brand-500/10 border border-brand-500/20 flex items-center justify-center text-brand-400 text-lg shadow-inner">
+                        <i class="fa-solid fa-clipboard-check"></i>
+                    </div>
+                    <div>
+                        <h3 class="text-lg font-bold text-white tracking-tight font-heading flex items-center gap-2">
+                            Miracle Injection Audit Report
+                            <span class="px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">Verified</span>
+                        </h3>
+                        <p class="text-xs text-slate-400 font-medium">Database injection summary, duplicate suppression log, and verification audit.</p>
+                    </div>
+                </div>
+                <button id="closeAuditReportBtn" class="w-8 h-8 rounded-lg bg-slate-800/60 hover:bg-slate-800 text-slate-400 hover:text-white transition flex items-center justify-center border border-slate-750">
+                    <i class="fa-solid fa-xmark text-base"></i>
+                </button>
+            </div>
+
+            <!-- Modal Body -->
+            <div class="p-6 space-y-6 overflow-y-auto flex-1 text-sm custom-scrollbar">
+                
+                <!-- Metric Cards Grid -->
+                <div class="grid grid-cols-4 gap-4">
+                    <div class="bg-slate-950/60 p-4 border border-emerald-500/20 rounded-xl text-center shadow-sm relative overflow-hidden group">
+                        <div class="absolute inset-0 bg-emerald-500/5 group-hover:bg-emerald-500/10 transition-colors"></div>
+                        <div class="relative">
+                            <div class="text-slate-400 text-xs font-bold uppercase tracking-wider mb-1 flex items-center justify-center gap-1.5">
+                                <i class="fa-solid fa-check-double text-emerald-400 text-[11px]"></i> Injected
+                            </div>
+                            <div id="auditInjectedCount" class="text-3xl font-black text-emerald-400 tracking-tight">0</div>
+                        </div>
+                    </div>
+                    <div class="bg-slate-950/60 p-4 border border-amber-500/20 rounded-xl text-center shadow-sm relative overflow-hidden group">
+                        <div class="absolute inset-0 bg-amber-500/5 group-hover:bg-amber-500/10 transition-colors"></div>
+                        <div class="relative">
+                            <div class="text-slate-400 text-xs font-bold uppercase tracking-wider mb-1 flex items-center justify-center gap-1.5">
+                                <i class="fa-solid fa-copy text-amber-400 text-[11px]"></i> Duplicates
+                            </div>
+                            <div id="auditDuplicateCount" class="text-3xl font-black text-amber-400 tracking-tight">0</div>
+                        </div>
+                    </div>
+                    <div class="bg-slate-950/60 p-4 border border-rose-500/20 rounded-xl text-center shadow-sm relative overflow-hidden group">
+                        <div class="absolute inset-0 bg-rose-500/5 group-hover:bg-rose-500/10 transition-colors"></div>
+                        <div class="relative">
+                            <div class="text-slate-400 text-xs font-bold uppercase tracking-wider mb-1 flex items-center justify-center gap-1.5">
+                                <i class="fa-solid fa-triangle-exclamation text-rose-400 text-[11px]"></i> Anomalies
+                            </div>
+                            <div id="auditAnomalyCount" class="text-3xl font-black text-rose-400 tracking-tight">0</div>
+                        </div>
+                    </div>
+                    <div class="bg-slate-950/60 p-4 border border-indigo-500/20 rounded-xl text-center shadow-sm relative overflow-hidden group">
+                        <div class="absolute inset-0 bg-indigo-500/5 group-hover:bg-indigo-500/10 transition-colors"></div>
+                        <div class="relative">
+                            <div class="text-slate-400 text-xs font-bold uppercase tracking-wider mb-1 flex items-center justify-center gap-1.5">
+                                <i class="fa-solid fa-user-xmark text-indigo-400 text-[11px]"></i> Missing Parties
+                            </div>
+                            <div id="auditMissingCount" class="text-3xl font-black text-indigo-400 tracking-tight">0</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Duplicate Details Section -->
+                <div id="auditDupSection" class="hidden space-y-2.5">
+                    <div class="flex items-center justify-between">
+                        <h4 class="text-xs font-bold text-slate-300 uppercase tracking-wider flex items-center gap-2">
+                            <i class="fa-solid fa-copy text-amber-400"></i> Skipped Duplicate Vouchers
+                        </h4>
+                        <span id="auditDupBadgeCount" class="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-amber-500/10 text-amber-400 border border-amber-500/20">0 items</span>
+                    </div>
+                    <div class="border border-slate-800 rounded-xl overflow-hidden max-h-[220px] overflow-y-auto custom-scrollbar bg-slate-950/40">
+                        <table class="w-full text-left border-collapse text-xs">
+                            <thead class="bg-slate-950 sticky top-0 text-slate-400 border-b border-slate-800/80 font-semibold uppercase tracking-wider text-[11px] z-10">
+                                <tr>
+                                    <th class="px-4 py-2.5 whitespace-nowrap">Date</th>
+                                    <th class="px-4 py-2.5 whitespace-nowrap min-w-[140px]">Bill No</th>
+                                    <th class="px-4 py-2.5 whitespace-nowrap">Party Name</th>
+                                    <th class="px-4 py-2.5 text-right whitespace-nowrap">Amount</th>
+                                    <th class="px-4 py-2.5 whitespace-nowrap">Skip Reason</th>
+                                    <th class="px-4 py-2.5 whitespace-nowrap">Module</th>
+                                </tr>
+                            </thead>
+                            <tbody id="auditDupTableBody" class="divide-y divide-slate-850">
+                                <!-- Dynamic rows -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- Logs / Messages -->
+                <div class="space-y-2.5">
+                    <h4 class="text-xs font-bold text-slate-300 uppercase tracking-wider flex items-center gap-2">
+                        <i class="fa-solid fa-list-check text-brand-400"></i> Audit Log Messages
+                    </h4>
+                    <div class="bg-slate-950 p-4 rounded-xl border border-slate-800/80 max-h-[160px] overflow-y-auto custom-scrollbar font-mono text-xs">
+                        <ul id="auditLogList" class="space-y-1.5">
+                            <!-- Dynamic Content -->
+                        </ul>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Footer Action Bar -->
+            <div class="px-6 py-4 border-t border-slate-800/80 bg-slate-950/80 flex items-center justify-between">
+                <div class="text-xs text-slate-400 font-medium flex items-center gap-1.5">
+                    <i class="fa-solid fa-shield-halved text-emerald-400"></i> Audit logs verified & synchronized
+                </div>
+                <div class="flex items-center gap-3">
+                    <button id="downloadAuditPdfBtn" class="bg-gradient-to-r from-red-600 via-rose-600 to-red-700 hover:from-red-500 hover:to-rose-500 text-white font-bold px-5 py-2.5 rounded-xl text-sm transition-all duration-200 shadow-lg shadow-red-600/25 flex items-center gap-2 transform hover:-translate-y-0.5 active:scale-95 border border-red-500/30">
+                        <i class="fa-solid fa-file-pdf text-base text-red-200"></i> Download Audit PDF
+                    </button>
+                    <button onclick="document.getElementById('auditReportModal').classList.add('hidden')" class="bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white px-5 py-2.5 rounded-xl text-sm font-semibold transition border border-slate-750 shadow-sm transform hover:-translate-y-0.5 active:scale-95">
+                        Dismiss Report
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Global Datalist for Searchable Grid Row Ledger Comboboxes -->
+    <datalist id="globalMiracleLedgersDatalist"></datalist>
+
+    <!-- Custom Toast Container -->
+    <div id="toastContainer" class="fixed top-6 right-6 z-50 flex flex-col gap-3 pointer-events-none"></div>
+
+    <!-- SCRIPTS -->
+    <script src="app.js?v=4.36"></script>
+</body>
+</html>

@@ -1,0 +1,20 @@
+Goods and Services Tax - GSTR-2A,,,,,,,,,,,,,,,,,,,,
+Taxable inward supplies received from registered persons,,,,,,,,,,,,,,,,,,,,
+GSTIN of supplier,Invoice number,Invoice type,Invoice Date,Invoice Value (%u20B9),Place of supply,Supply Attract Reverse Charge,Rate (%),Taxable Value,Integrated Tax,Central Tax,State/UT tax,Cess,GSTR-1/IFF/GSTR-1A/GSTR-5 Filing Status,GSTR-3B Filing Status,Amendment made if any,Tax Period in which Amended,Effective date of cancellation,Source,IRN,IRN Date
+24BLEPK7398P1Z9,GS/978/24-25,R, 11-10-2024,8260,Gujarat,N,18,7000,0,630,630,0,Y,N,-,-,-,-,-, -
+24BLEPK7398P1Z9,GS/978/24-25,R, 11-10-2024,8260,Gujarat,N,-,7000,0,630,630,0,Y,N,-,-,-,-,-, -
+,,,,,,,,,,,,,,,,,,,,
+27AACCU2435L1Z6,BOM7-67462,R, 13-10-2024,225.15,Gujarat,N,18,190.81,34.35,0,0,0,Y,Y,-,-,-,-,-, -
+27AACCU2435L1Z6,BOM7-67462,R, 13-10-2024,225.15,Gujarat,N,-,190.81,34.35,0,0,0,Y,Y,-,-,-,-,-, -
+,,,,,,,,,,,,,,,,,,,,
+08AACCT4199G1Z1,SOFT/316903,R, 12-10-2024,14443,Gujarat,N,18,12240,2203.2,0,0,0,Y,Y,-,-,-,-,-, -
+08AACCT4199G1Z1,SOFT/316903,R, 12-10-2024,14443,Gujarat,N,-,12240,2203.2,0,0,0,Y,Y,-,-,-,-,-, -
+,,,,,,,,,,,,,,,,,,,,
+27AAECR0564M1Z3,BOM7-3285998,R, 13-10-2024,141.55,Gujarat,N,18,119.96,21.59,0,0,0,Y,Y,-,-,-,-,-, -
+27AAECR0564M1Z3,BOM7-3285998,R, 13-10-2024,141.55,Gujarat,N,-,119.96,21.59,0,0,0,Y,Y,-,-,-,-,-, -
+,,,,,,,,,,,,,,,,,,,,
+27AAECR0564M1Z3,FBOC-161004,R, 13-10-2024,581.99,Gujarat,N,18,493.22,88.77,0,0,0,Y,Y,-,-,-,-,-, -
+27AAECR0564M1Z3,FBOC-161004,R, 13-10-2024,581.99,Gujarat,N,-,493.22,88.77,0,0,0,Y,Y,-,-,-,-,-, -
+,,,,,,,,,,,,,,,,,,,,
+24AMBPK8856D1Z3,GST/12241/24-25,R, 31-10-2024,20900,Gujarat,N,18,17711.86,0,1594.07,1594.07,0,Y,Y,-,-,-,E-Invoice,4eff7641d1494df4448b219ac24b587a1f1967f49e632480a3cbf3f6b99bf5fc, 31-10-2024
+24AMBPK8856D1Z3,GST/12241/24-25,R, 31-10-2024,20900,Gujarat,N,-,17711.86,0,1594.07,1594.07,0,Y,Y,-,-,-,E-Invoice,4eff7641d1494df4448b219ac24b587a1f1967f49e632480a3cbf3f6b99bf5fc, 31-10-2024

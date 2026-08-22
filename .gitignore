@@ -1,0 +1,38 @@
+# Virtual Environments
+venv/
+backend/venv/
+env/
+ENV/
+
+# Python Cache & Bytecode
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+
+# Local Settings & API Keys
+backend/settings.json
+backend/exhausted_models.json
+backend/extraction_status.json
+.env
+
+# Client Data & Local DBF Folders
+CMP*/
+backend/CMP*/
+backend/mock_CMP*/
+backend/CMP_MOCK_TEST/
+BACKUPS/
+temp_uploads/
+backend/temp_uploads/
+
+# PyInstaller Build Output & Executables
+miracle_bridge/build/
+miracle_bridge/dist/
+miracle_bridge/*.spec
+*.exe
+
+# OS & IDE Metadata
+.DS_Store
+.vscode/
+.idea/
+*.swp

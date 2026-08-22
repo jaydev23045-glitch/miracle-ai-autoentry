@@ -1,0 +1,4 @@
+24/07/2026 14:29:55	Access to the path 'C:\WINDOWS\SysWOW64\bsVaultSDK.dll' is denied. ##    at System.IO.__Error.WinIOError(Int32 errorCode, String maybeFullPath)
+   at System.IO.File.InternalCopy(String sourceFileName, String destFileName, Boolean overwrite, Boolean checkHost)
+   at System.IO.File.Copy(String sourceFileName, String destFileName, Boolean overwrite)
+   at MUpdate.frmUpgrade.CopyFiles()

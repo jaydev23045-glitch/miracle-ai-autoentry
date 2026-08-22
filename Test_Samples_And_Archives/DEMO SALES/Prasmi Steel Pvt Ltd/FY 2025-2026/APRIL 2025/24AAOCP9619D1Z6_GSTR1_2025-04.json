@@ -1,0 +1,137 @@
+{
+  "gstin": "24AAOCP9619D1Z6",
+  "fp": "042025",
+  "hash": "hash",
+  "b2b": [
+    {
+      "ctin": "24AAYFK5595N1Z7",
+      "inv": [
+        {
+          "inum": "PSPL/01/2025-26",
+          "idt": "01-04-2025",
+          "val": 330537.0,
+          "pos": "24",
+          "rchrg": "N",
+          "inv_typ": "R",
+          "itms": [
+            {
+              "num": 1,
+              "itm_det": {
+                "txval": 280116,
+                "rt": 18,
+                "camt": 25210.44,
+                "samt": 25210.44,
+                "csamt": 0
+              }
+            }
+          ]
+        },
+        {
+          "inum": "PSPL/02/2025-26",
+          "idt": "24-04-2025",
+          "val": 380800.0,
+          "pos": "24",
+          "rchrg": "N",
+          "inv_typ": "R",
+          "itms": [
+            {
+              "num": 1,
+              "itm_det": {
+                "txval": 322712,
+                "rt": 18,
+                "camt": 29044.08,
+                "samt": 29044.08,
+                "csamt": 0
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "cdnr": [
+    {
+      "ctin": "24AAYFK5595N1Z7",
+      "nt": [
+        {
+          "nt_num": "CN/01/2025-26",
+          "nt_dt": "04-04-2025",
+          "pos": "24",
+          "rchrg": "N",
+          "inv_typ": "R",
+          "ntty": "C",
+          "val": 330537,
+          "itms": [
+            {
+              "num": 1,
+              "itm_det": {
+                "rt": 18,
+                "txval": 280116,
+                "camt": 25210.44,
+                "samt": 25210.44,
+                "csamt": 0
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "doc_issue": {
+    "doc_det": [
+      {
+        "doc_num": 5,
+        "doc_typ": "Credit Note",
+        "docs": [
+          {
+            "num": 1,
+            "from": "CN/01/2025   -26",
+            "to": "CN/01/2025   -26",
+            "totnum": 1,
+            "cancel": 0,
+            "net_issue": 1
+          }
+        ]
+      },
+      {
+        "doc_num": 1,
+        "doc_typ": "Invoices for outward supply",
+        "docs": [
+          {
+            "num": 1,
+            "from": "PSPL/02/20 25-26",
+            "to": "PSPL/02/20 25-26",
+            "totnum": 1,
+            "cancel": 0,
+            "net_issue": 1
+          },
+          {
+            "num": 2,
+            "from": "PSPL/01/20 25-26",
+            "to": "PSPL/01/20 25-26",
+            "totnum": 1,
+            "cancel": 0,
+            "net_issue": 1
+          }
+        ]
+      }
+    ]
+  },
+  "hsn": {
+    "data": [
+      {
+        "num": 1,
+        "hsn_sc": "72041000",
+        "desc": "WASTE & SCRAP",
+        "uqc": "KGS",
+        "qty": 8560,
+        "rt": 18,
+        "txval": 322712,
+        "iamt": 0,
+        "samt": 29044.08,
+        "camt": 29044.08,
+        "csamt": 0
+      }
+    ]
+  }
+}

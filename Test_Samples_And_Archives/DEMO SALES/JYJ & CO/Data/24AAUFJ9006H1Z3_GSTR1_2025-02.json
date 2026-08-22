@@ -1,0 +1,66 @@
+{
+  "gstin": "24AAUFJ9006H1Z3",
+  "fp": "022025",
+  "hash": "hash",
+  "b2b": [
+    {
+      "ctin": "27AAEPS1709G1ZR",
+      "inv": [
+        {
+          "inum": "GT/4/24-25",
+          "idt": "05-02-2025",
+          "val": 1770.0,
+          "pos": "27",
+          "rchrg": "N",
+          "inv_typ": "R",
+          "itms": [
+            {
+              "num": 1,
+              "itm_det": {
+                "txval": 1500,
+                "rt": 18,
+                "iamt": 270,
+                "csamt": 0
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "doc_issue": {
+    "doc_det": [
+      {
+        "doc_num": 1,
+        "doc_typ": "Invoices for outward supply",
+        "docs": [
+          {
+            "num": 1,
+            "from": "GT/4/24-25",
+            "to": "GT/4/24-25",
+            "totnum": 1,
+            "cancel": 0,
+            "net_issue": 1
+          }
+        ]
+      }
+    ]
+  },
+  "hsn": {
+    "data": [
+      {
+        "num": 1,
+        "hsn_sc": "9983",
+        "desc": "PROFESSIONAL SERVICES",
+        "uqc": "NA",
+        "qty": 0,
+        "rt": 18,
+        "txval": 1500,
+        "iamt": 270,
+        "samt": 0,
+        "camt": 0,
+        "csamt": 0
+      }
+    ]
+  }
+}

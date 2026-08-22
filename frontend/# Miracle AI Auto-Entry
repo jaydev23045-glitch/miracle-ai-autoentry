@@ -1,0 +1,44 @@
+# Miracle AI Auto-Entry
+
+
+# Miracle AI
+Auto-Entry Dashboard
+[Sales Vouchers](http://localhost:8000/)
+[Purchase Vouchers](http://localhost:8000/)
+[Bank Statements](http://localhost:8000/)
+[Cash Entries](http://localhost:8000/)
+[Opening Balances](http://localhost:8000/)
+
+## Sales Entry Module
+
+### No Document Loaded
+Document Viewer
+Upload a transaction document to review it side-by-side with AI extractions.
+
+### Processing Document
+AI is extracting details and structure from PDF...
+
+### Configure Settings
+The main folder containing all client directories (CMPxxxx).
+Stores ledger rules and learns mappings permanently.
+
+#### Client Configuration settings
+Voucher structure index in Miracle database.
+Voucher structure index in Miracle database.
+
+#### Voucher Prefixes & Series
+
+#### AI Company Brain Profile
+If the invoice item doesn't exist in Miracle, it maps to this fallback selection instead of failing.
+
+### AI Needs Clarification
+The AI found unknown ledger accounts in the document. Teach the AI where these belong in Miracle. It will memorize these mapping rules permanently.
+
+### Match Product Items
+Select the correct product/item ledger for each item extracted from the document. The system will auto-learn these mappings.
+
+### Miracle Injection Audit Report
+
+#### Skipped Duplicate Vouchers
+
+#### Audit Log Messages

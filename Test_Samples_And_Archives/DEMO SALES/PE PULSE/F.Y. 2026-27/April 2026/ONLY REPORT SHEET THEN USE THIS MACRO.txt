@@ -1,0 +1,189 @@
+Sub ProcessSaleReportWithFullSeparationAndTotals()
+    Dim wsReport As Worksheet, wsB2B As Worksheet, wsB2C As Worksheet, wsCash As Worksheet
+    Dim sht As Worksheet
+    Dim lastRowReport As Long, outB2B As Long, outB2C As Long, outCash As Long
+    Dim i As Long, j As Long
+    Dim invoiceNo As String, headerText As String, payType As String, gstin As String
+    Dim rawDate As String, properDate As Variant
+    Dim totalAmt As Double, grossAmt As Double, gstAmt As Double
+    
+    ' --- DYNAMIC COLUMN VARIABLES ---
+    Dim rRow As Long, rDateCol As Long, rPartyCol As Long, rGSTINCol As Long
+    Dim rInvCol As Long, rAmtCol As Long, rPayCol As Long
+    
+    ' 1. Safely locate the 'Sale Report' sheet
+    For Each sht In ThisWorkbook.Sheets
+        If InStr(1, sht.Name, "Sale Report", vbTextCompare) > 0 Then
+            Set wsReport = sht
+            Exit For
+        End If
+    Next sht
+
+    If wsReport Is Nothing Then
+        MsgBox "Could not find 'Sale Report' sheet. Please verify your tab name.", vbCritical
+        Exit Sub
+    End If
+
+    ' 2. Recreate target accounting sheets cleanly
+    Application.DisplayAlerts = False
+    On Error Resume Next
+    ThisWorkbook.Sheets("Miracle Registered B2B").Delete
+    ThisWorkbook.Sheets("Miracle Unregistered B2C").Delete
+    ThisWorkbook.Sheets("Miracle Cash Sales").Delete
+    On Error GoTo 0
+    Application.DisplayAlerts = True
+    
+    Set wsB2B = ThisWorkbook.Sheets.Add(After:=ThisWorkbook.Sheets(ThisWorkbook.Sheets.Count))
+    wsB2B.Name = "Miracle Registered B2B"
+    
+    Set wsB2C = ThisWorkbook.Sheets.Add(After:=ThisWorkbook.Sheets(ThisWorkbook.Sheets.Count))
+    wsB2C.Name = "Miracle Unregistered B2C"
+    
+    Set wsCash = ThisWorkbook.Sheets.Add(After:=ThisWorkbook.Sheets(ThisWorkbook.Sheets.Count))
+    wsCash.Name = "Miracle Cash Sales"
+
+    ' 3. Initialize Layout Templates
+    Dim headers As Variant
+    headers = Array("Date", "Party Name", "Party's GSTIN No.", "Invoice No.", _
+                    "Gross Amount (Taxable)", "GST %", "GST Amount", "Final Amount", "Payment Type")
+    
+    Dim wsTarget As Variant
+    For Each wsTarget In Array(wsB2B, wsB2C, wsCash)
+        wsTarget.Range("A1").Resize(1, UBound(headers) + 1).Value = headers
+        wsTarget.Range("A1").Resize(1, UBound(headers) + 1).Font.Bold = True
+    Next wsTarget
+    
+    wsB2B.Range("A1:I1").Interior.Color = RGB(200, 230, 201) ' Soft Green
+    wsB2C.Range("A1:I1").Interior.Color = RGB(174, 214, 241) ' Soft Blue
+    wsCash.Range("A1:I1").Interior.Color = RGB(255, 235, 165) ' Soft Yellow
+
+    ' Locate column indexes dynamically from row headers
+    For i = 1 To 5
+        For j = 1 To 15
+            headerText = Replace(Replace(wsReport.Cells(i, j).Text, Chr(10), ""), Chr(13), "")
+            If InStr(1, headerText, "Date", vbTextCompare) > 0 Then rDateCol = j
+            If InStr(1, headerText, "Party Name", vbTextCompare) > 0 Then rPartyCol = j
+            If InStr(1, headerText, "GSTIN", vbTextCompare) > 0 Then rGSTINCol = j
+            If InStr(1, headerText, "Invoice No", vbTextCompare) > 0 Then rInvCol = j
+            If InStr(1, headerText, "Total Amount", vbTextCompare) > 0 Then rAmtCol = j
+            If InStr(1, headerText, "Payment Type", vbTextCompare) > 0 Then rPayCol = j
+        Next j
+        If rInvCol > 0 Then
+            rRow = i
+            Exit For
+        End If
+    Next i
+
+    If rInvCol = 0 Or rAmtCol = 0 Or rPayCol = 0 Then
+        MsgBox "Error: Required columns are missing from the report structure.", vbCritical
+        Exit Sub
+    End If
+
+    ' 4. Core Processing & Sorting Logic
+    lastRowReport = wsReport.Cells(wsReport.Rows.Count, rInvCol).End(xlUp).Row
+    outB2B = 2: outB2C = 2: outCash = 2
+
+    Dim chosenWs As Worksheet
+    Dim currentOutRow As Long
+
+    For i = rRow + 1 To lastRowReport
+        If wsReport.Rows(i).Hidden = False Then ' Respects filter selections
+            If Not IsError(wsReport.Cells(i, rInvCol).Value) And Not IsError(wsReport.Cells(i, rAmtCol).Value) Then
+                invoiceNo = Trim(wsReport.Cells(i, rInvCol).Text)
+                
+                If invoiceNo <> "" And LCase(invoiceNo) <> "total" Then
+                    payType = Trim(wsReport.Cells(i, rPayCol).Text)
+                    gstin = Trim(wsReport.Cells(i, rGSTINCol).Text)
+                    
+                    ' Determine correct target routing sheet
+                    If LCase(payType) = "cash" Then
+                        Set chosenWs = wsCash
+                        currentOutRow = outCash
+                        outCash = outCash + 1
+                    ElseIf gstin <> "" And Len(gstin) >= 10 Then
+                        Set chosenWs = wsB2B
+                        currentOutRow = outB2B
+                        outB2B = outB2B + 1
+                    Else
+                        Set chosenWs = wsB2C
+                        currentOutRow = outB2C
+                        outB2C = outB2C + 1
+                    End If
+                    
+                    ' Clean and extract date formats
+                    rawDate = Trim(wsReport.Cells(i, rDateCol).Text)
+                    rawDate = Replace(Replace(Replace(rawDate, Chr(10), ""), Chr(13), ""), " ", "")
+                    If IsDate(rawDate) Then
+                        properDate = CDate(rawDate)
+                    ElseIf Len(rawDate) >= 10 And InStr(rawDate, "/") > 0 Then
+                        properDate = DateSerial(Val(Right(rawDate, 4)), Val(Mid(rawDate, 4, 2)), Val(Left(rawDate, 2)))
+                    Else
+                        properDate = rawDate
+                    End If
+                    chosenWs.Cells(currentOutRow, 1).Value = properDate
+
+                    ' Populate standard accounting blocks
+                    If rPartyCol > 0 Then chosenWs.Cells(currentOutRow, 2).Value = wsReport.Cells(i, rPartyCol).Text
+                    chosenWs.Cells(currentOutRow, 3).Value = gstin
+                    chosenWs.Cells(currentOutRow, 4).Value = invoiceNo
+                    
+                    ' --- REVERSE GST CALCULATIONS (5%) ---
+                    totalAmt = Val(wsReport.Cells(i, rAmtCol).Text)
+                    
+                    If totalAmt > 0 Then
+                        grossAmt = Round(totalAmt / 1.05, 2)
+                        gstAmt = Round(totalAmt - grossAmt, 2)
+                        
+                        chosenWs.Cells(currentOutRow, 5).Value = grossAmt
+                        chosenWs.Cells(currentOutRow, 6).Value = "5%"
+                        chosenWs.Cells(currentOutRow, 7).Value = gstAmt
+                        chosenWs.Cells(currentOutRow, 8).Value = Round(grossAmt + gstAmt, 2)
+                    Else
+                        chosenWs.Cells(currentOutRow, 5).Value = 0
+                        chosenWs.Cells(currentOutRow, 6).Value = "0%"
+                        chosenWs.Cells(currentOutRow, 7).Value = 0
+                        chosenWs.Cells(currentOutRow, 8).Value = 0
+                    End If
+                    
+                    chosenWs.Cells(currentOutRow, 9).Value = payType
+                End If
+            End If
+        End If
+    Next i
+
+    ' 5. Inject Auto-Totals & Apply Clean Formats to All Sheets
+    Dim finalWs As Variant, tRow As Long
+    For Each finalWs In Array(wsB2B, wsB2C, wsCash)
+        ' Identify the final item row in column D (Invoice No)
+        tRow = finalWs.Cells(finalWs.Rows.Count, "D").End(xlUp).Row
+        
+        If tRow >= 2 Then
+            tRow = tRow + 2 ' Insert two rows lower for dynamic visual spacing
+            
+            finalWs.Cells(tRow, 2).Value = "Total"
+            finalWs.Cells(tRow, 2).Font.Bold = True
+            
+            ' Apply calculation strings
+            finalWs.Cells(tRow, 5).Formula = "=SUM(E2:E" & (tRow - 2) & ")" ' Gross Sum
+            finalWs.Cells(tRow, 7).Formula = "=SUM(G2:G" & (tRow - 2) & ")" ' GST Sum
+            finalWs.Cells(tRow, 8).Formula = "=SUM(H2:H" & (tRow - 2) & ")" ' Final Amount Sum
+            
+            ' Apply auditing double-underline styles to the calculation block
+            With finalWs.Range(finalWs.Cells(tRow, 1), finalWs.Cells(tRow, 9))
+                .Font.Bold = True
+                .Borders(xlEdgeTop).LineStyle = xlContinuous
+                .Borders(xlEdgeBottom).LineStyle = xlDouble
+            End With
+        End If
+        
+        ' Format outputs elegantly
+        finalWs.Columns(1).NumberFormat = "dd/mm/yyyy"
+        finalWs.Columns("E").NumberFormat = "0.00"
+        finalWs.Columns("G").NumberFormat = "0.00"
+        finalWs.Columns("H").NumberFormat = "0.00"
+        finalWs.Columns.AutoFit
+    Next finalWs
+    
+    MsgBox "Sale Report split, tax-backed, and structured with automatic formula total lines!", vbInformation
+End Sub
+

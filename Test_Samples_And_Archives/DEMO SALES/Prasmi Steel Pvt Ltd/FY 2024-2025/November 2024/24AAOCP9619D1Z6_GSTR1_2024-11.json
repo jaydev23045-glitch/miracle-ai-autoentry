@@ -1,0 +1,95 @@
+{
+  "gstin": "24AAOCP9619D1Z6",
+  "fp": "112024",
+  "hash": "hash",
+  "b2b": [
+    {
+      "ctin": "24AAMFM7702K1Z2",
+      "inv": [
+        {
+          "inum": "GST/01/2024-25",
+          "idt": "28-11-2024",
+          "val": 408870.0,
+          "pos": "24",
+          "rchrg": "N",
+          "inv_typ": "R",
+          "itms": [
+            {
+              "num": 1,
+              "itm_det": {
+                "txval": 346500,
+                "rt": 18,
+                "camt": 31185,
+                "samt": 31185,
+                "csamt": 0
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "doc_issue": {
+    "doc_det": [
+      {
+        "doc_num": 1,
+        "doc_typ": "Invoices for outward supply",
+        "docs": [
+          {
+            "num": 1,
+            "from": "GST/01/202  4-25",
+            "to": "GST/01/202  4-25",
+            "totnum": 1,
+            "cancel": 0,
+            "net_issue": 1
+          }
+        ]
+      }
+    ]
+  },
+  "hsn": {
+    "data": [
+      {
+        "num": 1,
+        "hsn_sc": "72041000",
+        "desc": "WASTE & SCRAPE",
+        "uqc": "KGS",
+        "qty": 9000,
+        "rt": 18,
+        "txval": 346500,
+        "iamt": 0,
+        "samt": 31185,
+        "camt": 31185,
+        "csamt": 0
+      }
+    ]
+  },
+  "nil": {
+    "inv": [
+      {
+        "sply_ty": "INTRB2B",
+        "expt_amt": 0,
+        "nil_amt": 0,
+        "ngsup_amt": 0
+      },
+      {
+        "sply_ty": "INTRAB2B",
+        "expt_amt": 0,
+        "nil_amt": 0,
+        "ngsup_amt": 0
+      },
+      {
+        "sply_ty": "INTRB2C",
+        "expt_amt": 0,
+        "nil_amt": 0,
+        "ngsup_amt": 0
+      },
+      {
+        "sply_ty": "INTRAB2C",
+        "expt_amt": 0,
+        "nil_amt": 0,
+        "ngsup_amt": 0
+      }
+    ]
+  }
+}

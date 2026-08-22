@@ -1,0 +1,11 @@
+fastapi>=0.100.0
+uvicorn>=0.22.0
+python-multipart>=0.0.6
+pypdf>=3.15.0
+pdfplumber>=0.9.0
+dbfread>=2.0.7
+dbf>=0.99.3
+google-genai>=0.1.0
+pandas>=2.0.0
+openpyxl>=3.1.0
+requests>=2.30.0

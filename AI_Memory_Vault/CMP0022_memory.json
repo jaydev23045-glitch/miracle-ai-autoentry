@@ -1,0 +1,21 @@
+{
+    "expense_mappings": {},
+    "custom_fields": {},
+    "product_mappings": {
+        "gst_rules": {},
+        "keyword_rules": {
+            "m12 x 1 brass body 12*65": "M12*1 Brass Body"
+        },
+        "instructions": ""
+    },
+    "company_settings": {
+        "sales_prefix": "SS,SS",
+        "purchase_prefix": "PP,PP",
+        "sales_setup_id": 5,
+        "purchase_setup_id": 5,
+        "sales_bill_format": "EBG/     1/26-{num}",
+        "sales_last_bill_number": 9999,
+        "purchase_bill_format": "{num}",
+        "purchase_last_bill_number": 0
+    }
+}
