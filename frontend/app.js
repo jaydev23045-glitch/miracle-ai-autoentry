@@ -249,10 +249,26 @@ document.addEventListener('DOMContentLoaded', () => {
             memoryPathInput.value = savedMemoryPath;
             localStorage.setItem('memoryPath', savedMemoryPath);
 
-            const savedBackupPath = settings.backup_path || localStorage.getItem('backupPath') || '';
+            let savedBackupPath = settings.backup_path || localStorage.getItem('backupPath') || '';
             if (backupPathInput) {
                 backupPathInput.value = savedBackupPath;
             }
+            if (savedBackupPath) localStorage.setItem('backupPath', savedBackupPath);
+
+            if (isLocalBridgeOnline) {
+                try {
+                    const localRes = await fetch(`${LOCAL_BRIDGE_URL}/api/local-clients?base_path=${encodeURIComponent(savedMiraclePath)}`);
+                    if (localRes.ok) {
+                        const localData = await localRes.json();
+                        if (localData && localData.clients && localData.clients.length > 0) {
+                            discoveredClients = localData.clients.map(c => typeof c === 'string' ? { id: c, name: c } : c);
+                        }
+                    }
+                } catch (e) {
+                    console.warn("Failed to fetch clients from local bridge:", e);
+                }
+            }
+
             if (inlineBackupPath) {
                 inlineBackupPath.value = savedBackupPath;
                 syncInlineBackupBadge();
@@ -567,7 +583,12 @@ document.addEventListener('DOMContentLoaded', () => {
     async function fetchClientYears(clientId, selectedYear = "") {
         if (!clientId) return;
         try {
-            const res = await fetch(`${API_URL}/api/client-years?client_id=${clientId}`);
+            const currentMiraclePath = miracleBasePathInput ? miracleBasePathInput.value.trim() : 'C:\\Miracle';
+            const yearFetchUrl = isLocalBridgeOnline
+                ? `${LOCAL_BRIDGE_URL}/api/local-years?base_path=${encodeURIComponent(currentMiraclePath)}&client_id=${encodeURIComponent(clientId)}`
+                : `${API_URL}/api/client-years?client_id=${encodeURIComponent(clientId)}`;
+
+            const res = await fetch(yearFetchUrl);
             if (!res.ok) throw new Error("Failed to fetch client years");
             const data = await res.json();
             const years = data.years || [];

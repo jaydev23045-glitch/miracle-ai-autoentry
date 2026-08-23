@@ -209,18 +209,72 @@ def get_local_clients(base_path: str = "C:\\Miracle"):
         full_p = os.path.join(base_path, d)
         if os.path.isdir(full_p) and d.upper().startswith("CMP"):
             try:
-                handler = MiracleDBFHandler(base_path, d)
+                handler = MiracleDBFHandler(full_p)
                 company_name = handler.get_company_name()
                 clients.append({"id": d, "name": company_name or d})
             except Exception:
                 clients.append({"id": d, "name": d})
     return {"clients": sorted(clients, key=lambda x: x["id"])}
 
+@app.get("/api/local-years")
+def get_local_years(base_path: str = "C:\\Miracle", client_id: str = "CMP0001"):
+    """Lists all available financial year folders (YRxx) in local client directory"""
+    if not base_path or not os.path.exists(base_path):
+        return {"years": [], "recommended": ""}
+    
+    client_path = os.path.join(base_path, client_id)
+    if not os.path.exists(client_path):
+        return {"years": [], "recommended": ""}
+        
+    try:
+        handler = MiracleDBFHandler(client_path)
+        available = handler.get_available_year_folders()
+        recommended = handler.get_latest_year_folder()
+        bounds_map = handler.get_all_year_folder_bounds()
+        
+        mapped_years = []
+        for yinfo in available:
+            y = yinfo['name']
+            is_valid = yinfo['is_valid']
+            has_transactions = yinfo['has_transactions']
+            
+            b_info = bounds_map.get(y, {})
+            f_start = b_info.get("fy_start", "")
+            f_end = b_info.get("fy_end", "")
+            
+            if f_start and f_end and len(f_start) >= 4 and len(f_end) >= 4:
+                fy_s_yr = f_start[:4]
+                fy_e_yr = f_end[:4]
+                label = f"{fy_s_yr}-{str(fy_e_yr)[-2:]} ({y})"
+            else:
+                try:
+                    num = int(y[2:])
+                    fy_end = 2000 + num
+                    fy_start = fy_end - 1
+                    label = f"{fy_start}-{str(fy_end)[-2:]} ({y})"
+                except Exception:
+                    label = y
+            
+            mapped_years.append({
+                "folder": y,
+                "label": label,
+                "is_valid": is_valid,
+                "has_transactions": has_transactions,
+                "recommended": (y == recommended)
+            })
+        return {"years": mapped_years, "recommended": recommended}
+    except Exception as e:
+        print(f"Error fetching local years: {e}")
+        return {"years": [], "recommended": ""}
+
 @app.get("/api/local-ledgers")
 def get_local_ledgers(base_path: str = "C:\\Miracle", client_id: str = "CMP0005", year_folder: str = "YR25"):
     """Reads classified party ledgers directly from local DBF files on client machine"""
+    client_path = os.path.join(base_path, client_id)
+    if not os.path.exists(client_path):
+        return {"status": "success", "ledgers": []}
     try:
-        handler = MiracleDBFHandler(base_path, client_id)
+        handler = MiracleDBFHandler(client_path)
         ledgers = handler.get_all_ledgers(year_folder)
         return {"status": "success", "ledgers": ledgers}
     except Exception as e:
@@ -229,8 +283,11 @@ def get_local_ledgers(base_path: str = "C:\\Miracle", client_id: str = "CMP0005"
 @app.get("/api/local-groups")
 def get_local_groups(base_path: str = "C:\\Miracle", client_id: str = "CMP0005"):
     """Reads account groups hierarchy directly from local RKACCM11.DBF"""
+    client_path = os.path.join(base_path, client_id)
+    if not os.path.exists(client_path):
+        return {"status": "success", "groups": []}
     try:
-        handler = MiracleDBFHandler(base_path, client_id)
+        handler = MiracleDBFHandler(client_path)
         groups = handler.get_account_groups()
         return {"status": "success", "groups": groups}
     except Exception as e:

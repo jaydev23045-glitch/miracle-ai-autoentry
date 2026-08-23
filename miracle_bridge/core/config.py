@@ -55,3 +55,35 @@ def clean_api_key(key: str) -> str:
         if token_clean.startswith("AIzaSy") or token_clean.startswith("AQ."):
             return token_clean
     return key
+
+def get_company_name(client_path: str) -> str:
+    from dbfread import DBF
+    c_path = Path(client_path)
+    mei_path = c_path / "rkcmpmei.dbf"
+    if not mei_path.exists():
+        mei_path = c_path / "RKCMPMEI.DBF"
+    
+    name = ""
+    if mei_path.exists():
+        try:
+            db = DBF(str(mei_path))
+            for r in db:
+                name = str(r.get('MEIF03', '')).strip()
+                break
+        except Exception:
+            pass
+            
+    if not name:
+        mm_path = c_path / "rkcmpmm.dbf"
+        if not mm_path.exists():
+            mm_path = c_path / "RKCMPMM.DBF"
+        if mm_path.exists():
+            try:
+                db = DBF(str(mm_path))
+                for r in db:
+                    if r.get('FIELD01') == 'CMP_LINFO':
+                        name = str(r.get('FIELD02', '')).split('~')[0].strip()
+                        break
+            except Exception:
+                pass
+    return name or ""
