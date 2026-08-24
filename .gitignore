@@ -26,6 +26,13 @@ backend/CMP_MOCK_TEST/
 BACKUPS/
 temp_uploads/
 backend/temp_uploads/
+Test_Samples_And_Archives/
+backend/debug_archive/
+Miracle9070/
+*.dbf
+*.cdx
+*.fpt
+
 
 # PyInstaller Build Output & Executables
 miracle_bridge/build/
