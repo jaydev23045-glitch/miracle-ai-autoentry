@@ -313,7 +313,7 @@
                 <i class="fa-solid fa-brain text-sm text-brand-400"></i>
                 🧠 AI Memory & Mappings
             </button>
-            <button id="settingsBtn" class="w-full flex items-center justify-center gap-2 bg-slate-900/50 hover:bg-slate-900 text-slate-300 transform transition-all duration-200 hover:-translate-y-0.5 active:scale-95 py-2.5 rounded-xl text-sm font-bold transition shadow-sm border border-slate-800/80">
+            <button id="settingsBtn" onclick="window.openSettings && window.openSettings()" class="w-full flex items-center justify-center gap-2 bg-slate-900/50 hover:bg-slate-900 text-slate-300 transform transition-all duration-200 hover:-translate-y-0.5 active:scale-95 py-2.5 rounded-xl text-sm font-bold transition shadow-sm border border-slate-800/80">
                 <i class="fa-solid fa-sliders text-sm text-brand-500"></i>
                 Configure Settings
             </button>
@@ -756,7 +756,7 @@
             <!-- Header -->
             <div class="px-6 py-4 border-b border-slate-850 flex justify-between items-center bg-slate-900/60">
                 <h3 class="text-lg font-bold text-white font-heading"><i class="fa-solid fa-sliders mr-2 text-brand-500"></i> Configure Settings</h3>
-                <button id="closeSettingsBtn" class="text-slate-450 hover:text-white transition"><i class="fa-solid fa-xmark text-xl"></i></button>
+                <button id="closeSettingsBtn" onclick="window.closeSettings && window.closeSettings()" class="text-slate-450 hover:text-white transition"><i class="fa-solid fa-xmark text-xl"></i></button>
             </div>
             
             <!-- Body -->
@@ -924,8 +924,8 @@
                     </button>
                 </div>
                 <div class="flex items-center gap-3">
-                    <button id="cancelSettingsBtn" class="px-4 py-2 text-sm font-semibold text-slate-400 hover:text-slate-200 transition">Cancel</button>
-                    <button id="saveSettingsBtn" class="bg-brand-600 hover:bg-brand-500 text-white transform transition-all duration-200 hover:-translate-y-0.5 active:scale-95 px-5 py-2.5 rounded-xl text-sm font-bold transition shadow-lg shadow-brand-600/20 btn-hover-glow">Save Configuration</button>
+                    <button id="cancelSettingsBtn" onclick="window.closeSettings && window.closeSettings()" class="px-4 py-2 text-sm font-semibold text-slate-400 hover:text-slate-200 transition">Cancel</button>
+                    <button id="saveSettingsBtn" onclick="window.saveSettings && window.saveSettings(false)" class="bg-brand-600 hover:bg-brand-500 text-white transform transition-all duration-200 hover:-translate-y-0.5 active:scale-95 px-5 py-2.5 rounded-xl text-sm font-bold transition shadow-lg shadow-brand-600/20 btn-hover-glow">Save Configuration</button>
                 </div>
             </div>
         </div>
@@ -1551,6 +1551,6 @@
     <div id="toastContainer" class="fixed top-6 right-6 z-50 flex flex-col gap-3 pointer-events-none"></div>
 
     <!-- SCRIPTS -->
-    <script src="app.js?v=4.37"></script>
+    <script src="app.js?v=4.38"></script>
 </body>
 </html>

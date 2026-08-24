@@ -821,13 +821,15 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // --- SETTINGS MODAL EVENTS ---
     function openSettings() {
-        if (settingsModal) {
-            settingsModal.classList.remove('hidden');
-            settingsModal.style.display = 'flex';
+        const modal = document.getElementById('settingsModal') || settingsModal;
+        if (modal) {
+            modal.classList.remove('hidden');
+            modal.style.display = 'flex';
         }
-        if (refreshClientsStatus) {
-            refreshClientsStatus.innerHTML = 'The main folder containing all client directories (CMPxxxx).';
-            refreshClientsStatus.className = 'text-sm text-slate-500 mt-1';
+        const status = document.getElementById('refreshClientsStatus') || refreshClientsStatus;
+        if (status) {
+            status.innerHTML = 'The main folder containing all client directories (CMPxxxx).';
+            status.className = 'text-sm text-slate-500 mt-1';
         }
 
         // Dynamically fetch the latest client folders from disk or local bridge
@@ -844,11 +846,17 @@ document.addEventListener('DOMContentLoaded', () => {
             .catch(err => console.error("Failed to refresh clients:", err));
     }
     function closeSettings() {
-        if (settingsModal) {
-            settingsModal.classList.add('hidden');
-            settingsModal.style.display = 'none';
+        const modal = document.getElementById('settingsModal') || settingsModal;
+        if (modal) {
+            modal.classList.add('hidden');
+            modal.style.display = 'none';
         }
     }
+
+    // Expose to window for bulletproof inline onclick execution
+    window.openSettings = openSettings;
+    window.closeSettings = closeSettings;
+    window.saveSettings = function(silent) { saveSettings(silent); };
     
     if (settingsBtn) settingsBtn.addEventListener('click', (e) => { e.preventDefault(); openSettings(); });
     if (closeSettingsBtn) closeSettingsBtn.addEventListener('click', (e) => { e.preventDefault(); closeSettings(); });
