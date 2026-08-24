@@ -338,7 +338,7 @@ def inject_vouchers(payload: InjectRequestPayload):
 
         # 2. Thread-safe client DB lock & DBF injection
         with get_client_lock(active_client_id):
-            handler = MiracleDBFHandler(miracle_base_path, active_client_id)
+            handler = MiracleDBFHandler(client_dir)
             
             # Delegate injection based on module type
             if module_type == "bank":
