@@ -137,17 +137,14 @@ def load_settings() -> dict:
 
 def save_settings_to_file(settings: dict):
     global _settings_cache, _settings_cache_time
-    temp_file = Path(str(SETTINGS_FILE) + ".tmp")
     try:
-        with open(temp_file, 'w', encoding='utf-8') as f:
+        SETTINGS_FILE.parent.mkdir(parents=True, exist_ok=True)
+        with open(SETTINGS_FILE, 'w', encoding='utf-8') as f:
             json.dump(settings, f, indent=4, ensure_ascii=False)
-        temp_file.replace(SETTINGS_FILE)
         with _settings_cache_lock:
             _settings_cache = settings.copy()
             _settings_cache_time = time.monotonic()
     except Exception as e:
-        if temp_file.exists():
-            temp_file.unlink()
         print(f"Error saving settings: {e}")
 
 def get_company_name(client_path: str) -> str:

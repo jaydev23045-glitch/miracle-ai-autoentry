@@ -198,9 +198,30 @@ def health_check():
         "platform": sys.platform
     }
 
+def resolve_valid_base_path(base_path: str) -> str:
+    """Intelligently resolves the actual Miracle folder on the local Windows PC if a Mac/cloud path is passed"""
+    if base_path and os.path.exists(base_path) and not ("/Users/" in base_path or "/home/" in base_path):
+        return base_path
+    
+    candidates = ["C:\\Miracle", "D:\\Miracle", "E:\\Miracle", "C:\\Miracle9070", "D:\\Miracle9070", "E:\\Miracle9070"]
+    for c in candidates:
+        if os.path.exists(c):
+            return c
+            
+    for drive in ["C:\\", "D:\\", "E:\\"]:
+        if os.path.exists(drive):
+            try:
+                for sub in os.listdir(drive):
+                    if sub.upper().startswith("CMP") and os.path.isdir(os.path.join(drive, sub)):
+                        return drive
+            except Exception:
+                pass
+    return "C:\\Miracle"
+
 @app.get("/api/local-clients")
 def get_local_clients(base_path: str = "C:\\Miracle"):
     """Lists all available client folders starting with CMP in local Miracle directory"""
+    base_path = resolve_valid_base_path(base_path)
     if not base_path or not os.path.exists(base_path):
         return {"clients": [], "error": f"Base path '{base_path}' not found."}
     
@@ -219,6 +240,7 @@ def get_local_clients(base_path: str = "C:\\Miracle"):
 @app.get("/api/local-years")
 def get_local_years(base_path: str = "C:\\Miracle", client_id: str = "CMP0001"):
     """Lists all available financial year folders (YRxx) in local client directory"""
+    base_path = resolve_valid_base_path(base_path)
     if not base_path or not os.path.exists(base_path):
         return {"years": [], "recommended": ""}
     

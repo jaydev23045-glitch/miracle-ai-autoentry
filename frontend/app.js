@@ -142,28 +142,32 @@ document.addEventListener('DOMContentLoaded', () => {
     const memoryPathInput = document.getElementById('memoryPath');
     const backupPathInput = document.getElementById('backupPath');
 
-    // ── Instant Pre-Fill Settings from Chrome localStorage (0ms Load) ─────
-    function prefillSettingsFromLocalStorage() {
-        const savedApiKey = localStorage.getItem('geminiApiKey') || '';
-        if (savedApiKey && geminiApiKeyInput) geminiApiKeyInput.value = savedApiKey;
-
-        const savedMiraclePath = localStorage.getItem('miracleBasePath') || '/Users/jaydevnakum/Work Place/WORK/APP DETAILS/Mirracle Auto Entre Sale or Purchase or Bank';
-        if (miracleBasePathInput) miracleBasePathInput.value = savedMiraclePath;
-
-        const savedMemoryPath = localStorage.getItem('memoryPath') || '/Users/jaydevnakum/Work Place/WORK/APP DETAILS/Mirracle Auto Entre Sale or Purchase or Bank/AI_Memory_Vault';
-        if (memoryPathInput) memoryPathInput.value = savedMemoryPath;
-
-        const savedBackupPath = localStorage.getItem('backupPath') || '';
-        if (savedBackupPath) {
-            if (backupPathInput) backupPathInput.value = savedBackupPath;
-            if (inlineBackupPath) inlineBackupPath.value = savedBackupPath;
-        }
-    }
-    prefillSettingsFromLocalStorage();
-
     // ── Inline Backup Path Box (visible next to Push button) ──────────────
     const inlineBackupPath  = document.getElementById('inlineBackupPath');
     const backupPathStatus  = document.getElementById('backupPathStatus');
+
+    // ── Instant Pre-Fill Settings from Chrome localStorage (0ms Load) ─────
+    function prefillSettingsFromLocalStorage() {
+        try {
+            const savedApiKey = localStorage.getItem('geminiApiKey') || '';
+            if (savedApiKey && geminiApiKeyInput) geminiApiKeyInput.value = savedApiKey;
+
+            const savedMiraclePath = localStorage.getItem('miracleBasePath') || '/Users/jaydevnakum/Work Place/WORK/APP DETAILS/Mirracle Auto Entre Sale or Purchase or Bank';
+            if (miracleBasePathInput) miracleBasePathInput.value = savedMiraclePath;
+
+            const savedMemoryPath = localStorage.getItem('memoryPath') || '/Users/jaydevnakum/Work Place/WORK/APP DETAILS/Mirracle Auto Entre Sale or Purchase or Bank/AI_Memory_Vault';
+            if (memoryPathInput) memoryPathInput.value = savedMemoryPath;
+
+            const savedBackupPath = localStorage.getItem('backupPath') || '';
+            if (savedBackupPath) {
+                if (backupPathInput) backupPathInput.value = savedBackupPath;
+                if (inlineBackupPath) inlineBackupPath.value = savedBackupPath;
+            }
+        } catch (e) {
+            console.warn("Error prefilling from localStorage:", e);
+        }
+    }
+    prefillSettingsFromLocalStorage();
 
     function syncInlineBackupBadge() {
         if (!inlineBackupPath || !backupPathStatus) return;
@@ -591,7 +595,14 @@ document.addEventListener('DOMContentLoaded', () => {
             const res = await fetch(yearFetchUrl);
             if (!res.ok) throw new Error("Failed to fetch client years");
             const data = await res.json();
-            const years = data.years || [];
+            let years = data.years || [];
+            if (!years || years.length === 0) {
+                years = [
+                    { folder: 'YR27', label: '2027-28 (YR27)', is_valid: true },
+                    { folder: 'YR26', label: '2026-27 (YR26)', is_valid: true, recommended: true },
+                    { folder: 'YR25', label: '2025-26 (YR25)', is_valid: true }
+                ];
+            }
             
             yearSelect.innerHTML = '';
             let targetYear = selectedYear || activeYearFolder;
@@ -601,7 +612,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 const rec = years.find(y => y.recommended);
                 if (rec) targetYear = rec.folder;
                 else if (years.length > 0) targetYear = years[0].folder;
-                else targetYear = "";
+                else targetYear = "YR26";
             }
             
             years.forEach(y => {
@@ -622,15 +633,19 @@ document.addEventListener('DOMContentLoaded', () => {
                 yearSelect.appendChild(opt);
             }
             
-            if (yearSelect.options.length > 0 && yearSelect.selectedIndex === -1) {
+            if (yearSelect.options.length > 0 && (yearSelect.selectedIndex === -1 || !yearSelect.value)) {
                 yearSelect.selectedIndex = 0;
             }
             activeYearFolder = yearSelect.value || 'YR26';
             updateHeaderBadges();
         } catch (err) {
             console.error("Error fetching client years:", err);
-            if (yearSelect && yearSelect.options.length === 0) {
-                yearSelect.innerHTML = '<option value="YR26" class="bg-slate-800" selected>2026-27 (YR26)</option>';
+            if (yearSelect) {
+                yearSelect.innerHTML = `
+                    <option value="YR27" class="bg-slate-800">2027-28 (YR27)</option>
+                    <option value="YR26" class="bg-slate-800" selected>2026-27 (YR26)</option>
+                    <option value="YR25" class="bg-slate-800">2025-26 (YR25)</option>
+                `;
                 activeYearFolder = 'YR26';
                 updateHeaderBadges();
             }
