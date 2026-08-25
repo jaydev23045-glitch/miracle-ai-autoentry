@@ -572,15 +572,38 @@ def api_create_ledger(payload: dict):
         raise HTTPException(status_code=400, detail="Ledger name is required.")
 
     try:
-        handler = MiracleDBFHandler(client_path)
-        ledger_code = handler.create_party_ledger(
-            name=name,
-            module=module_type,
-            gstin=gstin,
-            city=city,
-            year_folder=year,
-            explicit_group_code=group_code
-        )
+        ledger_code = ""
+        if os.path.exists(client_path):
+            handler = MiracleDBFHandler(client_path)
+            ledger_code = handler.create_party_ledger(
+                name=name,
+                module=module_type,
+                gstin=gstin,
+                city=city,
+                year_folder=year,
+                explicit_group_code=group_code
+            )
+        else:
+            # Hybrid Bridge Fallback: Send create request to local Miracle Bridge on port 9123
+            try:
+                import urllib.request
+                import json
+                bridge_url = "http://localhost:9123/api/create-local-ledger"
+                req = urllib.request.Request(
+                    bridge_url,
+                    data=json.dumps(payload).encode('utf-8'),
+                    headers={"Content-Type": "application/json", "User-Agent": "MiracleServer/1.0"}
+                )
+                with urllib.request.urlopen(req, timeout=2.0) as resp:
+                    if resp.status == 200:
+                        res_json = json.loads(resp.read().decode('utf-8'))
+                        ledger_code = res_json.get("ledger_code", "NEW_LEDGER")
+                        print(f"⚡ [Bridge Ledger Creation] Successfully created ledger '{name}' via Miracle Bridge port 9123!")
+                    else:
+                        ledger_code = "NEW_LEDGER"
+            except Exception as b_c_err:
+                print(f"⚠️ Bridge ledger creation skipped/failed: {b_c_err}")
+                ledger_code = "NEW_LEDGER"
 
         # Update AI Memory Vault if requested
         if save_memory:
@@ -1404,10 +1427,25 @@ async def extract_opening_balances_endpoint(file: UploadFile = File(...)):
         client_id = settings.get("active_client_id", "")
         base_path = settings.get("miracle_base_path", "")
         client_path = os.path.join(base_path, client_id)
-        handler = MiracleDBFHandler(client_path)
-        year_folder = handler.get_latest_year_folder()
-        ledgers = handler.read_ledgers(year_folder) if year_folder else []
-        ledger_names = [led['name'] for led in ledgers]
+        ledgers = []
+        if os.path.exists(client_path):
+            handler = MiracleDBFHandler(client_path)
+            year_folder = handler.get_latest_year_folder()
+            ledgers = handler.read_ledgers(year_folder) if year_folder else []
+        else:
+            try:
+                import urllib.request
+                import json
+                bridge_url = f"http://localhost:9123/api/local-ledgers?client_id={client_id}"
+                req = urllib.request.Request(bridge_url, headers={"User-Agent": "MiracleServer/1.0"})
+                with urllib.request.urlopen(req, timeout=1.5) as resp:
+                    if resp.status == 200:
+                        b_data = json.loads(resp.read().decode('utf-8'))
+                        ledgers = b_data.get("data", [])
+            except Exception:
+                pass
+
+        ledger_names = [led['name'] for led in ledgers if isinstance(led, dict) and led.get('name')]
         
         result = gemini.extract_opening_balances(file_path, ledger_names)
         

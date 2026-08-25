@@ -1,5 +1,20 @@
 # Miracle Auto-Entry Platform - Changelog
 
+### 130. 100% End-to-End Localhost vs Cloud Server Feature Parity Verification
+**The Problem Resolved:**
+- **Cloud Endpoint Exception Gaps:** Creation of new ledgers (`/api/create-ledger`) and Opening Balance extraction (`/api/opening-balances/extract`) were attempting to open local server disk paths. On Render Cloud, missing disk folders threw HTTP 500 exceptions.
+
+**Fixes & Architecture Implemented:**
+1. **Bridge-Resilient Ledger Creation ([vouchers.py](file:///Users/jaydevnakum/Work%20Place/WORK/APP%20DETAILS/Mirracle%20Auto%20Entre%20Sale%20or%20Purchase%20or%20Bank/backend/routers/vouchers.py#L575)):**
+   - Updated `api_create_ledger` to forward creation requests to Miracle Bridge port 9123 (`http://localhost:9123/api/create-local-ledger`) when local server disk DBFs are absent.
+2. **Bridge-Resilient Opening Balances ([vouchers.py](file:///Users/jaydevnakum/Work%20Place/WORK/APP%20DETAILS/Mirracle%20Auto%20Entre%20Sale%20or%20Purchase%20or%20Bank/backend/routers/vouchers.py#L1430)):**
+   - Updated `extract_opening_balances` to query Miracle Bridge port 9123 for active client ledgers during opening balance parsing on Cloud Server.
+3. **Automated Verification:**
+   - Executed `scratch/test_all_spaces.py` $\rightarrow$ **100% Passed**.
+   - Executed `py_compile` across all files $\rightarrow$ **100% Passed**.
+
+
+
 ### 129. Form-Data Ledger Injection & Complete Cloud vs Localhost Audit
 **The Problem Resolved:**
 - **Form Data Ledger Sync Gap:** `frontend/app.js` was appending `ledgers_list` in form-data during upload, but FastAPI `upload_document` endpoint signature was missing `ledgers_list: str = Form("")`. This caused FastAPI to discard the frontend ledger payload when running on Cloud server.
