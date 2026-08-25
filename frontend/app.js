@@ -3131,10 +3131,15 @@ document.addEventListener('DOMContentLoaded', () => {
             const saveMemory = document.getElementById('saveToMemoryVault').checked;
 
             try {
-                const res = await fetch(`${API_URL}/api/create-ledger`, {
+                const currentMiraclePath = (typeof miracleBasePathInput !== 'undefined' && miracleBasePathInput && miracleBasePathInput.value)
+                    ? miracleBasePathInput.value.trim() : 'C:\\Miracle';
+                const createLedgerUrl = isLocalBridgeOnline ? `${LOCAL_BRIDGE_URL}/api/create-ledger` : `${API_URL}/api/create-ledger`;
+                const res = await fetch(createLedgerUrl, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
+                        miracle_base_path: currentMiraclePath,
+                        active_client_id: getActiveClientId(),
                         name: name,
                         print_name: printName || name,
                         group_code: groupCode,

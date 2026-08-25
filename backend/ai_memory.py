@@ -21,9 +21,14 @@ def _get_client_lock(client_id: str) -> threading.Lock:
 
 class AIMemoryVault:
     def __init__(self, vault_path: str = None):
-        if not vault_path:
-            base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-            vault_path = os.path.join(base_dir, 'AI_Memory_Vault')
+        base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        default_vault_path = os.path.join(base_dir, 'AI_Memory_Vault')
+
+        if not vault_path or (sys.platform != 'win32' and (':' in vault_path or ('\\' in vault_path and not vault_path.startswith('/')))):
+            vault_path = default_vault_path
+        elif not os.path.isabs(vault_path):
+            vault_path = os.path.abspath(os.path.join(base_dir, vault_path))
+
         self.vault_path = vault_path
         if not os.path.exists(self.vault_path):
             os.makedirs(self.vault_path, exist_ok=True)

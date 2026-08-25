@@ -378,6 +378,62 @@ def repair_cdx_flags(base_path: str = "C:\\Miracle", client_id: str = "CMP0005",
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+@app.post("/api/create-ledger")
+def api_create_ledger(payload: dict):
+    """Creates a new Miracle ledger directly in local DBF files on client PC"""
+    try:
+        miracle_base_path = resolve_valid_base_path(payload.get("miracle_base_path", "C:\\Miracle"))
+        active_client_id = payload.get("active_client_id", "CMP0005")
+        client_dir = os.path.join(miracle_base_path, active_client_id)
+        
+        name = payload.get("name", "").strip()
+        print_name = payload.get("print_name", "").strip() or name
+        group_code = payload.get("group_code", "").strip()
+        gstin = payload.get("gstin", "").strip()
+        city = payload.get("city", "").strip()
+        module_type = payload.get("module_type", "").strip() or "Bank Statements"
+        year = payload.get("year", "")
+        
+        save_memory = payload.get("save_memory", True)
+        
+        if not name:
+            raise HTTPException(status_code=400, detail="Ledger name is required.")
+            
+        handler = MiracleDBFHandler(client_dir)
+        ledger_code = handler.create_party_ledger(
+            name=name,
+            module=module_type,
+            gstin=gstin,
+            city=city,
+            year_folder=year,
+            explicit_group_code=group_code
+        )
+
+        if save_memory:
+            try:
+                from ai_memory import AIMemoryVault
+                vault = AIMemoryVault()
+                narration_key = payload.get("narration_key", "").strip()
+                key_to_clean = narration_key if narration_key else name
+                clean_key = AIMemoryVault.clean_mapping_key(key_to_clean) or AIMemoryVault.clean_mapping_key(name)
+                if clean_key:
+                    mem_data = vault.load_memory(active_client_id)
+                    if "expense_mappings" not in mem_data:
+                        mem_data["expense_mappings"] = {}
+                    mem_data["expense_mappings"][clean_key] = name
+                    vault.save_memory(active_client_id, mem_data)
+            except Exception as mem_err:
+                print(f"Warning: Could not save memory during bridge create-ledger: {mem_err}")
+
+        return {
+            "status": "success",
+            "message": f"Successfully created ledger '{name}' with code '{ledger_code}'.",
+            "ledger_code": ledger_code,
+            "ledger_name": name
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 @app.post("/inject")
 def inject_vouchers(payload: InjectRequestPayload):
     """
@@ -426,28 +482,29 @@ def inject_vouchers(payload: InjectRequestPayload):
         with get_client_lock(active_client_id):
             handler = MiracleDBFHandler(client_dir)
             
-            # Delegate injection based on module type
-            if module_type == "bank":
+            # Delegate injection based on module type with robust string matching
+            m_type = (module_type or "").strip().lower()
+            if m_type in ("bank", "bank_statements", "bank statements"):
                 b_name = getattr(payload, "target_bank_name", None) or "Bank Account"
                 res = handler._inject_bank_statements(vouchers, b_name, active_year_folder)
-            elif module_type == "sales":
+            elif m_type in ("sales", "sale"):
                 res = handler._inject_sales(
                     vouchers, 
                     active_year_folder, 
                     setup_id=payload.sales_setup_id, 
                     sales_prefix=payload.sales_prefix
                 )
-            elif module_type == "purchase":
+            elif m_type in ("purchase", "purchases"):
                 res = handler._inject_purchases(
                     vouchers, 
                     active_year_folder, 
                     setup_id=payload.purchase_setup_id, 
                     purchase_prefix=payload.purchase_prefix
                 )
-            elif module_type == "cash":
+            elif m_type in ("cash", "cash_entries", "cash entries"):
                 c_code = getattr(payload, "target_cash_code", None) or "ACASHACT"
                 res = handler._inject_cash_entries(vouchers, c_code, active_year_folder)
-            elif module_type == "opening_balance":
+            elif m_type in ("opening_balance", "opening_balances", "opening balance"):
                 res = handler.push_opening_balances(vouchers, active_year_folder)
             else:
                 raise HTTPException(status_code=400, detail=f"Unsupported module_type '{module_type}'")
