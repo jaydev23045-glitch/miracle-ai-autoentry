@@ -63,7 +63,7 @@ document.addEventListener('DOMContentLoaded', () => {
     } else if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
         API_URL = window.location.port ? window.location.origin : 'http://localhost:8000';
     }
-    const LOCAL_BRIDGE_URL = 'http://localhost:9123';
+    let LOCAL_BRIDGE_URL = 'http://127.0.0.1:9123';
     let isLocalBridgeOnline = false;
 
     async function checkLocalBridge() {
@@ -72,20 +72,30 @@ document.addEventListener('DOMContentLoaded', () => {
         const text = document.getElementById('bridgeStatusText');
         if (!badge) return;
 
-        try {
-            const controller = new AbortController();
-            const timeoutId = setTimeout(() => controller.abort(), 2500);
-            const res = await fetch(`${LOCAL_BRIDGE_URL}/health`, { signal: controller.signal });
-            clearTimeout(timeoutId);
-            if (res.ok) {
-                isLocalBridgeOnline = true;
-                badge.className = "hidden sm:inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 shadow-sm cursor-pointer";
-                if (dot) dot.className = "w-2 h-2 rounded-full bg-emerald-400 animate-pulse";
-                if (text) text.textContent = "Miracle Bridge Connected (9123)";
-            } else {
-                throw new Error("Bridge offline");
+        const bridgeEndpoints = ['http://127.0.0.1:9123', 'http://localhost:9123'];
+        let connected = false;
+
+        for (const ep of bridgeEndpoints) {
+            try {
+                const controller = new AbortController();
+                const timeoutId = setTimeout(() => controller.abort(), 2000);
+                const res = await fetch(`${ep}/health`, { signal: controller.signal });
+                clearTimeout(timeoutId);
+                if (res.ok) {
+                    LOCAL_BRIDGE_URL = ep;
+                    isLocalBridgeOnline = true;
+                    connected = true;
+                    badge.className = "hidden sm:inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 shadow-sm cursor-pointer";
+                    if (dot) dot.className = "w-2 h-2 rounded-full bg-emerald-400 animate-pulse";
+                    if (text) text.textContent = "Miracle Bridge Connected (9123)";
+                    break;
+                }
+            } catch (err) {
+                // Try next endpoint candidate
             }
-        } catch (err) {
+        }
+
+        if (!connected) {
             isLocalBridgeOnline = false;
             badge.className = "hidden sm:inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-amber-500/10 text-amber-400 border border-amber-500/30 shadow-sm cursor-pointer";
             if (dot) dot.className = "w-2 h-2 rounded-full bg-amber-400";

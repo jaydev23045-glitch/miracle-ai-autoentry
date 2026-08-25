@@ -1115,7 +1115,10 @@ def push_vouchers_endpoint(payload: PushPayload):
         client_path = os.path.join(settings["miracle_base_path"], client_id)
         
         if not os.path.exists(client_path):
-            raise HTTPException(status_code=404, detail=f"Client folder not found at {client_path}")
+            raise HTTPException(
+                status_code=400, 
+                detail=f"Cloud Server cannot write to local client path '{client_path}'. Please ensure MiracleBridge.exe is running on your Windows PC (port 9123) or host the server on your 16GB Laptop."
+            )
 
         active_year = payload.year_folder.strip() if payload.year_folder else ""
         if not active_year:
