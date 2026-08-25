@@ -4239,12 +4239,35 @@ class MiracleDBFHandler:
         # Solution: extract the bank BRAND (HDFC, ICICI, SBI, AXIS...) and match on that
         
         KNOWN_BANK_BRANDS = [
-            'HDFC', 'ICICI', 'SBI', 'STATE BANK', 'AXIS', 'KOTAK', 'CANARA', 'UNION',
-            'BANK OF BARODA', 'BOB', 'PNB', 'PUNJAB NATIONAL', 'IDBI', 'YES BANK',
-            'FEDERAL', 'INDUSIND', 'BANDHAN', 'UCO', 'CENTRAL BANK', 'INDIAN BANK',
-            'BANK OF INDIA', 'BOI', 'DENA', 'VIJAYA', 'SYNDICATE', 'OBC', 'ALLAHABAD',
-            'ANDHRA', 'CORPORATION BANK', 'IOB', 'NAINITAL', 'SMALL FINANCE',
-            'PAYTM', 'PHONEPE', 'GPAY', 'AMAZON', 'AIRTEL PAYMENTS'
+            # Top Indian Private Banks
+            'HDFC', 'ICICI', 'AXIS', 'KOTAK', 'INDUSIND', 'YES BANK', 'BANDHAN', 'FEDERAL', 
+            'IDFC', 'IDFC FIRST', 'RBL', 'RATNAKAR', 'SOUTH INDIAN', 'KARNATAKA BANK', 
+            'CITY UNION', 'CUB', 'KARUR VYSYA', 'KVB', 'TAMILNAD MERCANTILE', 'TMB', 
+            'JAMMU & KASHMIR', 'J&K', 'CSB', 'CATHOLIC SYRIAN', 'DHANALAKSHMI',
+            
+            # Top Indian PSU / Public Sector Banks
+            'SBI', 'STATE BANK', 'BANK OF BARODA', 'BOB', 'PNB', 'PUNJAB NATIONAL', 
+            'CANARA', 'UNION BANK', 'UBI', 'INDIAN BANK', 'BANK OF INDIA', 'BOI', 
+            'CENTRAL BANK', 'CBI', 'UCO', 'BANK OF MAHARASHTRA', 'BOM', 'IOB', 
+            'INDIAN OVERSEAS', 'PUNJAB & SIND', 'PSB', 'IDBI', 'DENA', 'VIJAYA', 
+            'SYNDICATE', 'OBC', 'ORIENTAL BANK', 'ALLAHABAD', 'ANDHRA BANK', 'CORPORATION BANK',
+            
+            # Small Finance & Payments Banks
+            'AU SMALL', 'AU BANK', 'EQUITAS', 'UJJIVAN', 'SURYODAY', 'JANA', 'ESAF', 
+            'UTKARSH', 'FINCARE', 'CAPITAL SMALL', 'PAYTM', 'PHONEPE', 'AIRTEL PAYMENTS', 
+            'FINO', 'INDIA POST', 'IPPB',
+            
+            # Co-operative & Gujarat / Regional / Gramin Banks
+            'SARASWAT', 'COSMOS', 'SVC', 'SHAMRAO VITHAL', 'BHARAT CO-OP', 'NKGSB', 
+            'ABHYUDAYA', 'KALUPUR', 'GUJARAT STATE CO-OP', 'GSCB', 'NUTAN NAGARIK', 
+            'SURAT NATIONAL', 'RAJKOT NAGARIK', 'REVENUE CO-OP', 'BARODA GUJARAT GRAMIN', 
+            'SAURASHTRA GRAMIN', 'PRATHAMA', 'KERALA GRAMIN', 'MAHARASHTRA GRAMIN', 
+            'KARNATAKA GRAMIN', 'COOPERATIVE', 'CO-OP', 'GRAMIN', 'NAGARIK', 'URBAN',
+            
+            # Foreign & International Banks
+            'CITIBANK', 'CITI', 'STANDARD CHARTERED', 'STANCHAR', 'HSBC', 'DBS', 
+            'BARCLAYS', 'DEUTSCHE', 'JP MORGAN', 'J P MORGAN', 'BANK OF AMERICA', 
+            'BOLA', 'BNP PARIBAS', 'SOCIETE GENERALE', 'MUFG', 'SMBC', 'MIZUHO', 'SBERBANK'
         ]
         
         def extract_bank_brand(name: str) -> str:
@@ -4260,31 +4283,37 @@ class MiracleDBFHandler:
         bank_name_up = bank_name.strip().upper()
         input_brand = extract_bank_brand(bank_name)
         
-        # Only look at bank-classified ledgers for brand matching (more precise)
+        # Strictly filter ONLY genuine Bank Account ledgers (Group G0000004 or classification 'Bank')
+        # Explicitly exclude non-bank system accounts like Profit & Loss (PROFLOSS), Trading, Capital, GST, etc.
+        NON_BANK_KEYWORDS = ['PROFIT', 'P&L', 'LOSS', 'TRADING', 'CAPITAL', 'DRAWINGS', 'TAX', 'DUTY', 'GST', 'IGST', 'CGST', 'SGST']
+        
         bank_classified_ledgers = [
             led for led in all_ledgers
-            if led.get('classification') == 'Bank'
-            or 'BANK' in (led.get('name') or '').upper()
-            or 'A/C' in (led.get('name') or '').upper()
+            if (led.get('classification') == 'Bank'
+                or led.get('group_code') == 'G0000004'
+                or 'BANK' in (led.get('name') or '').upper()
+                or 'BANK' in (led.get('group_name') or '').upper())
+            and not any(bad in (led.get('name') or '').upper() for bad in NON_BANK_KEYWORDS)
+            and led.get('code') != 'PROFLOSS'
         ]
-        
-        # Level 1: Exact name match
-        for led in all_ledgers:
+
+        # Level 1: Exact name match (only among bank-classified ledgers)
+        for led in bank_classified_ledgers:
             if led['name'].strip().upper() == bank_name_up:
                 bank_ledger_code = led['code']
-                print(f"[bank resolve] ✅ Level 1 (exact): '{bank_name}' → '{led['name']}' ({led['code']})")
+                print(f"[bank resolve] ✅ Level 1 (exact bank): '{bank_name}' → '{led['name']}' ({led['code']})")
                 break
         
-        # Level 2: Substring partial match (original logic)
+        # Level 2: Substring partial match (only among bank-classified ledgers)
         if not bank_ledger_code:
-            for led in all_ledgers:
+            for led in bank_classified_ledgers:
                 led_name_up = led['name'].strip().upper()
                 if bank_name_up in led_name_up or led_name_up in bank_name_up:
                     bank_ledger_code = led['code']
-                    print(f"[bank resolve] ✅ Level 2 (substring): '{bank_name}' → '{led['name']}' ({led['code']})")
+                    print(f"[bank resolve] ✅ Level 2 (substring bank): '{bank_name}' → '{led['name']}' ({led['code']})")
                     break
         
-        # Level 3: Bank BRAND keyword match — THIS is the critical fix
+        # Level 3: Bank BRAND keyword match
         # "HDFC Bank Ltd" and "HDFC BANK A/C" both contain "HDFC" → same bank!
         if not bank_ledger_code and input_brand:
             for led in bank_classified_ledgers:
@@ -4294,7 +4323,7 @@ class MiracleDBFHandler:
                     print(f"[bank resolve] ✅ Level 3 (brand keyword '{input_brand}'): '{bank_name}' → '{led['name']}' ({led['code']})")
                     break
         
-        # Level 4: Fuzzy string match (only among bank-classified ledgers, lower threshold 0.60)
+        # Level 4: Fuzzy string match (only among bank-classified ledgers, cutoff 0.60)
         if not bank_ledger_code:
             import difflib
             bank_names_only = [led['name'].upper() for led in bank_classified_ledgers]

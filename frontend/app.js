@@ -439,15 +439,19 @@ document.addEventListener('DOMContentLoaded', () => {
             const targetBankSelect = document.getElementById('targetBankAccount');
             if (targetBankSelect) {
                 targetBankSelect.innerHTML = '';
+                const NON_BANK_TERMS = ['PROFIT', 'P&L', 'LOSS', 'TRADING', 'CAPITAL', 'DRAWINGS', 'TAX', 'DUTY', 'GST', 'IGST', 'CGST', 'SGST'];
                 const bankLedgers = clientLedgers.filter(led => {
                     const cat = (led.classification || '').toUpperCase();
                     const grp = (led.group_code || '').toUpperCase();
                     const grpName = (led.group_name || '').toUpperCase();
                     const name = (led.name || '').toUpperCase();
                     const printName = (led.print_name || '').toUpperCase();
+                    
+                    const isBad = NON_BANK_TERMS.some(term => name.includes(term) || printName.includes(term)) || led.code === 'PROFLOSS';
+                    if (isBad) return false;
+
                     return cat === 'BANK' || grp === 'G0000004' || 
-                           grpName.includes('BANK') || name.includes('BANK') || printName.includes('BANK') ||
-                           name.includes('A/C') || name.includes('ACCOUNT') || name.includes('CURRENT') || name.includes('SAVINGS');
+                           grpName.includes('BANK') || name.includes('BANK') || printName.includes('BANK');
                 });
 
                 bankLedgers.forEach((led) => {
@@ -6165,47 +6169,56 @@ document.addEventListener('DOMContentLoaded', () => {
         let targetPushEndpoint = `${API_URL}/api/push`;
         let targetBody = JSON.stringify(pushPayload);
 
-        // If running on Render Cloud, Miracle DBF injection MUST route directly to local client PC agent (MiracleBridge.exe)
-        const isCloudDeployment = (window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1' && window.location.hostname !== '0.0.0.0');
-        if (isCloudDeployment || isLocalBridgeOnline) {
-            if (isLocalBridgeOnline) {
-                targetPushEndpoint = `${LOCAL_BRIDGE_URL}/inject`;
-                const miracleBasePathVal = (typeof miracleBasePathInput !== 'undefined' && miracleBasePathInput && miracleBasePathInput.value) 
-                    ? miracleBasePathInput.value.trim() 
-                    : "C:\\Miracle";
-                const backupPathVal = (typeof inlineBackupPath !== 'undefined' && inlineBackupPath && inlineBackupPath.value)
-                    ? inlineBackupPath.value.trim()
-                    : "";
-                const salesSetupIdVal = document.getElementById('salesSetupId') ? parseInt(document.getElementById('salesSetupId').value || 5) : 5;
-                const purchaseSetupIdVal = document.getElementById('purchaseSetupId') ? parseInt(document.getElementById('purchaseSetupId').value || 6) : 6;
-                const salesPrefixVal = document.getElementById('salesPrefix') ? document.getElementById('salesPrefix').value.trim() : "SS,SS";
-                const purchasePrefixVal = document.getElementById('purchasePrefix') ? document.getElementById('purchasePrefix').value.trim() : "PP,PP";
+        // Smart Host Detection for Localhost vs Cloud Deployment
+        const isLocalHost = (
+            window.location.hostname === 'localhost' ||
+            window.location.hostname === '127.0.0.1' ||
+            window.location.hostname === '0.0.0.0' ||
+            window.location.hostname.startsWith('192.168.') ||
+            window.location.hostname.startsWith('10.') ||
+            window.location.hostname.endsWith('.local')
+        );
+        const isCloudDeployment = !isLocalHost;
 
-                const bridgePayload = {
-                    miracle_base_path: miracleBasePathVal,
-                    active_client_id: getActiveClientId(),
-                    active_year_folder: activeYearFolder || "YR25",
-                    module_type: (currentModule === 'Bank Statements') ? 'bank' 
-                        : (currentModule === 'Sales') ? 'sales' 
-                        : (currentModule === 'Purchases') ? 'purchase' 
-                        : (currentModule === 'Cash Entries') ? 'cash' : 'opening_balance',
-                    vouchers: vouchers,
-                    sales_setup_id: salesSetupIdVal,
-                    purchase_setup_id: purchaseSetupIdVal,
-                    sales_prefix: salesPrefixVal,
-                    purchase_prefix: purchasePrefixVal,
-                    target_bank_name: window.currentBankName || "Bank Account",
-                    target_cash_code: (document.getElementById('targetCashAccount') ? document.getElementById('targetCashAccount').value : "ACASHACT") || "ACASHACT",
-                    backup_path: backupPathVal
-                };
-                targetBody = JSON.stringify(bridgePayload);
-                console.log("⚡ Hybrid Mode active: Routing push directly to Local Miracle Bridge on port 9123");
-            } else if (isCloudDeployment) {
-                alert("⚠️ MiracleBridge Agent is Offline!\n\nMiracle DBF database files live locally on your computer hard drive.\n\nTo push these vouchers into Miracle software:\n1. Ensure 'MiracleBridge.exe' is running on your Windows PC.\n2. If using Chrome, ensure 'Miracle Bridge Connected (9123)' badge is GREEN.\n3. Re-click 'Push to Miracle'.");
-                pushBtn.innerHTML = `<i class="fa-solid fa-check-double mr-1"></i> Push to Miracle`;
-                pushBtn.disabled = false;
-                return;
-            }
+        if (isLocalBridgeOnline) {
+            targetPushEndpoint = `${LOCAL_BRIDGE_URL}/inject`;
+            const miracleBasePathVal = (typeof miracleBasePathInput !== 'undefined' && miracleBasePathInput && miracleBasePathInput.value) 
+                ? miracleBasePathInput.value.trim() 
+                : "C:\\Miracle";
+            const backupPathVal = (typeof inlineBackupPath !== 'undefined' && inlineBackupPath && inlineBackupPath.value)
+                ? inlineBackupPath.value.trim()
+                : "";
+            const salesSetupIdVal = document.getElementById('salesSetupId') ? parseInt(document.getElementById('salesSetupId').value || 5) : 5;
+            const purchaseSetupIdVal = document.getElementById('purchaseSetupId') ? parseInt(document.getElementById('purchaseSetupId').value || 6) : 6;
+            const salesPrefixVal = document.getElementById('salesPrefix') ? document.getElementById('salesPrefix').value.trim() : "SS,SS";
+            const purchasePrefixVal = document.getElementById('purchasePrefix') ? document.getElementById('purchasePrefix').value.trim() : "PP,PP";
+
+            const bridgePayload = {
+                miracle_base_path: miracleBasePathVal,
+                active_client_id: getActiveClientId(),
+                active_year_folder: activeYearFolder || "YR25",
+                module_type: (currentModule === 'Bank Statements') ? 'bank' 
+                    : (currentModule === 'Sales') ? 'sales' 
+                    : (currentModule === 'Purchases') ? 'purchase' 
+                    : (currentModule === 'Cash Entries') ? 'cash' : 'opening_balance',
+                vouchers: vouchers,
+                sales_setup_id: salesSetupIdVal,
+                purchase_setup_id: purchaseSetupIdVal,
+                sales_prefix: salesPrefixVal,
+                purchase_prefix: purchasePrefixVal,
+                target_bank_name: window.currentBankName || "Bank Account",
+                target_cash_code: (document.getElementById('targetCashAccount') ? document.getElementById('targetCashAccount').value : "ACASHACT") || "ACASHACT",
+                backup_path: backupPathVal
+            };
+            targetBody = JSON.stringify(bridgePayload);
+            console.log("⚡ Hybrid Mode active: Routing push directly to Local Miracle Bridge on port 9123");
+        } else if (isCloudDeployment) {
+            alert("⚠️ MiracleBridge Agent is Offline!\n\nMiracle DBF database files live locally on your computer hard drive.\n\nTo push these vouchers into Miracle software from Cloud Server:\n1. Ensure 'MiracleBridge.exe' is running on your Windows PC.\n2. Ensure 'Miracle Bridge Connected (9123)' badge is GREEN.\n3. Re-click 'Push to Miracle'.");
+            pushBtn.innerHTML = `<i class="fa-solid fa-check-double mr-1"></i> Push to Miracle`;
+            pushBtn.disabled = false;
+            return;
+        } else {
+            console.log(`🏠 Localhost / Standalone Mode active on ${window.location.hostname}: Pushing directly to local FastAPI backend at ${targetPushEndpoint}`);
         }
 
         try {

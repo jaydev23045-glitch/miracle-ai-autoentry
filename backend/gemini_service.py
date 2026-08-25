@@ -3528,9 +3528,10 @@ Example Output:
             mapped = str(r.get("mapped_ledger") or "").strip().upper()
             is_suspense = (
                 not mapped or
-                mapped in ("SUSPENSE ACCOUNT", "SUSPENSE A/C", "SUNDRY DEBTORS", "SUNDRY CREDITORS", "UPI DEBTORS", "UPI CREDITORS") or
+                mapped in ("SUSPENSE ACCOUNT", "SUSPENSE A/C", "SUNDRY DEBTORS", "SUNDRY CREDITORS", "UPI DEBTORS", "UPI CREDITORS", "DIRECT EXPENSES", "INDIRECT EXPENSES") or
                 mapped.startswith("UNKNOWN_") or
-                (existing_names_upper and mapped not in existing_names_upper)
+                (existing_names_upper and mapped not in existing_names_upper) or
+                (not existing_names_upper and (len(mapped) > 15 or bool(re.search(r'\d{4,}', mapped))))
             )
             if is_suspense:
                 narr = str(r.get("narration") or "").strip()

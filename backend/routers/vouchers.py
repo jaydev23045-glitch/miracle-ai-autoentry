@@ -778,8 +778,27 @@ async def upload_document(module: str = Form(...), instruction: str = Form(""), 
                 _LEDGER_CACHE[client_id] = (now, ledger_names)
                 print(f"💾 [Ledger Cache STORE] Cached {len(ledger_names)} ledgers for '{client_id}'")
         except Exception as dbf_err:
-            print(f"Warning: Could not read ledgers for Gemini context: {dbf_err}")
-            client_memory["existing_ledgers"] = []
+            print(f"Warning: Could not read local DBF ledgers for Gemini context: {dbf_err}")
+            # Hybrid Fallback: Query Miracle Bridge on port 9123 if running on cloud/hybrid setup
+            try:
+                import urllib.request
+                import json
+                bridge_url = f"http://localhost:9123/api/local-ledgers?client_id={client_id}"
+                req = urllib.request.Request(bridge_url, headers={"User-Agent": "MiracleServer/1.0"})
+                with urllib.request.urlopen(req, timeout=1.5) as resp:
+                    if resp.status == 200:
+                        b_data = json.loads(resp.read().decode('utf-8'))
+                        b_ledgers = b_data.get("data", [])
+                        ledger_names = [led.get('name') for led in b_ledgers if isinstance(led, dict) and led.get('name')]
+                        if ledger_names:
+                            client_memory["existing_ledgers"] = ledger_names
+                            print(f"⚡ [Bridge Ledger Sync] Retrieved {len(ledger_names)} client ledgers via Miracle Bridge port 9123!")
+                        else:
+                            client_memory["existing_ledgers"] = []
+                    else:
+                        client_memory["existing_ledgers"] = []
+            except Exception as b_err:
+                client_memory["existing_ledgers"] = []
 
             
         if module == "Cash Entries" and temp_file_path.lower().endswith(('.xls', '.xlsx')):

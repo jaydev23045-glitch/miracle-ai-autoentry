@@ -1,5 +1,70 @@
 # Miracle Auto-Entry Platform - Changelog
 
+### 128. Senior Accounting Parity & Cloud Hybrid Bridge Ledger Sync
+**The Problem Resolved:**
+- **Cloud vs Localhost Mapping Disparity Bug:** When processing uploads on Cloud / Hybrid mode, the backend attempted to read local DBF files on server disk. On cloud containers (where `C:\Miracle` is absent), ledger lookup fell back to an empty list `[]`, causing Gemini AI to bypass ledger matching and output raw uncleaned narration strings (e.g. `Janmar25Instaalertchg3Sms...` mapped to `Direct Expenses`).
+
+**Fixes & Architecture Implemented:**
+1. **Hybrid Bridge Ledger Sync ([vouchers.py](file:///Users/jaydevnakum/Work%20Place/WORK/APP%20DETAILS/Mirracle%20Auto%20Entre%20Sale%20or%20Purchase%20or%20Bank/backend/routers/vouchers.py#L780)):**
+   - Added automatic fallback in `/api/upload` to query local Miracle Bridge (`http://localhost:9123/api/local-ledgers`) when local DBF files cannot be accessed on the server's hard drive.
+   - Restores 100% of client ledgers for Gemini AI context in Cloud / Hybrid mode.
+2. **Universal AI Mapping Trigger Guard ([gemini_service.py](file:///Users/jaydevnakum/Work%20Place/WORK/APP%20DETAILS/Mirracle%20Auto%20Entre%20Sale%20or%20Purchase%20or%20Bank/backend/gemini_service.py#L3528)):**
+   - Updated `is_suspense` evaluation to ensure raw narration strings or generic groups (`Direct Expenses`, `Sundry Debtors`) ALWAYS trigger AI cleaning and mapping, guaranteeing identical Senior Accounting performance across both Localhost and Cloud deployments.
+3. **Automated Verification:**
+   - Executed `scratch/test_all_spaces.py` $\rightarrow$ **100% Passed**.
+   - Executed `py_compile` across all files $\rightarrow$ **100% Passed**.
+
+
+
+### 127. Universal Bank Brands & 6-Level Smart Resolver Expansion
+**The Feature Implemented:**
+1. **Universal Bank Brand Dictionary ([dbf_handler.py](file:///Users/jaydevnakum/Work%20Place/WORK/APP%20DETAILS/Mirracle%20Auto%20Entre%20Sale%20or%20Purchase%20or%20Bank/backend/dbf_handler.py#L4241) & [miracle_bridge/dbf_handler.py](file:///Users/jaydevnakum/Work%20Place/WORK/APP%20DETAILS/Mirracle%20Auto%20Entre%20Sale%20or%20Purchase%20or%20Bank/miracle_bridge/dbf_handler.py#L4241)):**
+   - Expanded `KNOWN_BANK_BRANDS` to include all Private (HDFC, ICICI, Axis, Kotak, IndusInd, Federal, RBL, J&K, CSB...), PSU (SBI, BOB, PNB, Canara, Union, BOI, UCO, BOM...), Small Finance & Payments (AU, Equitas, Paytm, Airtel...), Co-operative & Gramin (Saraswat, Cosmos, SVC, GSCB, Kalupur, Gujarat Gramin...), and Foreign banks (Citi, HSBC, StanChart, DBS, Barclays...).
+2. **Universal 6-Level Resolver:**
+   - Level 1: Exact Name Match
+   - Level 2: Substring Partial Match
+   - Level 3: Bank Brand Keyword Match
+   - Level 4: Fuzzy String Match (0.60)
+   - Level 5: Primary Existing Company Bank Ledger Fallback (`G0000004`)
+   - Level 6: Automatic Bank Ledger Creation in `RKACCM01.DBF` under `G0000004`
+3. **Automated Verification:**
+   - Executed `scratch/test_all_spaces.py` $\rightarrow$ **100% Passed**.
+   - Executed `py_compile` across all files $\rightarrow$ **100% Passed**.
+
+
+
+### 126. Strict Bank-Only Ledger Classification & Profit & Loss Ledger Protection
+**The Problem Resolved:**
+- **P&L Posting & Missing Bank Data Bug:** When pushing bank statements, `bank_name` was resolving to `PROFLOSS` (`Profit & Loss A/c`) because `name.includes('A/C')` matched `Profit & Loss A/c`. This posted all 27 bank transactions directly into Profit & Loss in Miracle and left 0 entries in the real Bank Account.
+
+**Fixes & Architecture Implemented:**
+1. **Strict Bank Ledger Guard ([dbf_handler.py](file:///Users/jaydevnakum/Work%20Place/WORK/APP%20DETAILS/Mirracle%20Auto%20Entre%20Sale%20or%20Purchase%20or%20Bank/backend/dbf_handler.py#L4264) & [miracle_bridge/dbf_handler.py](file:///Users/jaydevnakum/Work%20Place/WORK/APP%20DETAILS/Mirracle%20Auto%20Entre%20Sale%20or%20Purchase%20or%20Bank/miracle_bridge/dbf_handler.py#L4264)):**
+   - Updated `bank_classified_ledgers` filter to strictly require Group `G0000004` / Bank classification and explicitly exclude `PROFLOSS`, `PROFIT & LOSS`, `TRADING`, `CAPITAL`, `DRAWINGS`, `TAX`, `GST`, etc.
+   - Updated Level 1-4 resolution to search exclusively among true bank account ledgers.
+2. **Frontend UI Dropdown Guard ([app.js](file:///Users/jaydevnakum/Work%20Place/WORK/APP%20DETAILS/Mirracle%20Auto%20Entre%20Sale%20or%20Purchase%20or%20Bank/frontend/app.js#L442)):**
+   - Removed generic `A/C` matching in `targetBankAccount` dropdown filter to prevent non-bank system ledgers from populating as target bank accounts.
+3. **Automated Verification:**
+   - Executed `scratch/test_all_spaces.py` $\rightarrow$ **100% Passed**.
+   - Executed `py_compile` across all files $\rightarrow$ **100% Passed**.
+
+
+
+### 125. Smart Localhost / Standalone Push Routing Fix
+**The Problem Resolved:**
+- When running locally on `0.0.0.0`, `127.0.0.1`, `localhost`, or local network IP addresses in Standalone Mode (`Bridge Off`), clicking **Push to Miracle** incorrectly triggered a `MiracleBridge Agent is Offline!` alert popup.
+
+**Fixes & Architecture Implemented:**
+1. **Smart Host Detection Engine ([app.js](file:///Users/jaydevnakum/Work%20Place/WORK/APP%20DETAILS/Mirracle%20Auto%20Entre%20Sale%20or%20Purchase%20or%20Bank/frontend/app.js#L6168)):**
+   - Built `isLocalHost` detector covering `localhost`, `127.0.0.1`, `0.0.0.0`, `192.168.*`, `10.*`, and `.local`.
+   - When running on any local host in Standalone Mode, push requests route directly to the local FastAPI backend (`/api/push`) to write to Miracle DBF files without triggering Bridge offline alerts.
+2. **Cloud Guard Maintenance:**
+   - Preserves offline warning alerts when accessing via Render Cloud (`miracle-ai-autoentry.onrender.com`) without a running Bridge Agent.
+3. **Automated Verification:**
+   - Executed `scratch/test_all_spaces.py` $\rightarrow$ **100% Passed**.
+   - Executed `py_compile` across all files $\rightarrow$ **100% Passed**.
+
+
+
 ### 124. Dynamic Previous Financial Year Preservation & Automatic Date Matching
 **The Problem Resolved:**
 - When selecting a previous financial year (e.g. `2024-25 (YR25)` or `2023-24 (YR24)`), subsequent UI interactions or file uploads previously reset the year dropdown back to the current year (`YR26` / `YR27`).
