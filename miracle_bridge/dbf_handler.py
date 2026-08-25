@@ -23,9 +23,10 @@ class MiracleDBFHandler:
 
     def __init__(self, client_path: str, active_client_id: str = None):
         if active_client_id and isinstance(active_client_id, str):
-            full_path = os.path.join(client_path, active_client_id)
-            if os.path.exists(full_path):
-                client_path = full_path
+            if not client_path.endswith(active_client_id):
+                full_path = os.path.join(client_path, active_client_id)
+                if os.path.exists(full_path):
+                    client_path = full_path
         self.client_path = client_path
         self.audit_report = {
             "injected": 0,
@@ -406,6 +407,8 @@ class MiracleDBFHandler:
 
         if not year_folder:
             year_folder = self.get_latest_year_folder()
+        if os.path.isabs(year_folder) or (self.client_path and self.client_path in year_folder):
+            return os.path.join(year_folder, table_name)
         return os.path.join(self.client_path, year_folder, table_name)
 
     def read_vouchers(self, year_folder: str | None = None, limit: int = 100):
@@ -2813,15 +2816,15 @@ class MiracleDBFHandler:
             l_name = led.get('name', '').upper()
             l_code = led.get('code', '')
             
-            # G0000027 is Sales Accounts group
-            if g_code == 'G0000027':
+            # G0000021 & G0000027 are Sales Accounts groups
+            if g_code in ('G0000021', 'G0000027'):
                 if any(x in l_name for x in ['IGST', 'INTER', 'IS ', 'I/S', 'EXPORT']):
                     sales_interstate_code = l_code
                 else:
                     sales_local_code = l_code
             
-            # G0000026 is Purchase Accounts group
-            elif g_code == 'G0000026':
+            # G0000023 & G0000026 are Purchase Accounts groups
+            elif g_code in ('G0000023', 'G0000026'):
                 if any(x in l_name for x in ['IGST', 'INTER', 'IS ', 'I/S', 'IMPORT']):
                     purch_interstate_code = l_code
                 else:
@@ -2831,7 +2834,7 @@ class MiracleDBFHandler:
         # Sales
         if not sales_local_code:
             for led in ledgers:
-                if led.get('group_code') == 'G0000027':
+                if led.get('group_code') in ('G0000021', 'G0000027'):
                     sales_local_code = led['code']
                     break
             if not sales_local_code:
@@ -2842,7 +2845,7 @@ class MiracleDBFHandler:
         # Purchases
         if not purch_local_code:
             for led in ledgers:
-                if led.get('group_code') == 'G0000026':
+                if led.get('group_code') in ('G0000023', 'G0000026'):
                     purch_local_code = led['code']
                     break
             if not purch_local_code:
@@ -4530,8 +4533,7 @@ class MiracleDBFHandler:
                     narration_clean = narration[:50].strip().lower()
 
                     # ── INTRA-BATCH DEDUP: Block identical rows within the same push ──────────
-                    # Include `idx` so we NEVER drop genuine identical rows (e.g. two separate 2000.00 payments)
-                    batch_key = (idx, str(v_date), round(amount, 2), party_name.upper(), f98, ref_no_clean, narration_clean)
+                    batch_key = (str(v_date), round(amount, 2), party_name.upper(), f98, ref_no_clean, narration_clean)
                     if batch_key in intra_batch_seen:
                         print(f"🚫 Intra-batch duplicate blocked: {party_name} {amount} {v_date}")
                         self.audit_report["duplicates"] += 1
@@ -6049,7 +6051,7 @@ ENDPROC
                     ref_no_clean = ref_no.strip().lower()
                     narration_clean = narration[:50].strip().lower()
                     # ── INTRA-BATCH DEDUP: Block identical rows within the same push ──────────
-                    batch_key = (idx, str(v_date), amount, party_code, cash_ledger_code, f98, ref_no_clean, narration_clean)
+                    batch_key = (str(v_date), round(amount, 2), party_code, cash_ledger_code, f98, ref_no_clean, narration_clean)
                     if batch_key in intra_batch_seen:
                         print(f"🚫 Intra-batch duplicate blocked: {party_name} {amount} {v_date}")
                         self.audit_report["duplicates"] += 1

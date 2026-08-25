@@ -402,8 +402,11 @@ document.addEventListener('DOMContentLoaded', () => {
     async function fetchLedgers() {
         try {
             const clientId = getActiveClientId();
+            const currentMiraclePath = (typeof miracleBasePathInput !== 'undefined' && miracleBasePathInput && miracleBasePathInput.value)
+                ? miracleBasePathInput.value.trim()
+                : 'C:\\Miracle';
             const targetUrl = isLocalBridgeOnline
-                ? `${LOCAL_BRIDGE_URL}/api/local-ledgers?client_id=${clientId}&year_folder=${activeYearFolder || 'YR25'}`
+                ? `${LOCAL_BRIDGE_URL}/api/local-ledgers?client_id=${clientId}&year_folder=${activeYearFolder || 'YR25'}&base_path=${encodeURIComponent(currentMiraclePath)}`
                 : `${API_URL}/api/ledgers${activeYearFolder ? '?year=' + activeYearFolder : ''}`;
             const res = await fetch(targetUrl);
             if (!res.ok) throw new Error("Failed to retrieve ledgers.");
@@ -907,17 +910,25 @@ document.addEventListener('DOMContentLoaded', () => {
             repairBalancesBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin mr-1"></i> Repairing...';
             
             try {
-                let url = `${API_URL}/api/repair-bank-flags`;
+                const currentMiraclePath = (typeof miracleBasePathInput !== 'undefined' && miracleBasePathInput && miracleBasePathInput.value)
+                    ? miracleBasePathInput.value.trim() : 'C:\\Miracle';
+                const activeClient = getActiveClientId();
+
+                let url = isLocalBridgeOnline
+                    ? `${LOCAL_BRIDGE_URL}/api/repair-bank-flags?client_id=${encodeURIComponent(activeClient)}&base_path=${encodeURIComponent(currentMiraclePath)}`
+                    : `${API_URL}/api/repair-bank-flags`;
                 if (activeYear) {
-                    url += `?year=${encodeURIComponent(activeYear)}`;
+                    url += `&year=${encodeURIComponent(activeYear)}`;
                 }
                 const res = await fetch(url, { method: 'POST' });
                 const data = await res.json();
 
                 // Also trigger narration repair pass
-                let narrUrl = `${API_URL}/api/repair-narrations`;
+                let narrUrl = isLocalBridgeOnline
+                    ? `${LOCAL_BRIDGE_URL}/api/repair-narrations?client_id=${encodeURIComponent(activeClient)}&base_path=${encodeURIComponent(currentMiraclePath)}`
+                    : `${API_URL}/api/repair-narrations`;
                 if (activeYear) {
-                    narrUrl += `?year_folder=${encodeURIComponent(activeYear)}`;
+                    narrUrl += `&year_folder=${encodeURIComponent(activeYear)}`;
                 }
                 await fetch(narrUrl, { method: 'POST' });
                 
@@ -6073,6 +6084,11 @@ document.addEventListener('DOMContentLoaded', () => {
                 const backupPathVal = (typeof inlineBackupPath !== 'undefined' && inlineBackupPath && inlineBackupPath.value)
                     ? inlineBackupPath.value.trim()
                     : "";
+                const salesSetupIdVal = document.getElementById('salesSetupId') ? parseInt(document.getElementById('salesSetupId').value || 5) : 5;
+                const purchaseSetupIdVal = document.getElementById('purchaseSetupId') ? parseInt(document.getElementById('purchaseSetupId').value || 6) : 6;
+                const salesPrefixVal = document.getElementById('salesPrefix') ? document.getElementById('salesPrefix').value.trim() : "SS,SS";
+                const purchasePrefixVal = document.getElementById('purchasePrefix') ? document.getElementById('purchasePrefix').value.trim() : "PP,PP";
+
                 const bridgePayload = {
                     miracle_base_path: miracleBasePathVal,
                     active_client_id: getActiveClientId(),
@@ -6082,6 +6098,10 @@ document.addEventListener('DOMContentLoaded', () => {
                         : (currentModule === 'Purchases') ? 'purchase' 
                         : (currentModule === 'Cash Entries') ? 'cash' : 'opening_balance',
                     vouchers: vouchers,
+                    sales_setup_id: salesSetupIdVal,
+                    purchase_setup_id: purchaseSetupIdVal,
+                    sales_prefix: salesPrefixVal,
+                    purchase_prefix: purchasePrefixVal,
                     target_bank_name: window.currentBankName || "Bank Account",
                     target_cash_code: (document.getElementById('targetCashAccount') ? document.getElementById('targetCashAccount').value : "ACASHACT") || "ACASHACT",
                     backup_path: backupPathVal

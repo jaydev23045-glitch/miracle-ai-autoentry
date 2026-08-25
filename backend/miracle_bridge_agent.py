@@ -194,7 +194,7 @@ class InjectRequestPayload(BaseModel):
     active_year_folder: str
     module_type: str  # "bank", "sales", "purchase", "cash", "opening_balance"
     vouchers: List[Dict[str, Any]]
-    sales_setup_id: Optional[int] = 3
+    sales_setup_id: Optional[int] = 5
     purchase_setup_id: Optional[int] = 6
     sales_prefix: Optional[str] = "SS,SS"
     purchase_prefix: Optional[str] = "PP,PP"
@@ -308,19 +308,21 @@ def get_local_years(base_path: str = "C:\\Miracle", client_id: str = "CMP0001"):
 @app.get("/api/local-ledgers")
 def get_local_ledgers(base_path: str = "C:\\Miracle", client_id: str = "CMP0005", year_folder: str = "YR25"):
     """Reads classified party ledgers directly from local DBF files on client machine"""
+    base_path = resolve_valid_base_path(base_path)
     client_path = os.path.join(base_path, client_id)
     if not os.path.exists(client_path):
         return {"status": "success", "ledgers": []}
     try:
         handler = MiracleDBFHandler(client_path)
         ledgers = handler.get_all_ledgers(year_folder)
-        return {"status": "success", "ledgers": ledgers}
+        return {"status": "success", "year": year_folder, "ledgers": ledgers}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to read local ledgers: {str(e)}")
 
 @app.get("/api/local-groups")
 def get_local_groups(base_path: str = "C:\\Miracle", client_id: str = "CMP0005"):
     """Reads account groups hierarchy directly from local RKACCM11.DBF"""
+    base_path = resolve_valid_base_path(base_path)
     client_path = os.path.join(base_path, client_id)
     if not os.path.exists(client_path):
         return {"status": "success", "groups": []}
@@ -331,6 +333,51 @@ def get_local_groups(base_path: str = "C:\\Miracle", client_id: str = "CMP0005")
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to read account groups: {str(e)}")
 
+@app.get("/api/repair-bank-flags")
+@app.post("/api/repair-bank-flags")
+def repair_bank_flags(base_path: str = "C:\\Miracle", client_id: str = "CMP0005", year: str = ""):
+    """Repairs closing balance flags for all pushed bank and cash entries on local PC"""
+    try:
+        base_path = resolve_valid_base_path(base_path)
+        client_path = os.path.join(base_path, client_id)
+        if not os.path.exists(client_path):
+            return {"status": "error", "message": f"Client directory '{client_path}' not found."}
+        handler = MiracleDBFHandler(client_path)
+        count = handler.repair_bank_closing_flags(year_folder=year)
+        return {"status": "success", "message": f"Repaired closing balance flags for {count} bank/cash entries."}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/repair-narrations")
+@app.post("/api/repair-narrations")
+def repair_narrations(base_path: str = "C:\\Miracle", client_id: str = "CMP0005", year_folder: str = ""):
+    """Repairs memo narrations (RKACCT40.DBF) for local client database"""
+    try:
+        base_path = resolve_valid_base_path(base_path)
+        client_path = os.path.join(base_path, client_id)
+        if not os.path.exists(client_path):
+            return {"status": "error", "message": f"Client directory '{client_path}' not found."}
+        handler = MiracleDBFHandler(client_path)
+        res = handler.repair_missing_narrations(year_folder=year_folder)
+        return {"status": "success", "message": "Narrations repaired successfully.", "result": res}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/repair-cdx-flags")
+@app.post("/api/repair-cdx-flags")
+def repair_cdx_flags(base_path: str = "C:\\Miracle", client_id: str = "CMP0005", year: str = ""):
+    """Heals CDX index byte 28 header flags for local client tables"""
+    try:
+        base_path = resolve_valid_base_path(base_path)
+        client_path = os.path.join(base_path, client_id)
+        if not os.path.exists(client_path):
+            return {"status": "error", "message": f"Client directory '{client_path}' not found."}
+        handler = MiracleDBFHandler(client_path)
+        count = handler.heal_cdx_header_flags(year_folder=year)
+        return {"status": "success", "message": f"Healed CDX flags for {count} DBF tables."}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 @app.post("/inject")
 def inject_vouchers(payload: InjectRequestPayload):
     """
@@ -339,7 +386,7 @@ def inject_vouchers(payload: InjectRequestPayload):
     Also creates an automatic timestamped ZIP backup in configured custom backup_path.
     """
     try:
-        miracle_base_path = payload.miracle_base_path
+        miracle_base_path = resolve_valid_base_path(payload.miracle_base_path)
         active_client_id = payload.active_client_id
         active_year_folder = payload.active_year_folder
         module_type = payload.module_type
@@ -382,33 +429,36 @@ def inject_vouchers(payload: InjectRequestPayload):
             # Delegate injection based on module type
             if module_type == "bank":
                 b_name = getattr(payload, "target_bank_name", None) or "Bank Account"
-                res = handler._inject_bank_statements(vouchers, b_name, year_dir)
+                res = handler._inject_bank_statements(vouchers, b_name, active_year_folder)
             elif module_type == "sales":
                 res = handler._inject_sales(
                     vouchers, 
-                    year_dir, 
+                    active_year_folder, 
                     setup_id=payload.sales_setup_id, 
                     sales_prefix=payload.sales_prefix
                 )
             elif module_type == "purchase":
                 res = handler._inject_purchases(
                     vouchers, 
-                    year_dir, 
+                    active_year_folder, 
                     setup_id=payload.purchase_setup_id, 
                     purchase_prefix=payload.purchase_prefix
                 )
             elif module_type == "cash":
                 c_code = getattr(payload, "target_cash_code", None) or "ACASHACT"
-                res = handler._inject_cash_entries(vouchers, c_code, year_dir)
+                res = handler._inject_cash_entries(vouchers, c_code, active_year_folder)
             elif module_type == "opening_balance":
-                res = handler.push_opening_balances(vouchers, year_dir)
+                res = handler.push_opening_balances(vouchers, active_year_folder)
             else:
                 raise HTTPException(status_code=400, detail=f"Unsupported module_type '{module_type}'")
 
+            audit_rep = handler.audit_report if hasattr(handler, 'audit_report') else {}
             return {
                 "status": "success",
                 "message": f"Successfully injected {len(vouchers)} {module_type} vouchers into Miracle DBF!",
                 "backup_zip": backup_zip,
+                "primary_year": active_year_folder,
+                "audit_report": audit_rep,
                 "result": res
             }
 
@@ -441,6 +491,6 @@ if __name__ == "__main__":
     }
 
     try:
-        uvicorn.run(app, host="127.0.0.1", port=9123, log_config=UVICORN_LOG_CONFIG)
+        uvicorn.run(app, host="0.0.0.0", port=9123, log_config=UVICORN_LOG_CONFIG)
     except Exception as run_err:
         print(f"Server error: {run_err}")
