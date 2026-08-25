@@ -4143,8 +4143,6 @@ class MiracleDBFHandler:
 
     def is_true_contra_entry(self, party_name: str, party_code: str, code_to_classification: dict, party_group_code: str = "") -> bool:
         """
-    def is_true_contra_entry(self, party_name: str, party_code: str, code_to_classification: dict, party_group_code: str = "") -> bool:
-        """
         Determines if a transaction is a genuine Contra entry (fund transfer between OWN Cash/Bank accounts).
         
         STRICT ACCOUNTING RULES:

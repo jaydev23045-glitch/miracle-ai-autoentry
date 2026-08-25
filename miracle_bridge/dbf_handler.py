@@ -21,7 +21,11 @@ class MiracleDBFHandler:
             else:
                 cls._CROSS_YEAR_CACHE.clear()
 
-    def __init__(self, client_path: str):
+    def __init__(self, client_path: str, active_client_id: str = None):
+        if active_client_id and isinstance(active_client_id, str):
+            full_path = os.path.join(client_path, active_client_id)
+            if os.path.exists(full_path):
+                client_path = full_path
         self.client_path = client_path
         self.audit_report = {
             "injected": 0,
