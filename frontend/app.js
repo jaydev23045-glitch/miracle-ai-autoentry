@@ -435,29 +435,68 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
             }
 
-            // Populate Target Bank Account dropdown
+            // Populate Target Bank Account dropdown with Smart Matching & Custom Input Option
             const targetBankSelect = document.getElementById('targetBankAccount');
             if (targetBankSelect) {
                 targetBankSelect.innerHTML = '';
-                const bankLedgers = clientLedgers.filter(led => (led.group_name && led.group_name.toUpperCase().includes('BANK')) || (led.name && led.name.toUpperCase().includes('BANK')) || (led.print_name && led.print_name.toUpperCase().includes('BANK')));
+                const bankLedgers = clientLedgers.filter(led => {
+                    const cat = (led.classification || '').toUpperCase();
+                    const grp = (led.group_code || '').toUpperCase();
+                    const grpName = (led.group_name || '').toUpperCase();
+                    const name = (led.name || '').toUpperCase();
+                    const printName = (led.print_name || '').toUpperCase();
+                    return cat === 'BANK' || grp === 'G0000004' || 
+                           grpName.includes('BANK') || name.includes('BANK') || printName.includes('BANK') ||
+                           name.includes('A/C') || name.includes('ACCOUNT') || name.includes('CURRENT') || name.includes('SAVINGS');
+                });
+
                 bankLedgers.forEach((led) => {
                     const opt = document.createElement('option');
                     opt.value = led.code;
-                    opt.innerText = `${led.print_name} (${led.code})`;
+                    opt.innerText = `🏦 ${led.print_name || led.name} (${led.code})`;
                     targetBankSelect.appendChild(opt);
                 });
                 
+                // Always add custom bank account option for write-in
+                const customOpt = document.createElement('option');
+                customOpt.value = "__CUSTOM__";
+                customOpt.innerText = "✍️ Enter Custom Bank Ledger Name...";
+                targetBankSelect.appendChild(customOpt);
+
                 if (bankLedgers.length > 0) {
                     targetBankSelect.selectedIndex = 0;
-                    window.currentBankName = bankLedgers[0].print_name;
+                    window.currentBankName = bankLedgers[0].print_name || bankLedgers[0].name;
+                    window.currentBankCode = bankLedgers[0].code;
+                } else {
+                    window.currentBankName = "Bank Account";
                 }
-                if (currentModule === 'Bank Statements' && targetBankSelect.options.length > 0) {
+
+                if (currentModule === 'Bank Statements') {
                     targetBankSelect.classList.remove('hidden');
                 }
-                targetBankSelect.addEventListener('change', (e) => {
-                    const selOpt = targetBankSelect.options[targetBankSelect.selectedIndex];
-                    window.currentBankName = selOpt ? selOpt.text : 'Bank Account';
-                });
+
+                targetBankSelect.onchange = (e) => {
+                    const val = targetBankSelect.value;
+                    if (val === "__CUSTOM__") {
+                        const customName = prompt("Enter Miracle Bank Account Ledger Name (e.g., HDFC Bank A/c 502000123):", window.currentBankName || "Bank Account");
+                        if (customName && customName.trim()) {
+                            window.currentBankName = customName.trim();
+                            const typedOpt = document.createElement('option');
+                            typedOpt.value = customName.trim();
+                            typedOpt.innerText = `✍️ ${customName.trim()}`;
+                            targetBankSelect.insertBefore(typedOpt, targetBankSelect.firstChild);
+                            targetBankSelect.value = customName.trim();
+                        } else {
+                            targetBankSelect.selectedIndex = 0;
+                        }
+                    } else {
+                        const selOpt = targetBankSelect.options[targetBankSelect.selectedIndex];
+                        let rawText = selOpt ? selOpt.text.replace(/^[🏦✍️]\s*/, '').replace(/\s*\([^)]*\)$/, '').trim() : 'Bank Account';
+                        window.currentBankName = rawText;
+                        window.currentBankCode = val;
+                    }
+                    console.log(`🏦 Target Bank Account Selected: '${window.currentBankName}' (${window.currentBankCode || 'N/A'})`);
+                };
             }
         } catch (err) {
             console.error("Error fetching client ledgers:", err);
@@ -597,6 +636,19 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
+    function formatYearFolderLabel(folder) {
+        if (!folder) return '2026-27 (YR26)';
+        const match = folder.trim().match(/^YR(\d{2})$/i);
+        if (match) {
+            const yy = parseInt(match[1], 10);
+            const startYY = yy - 1;
+            const startFull = startYY < 50 ? 2000 + startYY : 1900 + startYY;
+            const endYYStr = yy.toString().padStart(2, '0');
+            return `${startFull}-${endYYStr} (${folder.toUpperCase()})`;
+        }
+        return folder;
+    }
+
     async function fetchClientYears(clientId, selectedYear = "") {
         if (!clientId) return;
         try {
@@ -616,50 +668,56 @@ document.addEventListener('DOMContentLoaded', () => {
                     { folder: 'YR25', label: '2025-26 (YR25)', is_valid: true }
                 ];
             }
-            
-            yearSelect.innerHTML = '';
-            let targetYear = selectedYear || activeYearFolder;
-            
-            const existsInClient = years.some(y => y.folder === targetYear);
-            if (!existsInClient) {
+
+            // Determine target year (selectedYear > activeYearFolder > recommended > first)
+            let targetYear = (selectedYear || activeYearFolder || "").trim().toUpperCase();
+            if (!targetYear) {
                 const rec = years.find(y => y.recommended);
-                if (rec) targetYear = rec.folder;
-                else if (years.length > 0) targetYear = years[0].folder;
-                else targetYear = "YR26";
+                targetYear = rec ? rec.folder : (years[0] ? years[0].folder : "YR26");
             }
             
+            // Ensure targetYear exists in the options so previous/historical years like YR25, YR24 are NEVER discarded
+            const existsInClient = years.some(y => (y.folder || "").toUpperCase() === targetYear);
+            if (!existsInClient && targetYear) {
+                years.unshift({
+                    folder: targetYear,
+                    label: formatYearFolderLabel(targetYear),
+                    is_valid: true
+                });
+            }
+            
+            yearSelect.innerHTML = '';
             years.forEach(y => {
+                const fld = (y.folder || 'YR26').toUpperCase();
                 const opt = document.createElement('option');
-                opt.value = y.folder || 'YR26';
-                opt.innerText = y.label || y.folder || '2026-27 (YR26)';
+                opt.value = fld;
+                opt.innerText = y.label || formatYearFolderLabel(fld);
                 opt.className = 'bg-slate-800';
-                if (y.folder === targetYear) opt.selected = true;
+                if (fld === targetYear) opt.selected = true;
                 yearSelect.appendChild(opt);
             });
             
-            if (yearSelect.options.length === 0) {
-                const opt = document.createElement('option');
-                opt.value = 'YR26';
-                opt.innerText = '2026-27 (YR26)';
-                opt.className = 'bg-slate-800';
-                opt.selected = true;
-                yearSelect.appendChild(opt);
-            }
-            
-            if (yearSelect.options.length > 0 && (yearSelect.selectedIndex === -1 || !yearSelect.value)) {
-                yearSelect.selectedIndex = 0;
-            }
-            activeYearFolder = yearSelect.value || 'YR26';
+            yearSelect.value = targetYear;
+            activeYearFolder = yearSelect.value || targetYear;
             updateHeaderBadges();
         } catch (err) {
             console.error("Error fetching client years:", err);
             if (yearSelect) {
-                yearSelect.innerHTML = `
-                    <option value="YR27" class="bg-slate-800">2027-28 (YR27)</option>
-                    <option value="YR26" class="bg-slate-800" selected>2026-27 (YR26)</option>
-                    <option value="YR25" class="bg-slate-800">2025-26 (YR25)</option>
-                `;
-                activeYearFolder = 'YR26';
+                let targetYear = (selectedYear || activeYearFolder || "YR26").toUpperCase();
+                const defaultYears = ['YR27', 'YR26', 'YR25', 'YR24'];
+                if (!defaultYears.includes(targetYear)) defaultYears.unshift(targetYear);
+                
+                yearSelect.innerHTML = '';
+                defaultYears.forEach(yr => {
+                    const opt = document.createElement('option');
+                    opt.value = yr;
+                    opt.innerText = formatYearFolderLabel(yr);
+                    opt.className = 'bg-slate-800';
+                    if (yr === targetYear) opt.selected = true;
+                    yearSelect.appendChild(opt);
+                });
+                yearSelect.value = targetYear;
+                activeYearFolder = targetYear;
                 updateHeaderBadges();
             }
         }
@@ -734,6 +792,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // Nav bar year selector changed
     yearSelect.addEventListener('change', async () => {
         activeYearFolder = yearSelect.value;
+        window.userOverrodeYear = true;
         updateHeaderBadges();
         saveSettings(true); // Save silently in background
         await fetchLedgers();
@@ -2463,9 +2522,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     const originalYear = activeYearFolder;
                     activeYearFolder = resData.detected_year;
                     
-                    if (yearSelect) {
-                        yearSelect.value = activeYearFolder;
-                    }
+                    await fetchClientYears(clientSelect.value, activeYearFolder);
                     
                     await fetchLedgers();
                     await fetchProducts();
@@ -6109,7 +6166,7 @@ document.addEventListener('DOMContentLoaded', () => {
         let targetBody = JSON.stringify(pushPayload);
 
         // If running on Render Cloud, Miracle DBF injection MUST route directly to local client PC agent (MiracleBridge.exe)
-        const isCloudDeployment = (window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1');
+        const isCloudDeployment = (window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1' && window.location.hostname !== '0.0.0.0');
         if (isCloudDeployment || isLocalBridgeOnline) {
             if (isLocalBridgeOnline) {
                 targetPushEndpoint = `${LOCAL_BRIDGE_URL}/inject`;
@@ -6167,9 +6224,7 @@ document.addEventListener('DOMContentLoaded', () => {
             
             if (result.primary_year && result.primary_year !== activeYearFolder) {
                 activeYearFolder = result.primary_year;
-                if (yearSelect) {
-                    yearSelect.value = activeYearFolder;
-                }
+                await fetchClientYears(getActiveClientId(), activeYearFolder);
                 updateHeaderBadges();
                 console.log(`Auto-synced active year folder to ${activeYearFolder}`);
             }
@@ -6948,7 +7003,7 @@ function printElementFallback(element) {
             // Auto-detect year and client if detected
             if (resData.detected_year && resData.detected_year !== activeYearFolder) {
                 activeYearFolder = resData.detected_year;
-                if (yearSelect) yearSelect.value = activeYearFolder;
+                await fetchClientYears(getActiveClientId(), activeYearFolder);
             }
             if (resData.detected_client && resData.detected_client !== clientSelect.value) {
                 clientSelect.value = resData.detected_client;

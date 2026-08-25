@@ -1,5 +1,38 @@
 # Miracle Auto-Entry Platform - Changelog
 
+### 124. Dynamic Previous Financial Year Preservation & Automatic Date Matching
+**The Problem Resolved:**
+- When selecting a previous financial year (e.g. `2024-25 (YR25)` or `2023-24 (YR24)`), subsequent UI interactions or file uploads previously reset the year dropdown back to the current year (`YR26` / `YR27`).
+
+**Fixes & Architecture Implemented:**
+1. **Dynamic Previous Year Preservation ([app.js](file:///Users/jaydevnakum/Work%20Place/WORK/APP%20DETAILS/Mirracle%20Auto%20Entre%20Sale%20or%20Purchase%20or%20Bank/frontend/app.js#L639)):**
+   - Upgraded `fetchClientYears()`: When `selectedYear` (e.g. `YR25` / `YR24` / `YR23`) is chosen or detected, the engine dynamically formats and unshifts `{ folder: targetYear, label: formatYearFolderLabel(targetYear) }` into the year selector.
+   - Prevents `fetchClientYears()` from discarding manually selected previous financial year folders.
+2. **User Manual Override Protection (`window.userOverrodeYear`):**
+   - Added user override flag on manual year dropdown selection, ensuring user-selected financial years are preserved during background refreshes.
+3. **Automated Verification:**
+   - Executed `scratch/test_all_spaces.py` $\rightarrow$ **100% Passed**.
+   - Executed `py_compile` across all files $\rightarrow$ **100% Passed**.
+
+
+
+### 123. Target Bank Account Ledger Resolution & Standalone UI Selector Fix
+**The Problem Resolved:**
+1. **Pushed Data Missing in Miracle:** When pushing bank statements, entries were pushed under a generic `"Bank Account"` or `"Suspense Bank A/c"` ledger because the target bank ledger wasn't resolving to the client's real Miracle Bank Account (e.g. `HDFC BANK A/C`), causing pushed transactions to be hidden under different ledgers in Miracle.
+2. **Hidden Bank Selector in Standalone Mode:** In Standalone / Cloud mode, the Target Bank Account dropdown was hidden or failed to populate when ledgers didn't match rigid `"BANK"` strings.
+
+**Fixes & Architecture Implemented:**
+1. **Level 5 Smart Bank Ledger Auto-Discovery ([dbf_handler.py](file:///Users/jaydevnakum/Work%20Place/WORK/APP%20DETAILS/Mirracle%20Auto%20Entre%20Sale%20or%20Purchase%20or%20Bank/backend/dbf_handler.py#L4309) & [miracle_bridge/dbf_handler.py](file:///Users/jaydevnakum/Work%20Place/WORK/APP%20DETAILS/Mirracle%20Auto%20Entre%20Sale%20or%20Purchase%20or%20Bank/miracle_bridge/dbf_handler.py#L4309)):**
+   - Added Level 5 fallback in `_inject_bank_statements()` to auto-select the primary existing bank-classified ledger from the client's Miracle DBF (`RKACCM01.DBF`) whenever a generic or unresolved bank name is passed, guaranteeing vouchers are pushed directly into the client's real Miracle Bank Account.
+2. **Enhanced UI Bank Selector & Custom Write-In ([app.js](file:///Users/jaydevnakum/Work%20Place/WORK/APP%20DETAILS/Mirracle%20Auto%20Entre%20Sale%20or%20Purchase%20or%20Bank/frontend/app.js#L442)):**
+   - Expanded bank ledger filtering to recognize all bank accounts (`group_code === 'G0000004'`, `A/C`, `ACCOUNT`, `CURRENT`, `SAVINGS`).
+   - Added `✍️ Enter Custom Bank Ledger Name...` option allowing users to type/select any custom Miracle Bank Account Ledger name.
+3. **Automated Verification:**
+   - Executed `scratch/test_all_spaces.py` $\rightarrow$ **100% Passed**.
+   - Executed `py_compile` across all files $\rightarrow$ **100% Passed**.
+
+
+
 ### 122. Daily Quota vs. Per-Minute RPM Rate-Limit Discrimination Engine
 **The Feature Implemented:**
 1. **RPM Spike vs. Daily Quota Discrimination:** Enhanced `_generate_content_with_retry()` to differentiate between temporary per-minute RPM spikes (e.g. 15 RPM exceeded) versus true daily quota exhaustion (500 RPD limit reached).

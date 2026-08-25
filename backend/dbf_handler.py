@@ -4308,10 +4308,16 @@ class MiracleDBFHandler:
                         break
         
         if not bank_ledger_code:
-            print(f"[bank resolve] ⚠️ No match found for '{bank_name}' — creating new ledger.")
-            bank_ledger_code = self.create_party_ledger(bank_name, 'Bank Statements', year_folder=year_folder)
-            # Sync to all other year folders so it's never "missing" next year
-            self._sync_party_to_other_years(bank_name, bank_ledger_code, year_folder)
+            # Level 5: If company has bank-classified ledgers in Miracle DBF, pick primary existing Bank Ledger
+            if bank_classified_ledgers:
+                first_bank = bank_classified_ledgers[0]
+                bank_ledger_code = first_bank['code']
+                print(f"[bank resolve] ⚡ Level 5 (existing bank fallback): Auto-selected primary company bank ledger '{first_bank['name']}' ({first_bank['code']})")
+            else:
+                print(f"[bank resolve] ⚠️ No match found for '{bank_name}' — creating new ledger.")
+                bank_ledger_code = self.create_party_ledger(bank_name, 'Bank Statements', year_folder=year_folder)
+                # Sync to all other year folders so it's never "missing" next year
+                self._sync_party_to_other_years(bank_name, bank_ledger_code, year_folder)
 
 
         # 1b. Build name→code lookup from ALL years
