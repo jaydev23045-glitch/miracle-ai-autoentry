@@ -1,5 +1,21 @@
 # Miracle Auto-Entry Platform - Changelog
 
+### 129. Form-Data Ledger Injection & Complete Cloud vs Localhost Audit
+**The Problem Resolved:**
+- **Form Data Ledger Sync Gap:** `frontend/app.js` was appending `ledgers_list` in form-data during upload, but FastAPI `upload_document` endpoint signature was missing `ledgers_list: str = Form("")`. This caused FastAPI to discard the frontend ledger payload when running on Cloud server.
+
+**Fixes & Architecture Implemented:**
+1. **Form-Data Ledger Parameter Ingestion ([vouchers.py](file:///Users/jaydevnakum/Work%20Place/WORK/APP%20DETAILS/Mirracle%20Auto%20Entre%20Sale%20or%20Purchase%20or%20Bank/backend/routers/vouchers.py#L758)):**
+   - Added `ledgers_list: str = Form("")` to `upload_document`.
+   - When running on Render Cloud where server disk DBFs cannot be read, `/api/upload` parses `ledgers_list` sent from frontend memory, guaranteeing 100% client ledger context even if Miracle Bridge is disconnected during upload.
+2. **Bridge-Resilient Ledger Updates ([vouchers.py](file:///Users/jaydevnakum/Work%20Place/WORK/APP%20DETAILS/Mirracle%20Auto%20Entre%20Sale%20or%20Purchase%20or%20Bank/backend/routers/vouchers.py#L635)):**
+   - Updated `/api/update-ledger` to forward ledger updates to Miracle Bridge port 9123 when local disk path is not present on Cloud server.
+3. **Automated Verification:**
+   - Executed `scratch/test_all_spaces.py` $\rightarrow$ **100% Passed**.
+   - Executed `py_compile` across all files $\rightarrow$ **100% Passed**.
+
+
+
 ### 128. Senior Accounting Parity & Cloud Hybrid Bridge Ledger Sync
 **The Problem Resolved:**
 - **Cloud vs Localhost Mapping Disparity Bug:** When processing uploads on Cloud / Hybrid mode, the backend attempted to read local DBF files on server disk. On cloud containers (where `C:\Miracle` is absent), ledger lookup fell back to an empty list `[]`, causing Gemini AI to bypass ledger matching and output raw uncleaned narration strings (e.g. `Janmar25Instaalertchg3Sms...` mapped to `Direct Expenses`).

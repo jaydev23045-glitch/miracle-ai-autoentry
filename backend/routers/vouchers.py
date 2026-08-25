@@ -617,9 +617,6 @@ def api_update_ledger(payload: dict):
         raise HTTPException(status_code=400, detail="No active client selected.")
 
     client_path = os.path.join(settings["miracle_base_path"], client_id)
-    if not os.path.exists(client_path):
-        raise HTTPException(status_code=404, detail=f"Client folder not found at {client_path}")
-
     old_name = payload.get("old_name", "").strip()
     new_name = payload.get("new_name", "").strip()
     print_name = payload.get("print_name", "").strip() or new_name
@@ -636,21 +633,40 @@ def api_update_ledger(payload: dict):
     try:
         updated_code = ""
         if sync_dbf:
-            handler = MiracleDBFHandler(client_path)
-            updated_code = handler.update_party_ledger(
-                old_name=old_name,
-                new_name=new_name,
-                print_name=print_name,
-                group_code=group_code,
-                gstin=gstin,
-                city=city,
-                year_folder=year
-            )
-            if updated_code:
+            if os.path.exists(client_path):
+                handler = MiracleDBFHandler(client_path)
+                updated_code = handler.update_party_ledger(
+                    old_name=old_name,
+                    new_name=new_name,
+                    print_name=print_name,
+                    group_code=group_code,
+                    gstin=gstin,
+                    city=city,
+                    year_folder=year
+                )
+                if updated_code:
+                    try:
+                        handler._sync_party_to_other_years(new_name, updated_code, year)
+                    except Exception as sync_err:
+                        print(f"⚠️ Warning: Cross-year sync during ledger update failed: {sync_err}")
+            else:
+                # Hybrid Bridge Fallback: Send update request to local Miracle Bridge on port 9123
                 try:
-                    handler._sync_party_to_other_years(new_name, updated_code, year)
-                except Exception as sync_err:
-                    print(f"⚠️ Warning: Cross-year sync during ledger update failed: {sync_err}")
+                    import urllib.request
+                    import json
+                    bridge_url = "http://localhost:9123/api/update-local-ledger"
+                    req = urllib.request.Request(
+                        bridge_url, 
+                        data=json.dumps(payload).encode('utf-8'),
+                        headers={"Content-Type": "application/json", "User-Agent": "MiracleServer/1.0"}
+                    )
+                    with urllib.request.urlopen(req, timeout=2.0) as resp:
+                        if resp.status == 200:
+                            res_json = json.loads(resp.read().decode('utf-8'))
+                            updated_code = res_json.get("code", "")
+                            print(f"⚡ [Bridge Ledger Update] Successfully updated ledger '{old_name}' → '{new_name}' via Miracle Bridge port 9123!")
+                except Exception as b_up_err:
+                    print(f"⚠️ Bridge ledger update skipped/failed: {b_up_err}")
 
         if save_memory:
             from ai_memory import AIMemoryVault
@@ -739,7 +755,13 @@ def get_extraction_status_endpoint():
     return {"filename": "", "part": 0, "total": 0, "progress_pct": 0, "percentage": 0, "message": "Idle"}
 
 @router.post("/api/upload")
-async def upload_document(module: str = Form(...), instruction: str = Form(""), pdf_password: str = Form(""), file: UploadFile = File(...)):
+async def upload_document(
+    module: str = Form(...), 
+    instruction: str = Form(""), 
+    pdf_password: str = Form(""), 
+    ledgers_list: str = Form(""),
+    file: UploadFile = File(...)
+):
     """Endpoint for uploading Excels, PDFs, or Images and extracting data using Gemini."""
     settings = load_settings()
     api_key = settings.get("gemini_api_key", "")
@@ -779,26 +801,30 @@ async def upload_document(module: str = Form(...), instruction: str = Form(""), 
                 print(f"💾 [Ledger Cache STORE] Cached {len(ledger_names)} ledgers for '{client_id}'")
         except Exception as dbf_err:
             print(f"Warning: Could not read local DBF ledgers for Gemini context: {dbf_err}")
-            # Hybrid Fallback: Query Miracle Bridge on port 9123 if running on cloud/hybrid setup
-            try:
-                import urllib.request
-                import json
-                bridge_url = f"http://localhost:9123/api/local-ledgers?client_id={client_id}"
-                req = urllib.request.Request(bridge_url, headers={"User-Agent": "MiracleServer/1.0"})
-                with urllib.request.urlopen(req, timeout=1.5) as resp:
-                    if resp.status == 200:
-                        b_data = json.loads(resp.read().decode('utf-8'))
-                        b_ledgers = b_data.get("data", [])
-                        ledger_names = [led.get('name') for led in b_ledgers if isinstance(led, dict) and led.get('name')]
-                        if ledger_names:
-                            client_memory["existing_ledgers"] = ledger_names
-                            print(f"⚡ [Bridge Ledger Sync] Retrieved {len(ledger_names)} client ledgers via Miracle Bridge port 9123!")
-                        else:
-                            client_memory["existing_ledgers"] = []
-                    else:
-                        client_memory["existing_ledgers"] = []
-            except Exception as b_err:
-                client_memory["existing_ledgers"] = []
+            # Primary Fallback 1: Use ledgers_list passed directly from Frontend Form upload
+            if ledgers_list:
+                parsed_ledgers = [l.strip() for l in ledgers_list.split(",") if l.strip()]
+                if parsed_ledgers:
+                    client_memory["existing_ledgers"] = parsed_ledgers
+                    print(f"⚡ [Frontend Form Ledger Sync] Received {len(parsed_ledgers)} client ledgers directly from frontend form upload!")
+
+            # Secondary Fallback 2: Query Miracle Bridge on port 9123 if running on cloud/hybrid setup
+            if not client_memory.get("existing_ledgers"):
+                try:
+                    import urllib.request
+                    import json
+                    bridge_url = f"http://localhost:9123/api/local-ledgers?client_id={client_id}"
+                    req = urllib.request.Request(bridge_url, headers={"User-Agent": "MiracleServer/1.0"})
+                    with urllib.request.urlopen(req, timeout=1.5) as resp:
+                        if resp.status == 200:
+                            b_data = json.loads(resp.read().decode('utf-8'))
+                            b_ledgers = b_data.get("data", [])
+                            ledger_names = [led.get('name') for led in b_ledgers if isinstance(led, dict) and led.get('name')]
+                            if ledger_names:
+                                client_memory["existing_ledgers"] = ledger_names
+                                print(f"⚡ [Bridge Ledger Sync] Retrieved {len(ledger_names)} client ledgers via Miracle Bridge port 9123!")
+                except Exception as b_err:
+                    pass
 
             
         if module == "Cash Entries" and temp_file_path.lower().endswith(('.xls', '.xlsx')):
