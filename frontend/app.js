@@ -6062,8 +6062,9 @@ document.addEventListener('DOMContentLoaded', () => {
         let targetPushEndpoint = `${API_URL}/api/push`;
         let targetBody = JSON.stringify(pushPayload);
 
-        // If running on Render Cloud and Local Miracle Bridge Agent is online, inject directly to client PC
-        if ((window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1') || isLocalBridgeOnline) {
+        // If running on Render Cloud, Miracle DBF injection MUST route directly to local client PC agent (MiracleBridge.exe)
+        const isCloudDeployment = (window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1');
+        if (isCloudDeployment || isLocalBridgeOnline) {
             if (isLocalBridgeOnline) {
                 targetPushEndpoint = `${LOCAL_BRIDGE_URL}/inject`;
                 const miracleBasePathVal = (typeof miracleBasePathInput !== 'undefined' && miracleBasePathInput && miracleBasePathInput.value) 
@@ -6085,6 +6086,11 @@ document.addEventListener('DOMContentLoaded', () => {
                 };
                 targetBody = JSON.stringify(bridgePayload);
                 console.log("⚡ Hybrid Mode active: Routing push directly to Local Miracle Bridge on port 9123");
+            } else if (isCloudDeployment) {
+                alert("⚠️ MiracleBridge Agent is Offline!\n\nMiracle DBF database files live locally on your computer hard drive.\n\nTo push these vouchers into Miracle software:\n1. Ensure 'MiracleBridge.exe' is running on your Windows PC.\n2. If using Chrome, ensure 'Miracle Bridge Connected (9123)' badge is GREEN.\n3. Re-click 'Push to Miracle'.");
+                pushBtn.innerHTML = `<i class="fa-solid fa-check-double mr-1"></i> Push to Miracle`;
+                pushBtn.disabled = false;
+                return;
             }
         }
 

@@ -165,7 +165,7 @@ app = FastAPI(
     version="1.0.0"
 )
 
-# CORS: Allow communication from Render Cloud Web URL & Localhost
+# CORS & Private Network Access (PNA): Allow communication from Render Cloud Web URL & Localhost
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],  # Allows requests from Render Cloud URL & Localhost
@@ -173,6 +173,20 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+@app.middleware("http")
+async def add_pna_and_cors_headers(request, call_next):
+    if request.method == "OPTIONS":
+        from fastapi.responses import Response
+        response = Response(status_code=204)
+    else:
+        response = await call_next(request)
+    
+    response.headers["Access-Control-Allow-Origin"] = "*"
+    response.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS, PUT, DELETE"
+    response.headers["Access-Control-Allow-Headers"] = "*"
+    response.headers["Access-Control-Allow-Private-Network"] = "true"
+    return response
 
 class InjectRequestPayload(BaseModel):
     miracle_base_path: str
