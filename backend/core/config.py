@@ -37,11 +37,6 @@ class SystemSettings(BaseModel):
     purchase_setup_id: int = 6
     sales_series: str = ""
     auto_create_b2b: bool = True
-    auto_create_b2c: bool = True
-    is_paid_api_key: bool = False
-    active_year_folder: Optional[str] = ""
-    backup_path: Optional[str] = ""
-
 def clean_api_key(key: str) -> str:
     if not key:
         return ""
@@ -56,6 +51,35 @@ def clean_api_key(key: str) -> str:
         if token_clean.startswith("AIzaSy") or token_clean.startswith("AQ."):
             return token_clean
     return key
+
+def get_gemini_api_key_pool(settings: dict | None = None) -> list:
+    """
+    Gathers and sanitizes all available Gemini API keys from environment variables
+    (GEMINI_API_KEY, GEMINI_API_KEY_2 .. GEMINI_API_KEY_10) and settings.json.
+    Returns a deduplicated list of clean API keys.
+    """
+    keys = []
+    
+    # 1. Environment Variables (Render / System)
+    env_vars = ["GEMINI_API_KEY", "GEMINI_API_KEY_1"] + [f"GEMINI_API_KEY_{i}" for i in range(2, 11)]
+    for var in env_vars:
+        val = os.getenv(var, "").strip()
+        if val:
+            for raw_k in re.split(r'[,;\s]+', val):
+                c_key = clean_api_key(raw_k)
+                if c_key and c_key not in keys:
+                    keys.append(c_key)
+                    
+    # 2. Configured settings keys
+    if settings and isinstance(settings, dict):
+        raw_setting = settings.get("gemini_api_key", "")
+        if raw_setting:
+            for raw_k in re.split(r'[,;\s]+', raw_setting):
+                c_key = clean_api_key(raw_k)
+                if c_key and c_key not in keys:
+                    keys.append(c_key)
+                    
+    return keys
 
 def load_settings() -> dict:
     global _settings_cache, _settings_cache_time
@@ -416,6 +440,9 @@ def validate_vouchers_pre_push(module: str, vouchers: List[Dict[str, Any]], clie
                     dt_parsed = _dparser.parse(str(v_date), dayfirst=True)
                     v_date_str = dt_parsed.strftime("%Y-%m-%d")
                     v['date'] = v_date_str
+                    for d_key in ('Date', 'voucher_date', 'BillDate', 'txn_date'):
+                        if d_key in v:
+                            v[d_key] = v_date_str
                 except Exception:
                     errors.append(f"{row_label}: Invalid date format '{v_date_str}' (expected YYYY-MM-DD).")
                     continue

@@ -48,8 +48,10 @@ try:
         pre_computed_bounds=bounds_map
     )
     # Check if dates were normalized to YYYY-MM-DD
-    assert test_vouchers[1].get("date") == "2025-06-20", f"Date normalization failed for row 2: {test_vouchers[1]}"
-    assert test_vouchers[2].get("date") == "2025-07-15", f"Date normalization failed for row 3: {test_vouchers[2]}"
+    d1 = test_vouchers[1].get("date") or test_vouchers[1].get("Date")
+    d2 = test_vouchers[2].get("date") or test_vouchers[2].get("txn_date")
+    assert d1 == "2025-06-20", f"Date normalization failed for row 2: {test_vouchers[1]}"
+    assert d2 == "2025-07-15", f"Date normalization failed for row 3: {test_vouchers[2]}"
     print("  ✅ validate_vouchers_pre_push() handles alternate date keys (Date, txn_date, voucher_date) & normalizes dates!")
 except Exception as e:
     import traceback

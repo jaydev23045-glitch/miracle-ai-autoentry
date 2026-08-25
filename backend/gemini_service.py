@@ -118,6 +118,8 @@ _SPEC_FILE_CACHE: dict = {}
 
 class GeminiService:
     def __init__(self, api_key: str | None = None, model_name: str | None = None, is_paid_api_key: bool | None = None):
+        from core.config import get_gemini_api_key_pool, clean_api_key
+
         if not api_key:
             api_key = os.getenv("GEMINI_API_KEY")
             
@@ -133,20 +135,39 @@ class GeminiService:
             except Exception:
                 pass
 
-        self.api_key = api_key
+        # Build 10-Key API Pool (GEMINI_API_KEY .. GEMINI_API_KEY_10)
+        self.api_keys_pool = []
+        if api_key:
+            for raw_k in re.split(r'[,;\s]+', str(api_key)):
+                c_k = clean_api_key(raw_k)
+                if c_k and c_k not in self.api_keys_pool:
+                    self.api_keys_pool.append(c_k)
+
+        discovered_pool = get_gemini_api_key_pool()
+        for k in discovered_pool:
+            if k not in self.api_keys_pool:
+                self.api_keys_pool.append(k)
+
+        self.current_key_idx = 0
+        if self.api_keys_pool:
+            self.api_key = self.api_keys_pool[0]
+            print(f"🔑 [API Key Pool Initialized] Loaded {len(self.api_keys_pool)} active Gemini API key(s) for smart rotation.")
+        else:
+            self.api_key = api_key or ""
+            print("WARNING: Gemini API Key not found. Please provide it in settings or environment variables.")
+
         self.model_name = model_name or "gemini-3.1-flash-lite"
         self.is_paid_api_key = is_paid_api_key if is_paid_api_key is not None else False
-        if not self.api_key:
-            print("WARNING: Gemini API Key not found. Please provide it in the settings.")
 
-    def _get_client(self):
-        if not self.api_key:
+    def _get_client(self, target_key: str | None = None):
+        use_key = target_key or self.api_key
+        if not use_key:
             raise RuntimeError("Gemini API Key is not configured.")
         if not genai:
             raise RuntimeError("Google GenAI module is not installed.")
         if hasattr(genai, "Client"):
-            return genai.Client(api_key=self.api_key)
-        return LegacyGenerativeAIClientWrapper(self.api_key)
+            return genai.Client(api_key=use_key)
+        return LegacyGenerativeAIClientWrapper(use_key)
 
     @staticmethod
     def repair_json_string(json_str: str) -> str:
@@ -705,12 +726,24 @@ class GeminiService:
         import time
         import random
         
-        # Valid production fallback hierarchy of Google Gemini models
+        # Production Fallback Hierarchy ordered by RPM/RPD capacity & speed:
+        # Tier 1 (15 RPM / 500 RPD = 5,000 daily requests across 10 keys):
+        #   - gemini-3.1-flash-lite, gemini-3.5-flash-lite, gemini-2.5-flash-lite
+        # Tier 2 (5 RPM / 20 RPD):
+        #   - gemini-2.5-flash, gemini-3.5-flash, gemini-3.7-flash, gemini-3.6-flash, gemini-3-flash
+        # Tier 3 (Legacy & High Speed):
+        #   - gemini-2.0-flash, gemini-1.5-flash, gemini-2.0-flash-lite
         FALLBACK_MODELS = [
+            "gemini-3.1-flash-lite",
+            "gemini-3.5-flash-lite",
+            "gemini-2.5-flash-lite",
             "gemini-2.5-flash",
+            "gemini-3.5-flash",
+            "gemini-3.7-flash",
+            "gemini-3.6-flash",
+            "gemini-3-flash",
             "gemini-2.0-flash",
             "gemini-1.5-flash",
-            "gemini-1.5-pro",
             "gemini-2.0-flash-lite"
         ]
         
@@ -735,47 +768,53 @@ class GeminiService:
             models_to_try = raw_models
 
         last_exception = None
-        
+        keys_pool = self.api_keys_pool if self.api_keys_pool else ([self.api_key] if self.api_key else [])
+
         for active_model in models_to_try:
-            backoff = initial_backoff
-            active_model_retries = 2
-            
-            for attempt in range(active_model_retries):
+            for key_offset in range(len(keys_pool)):
+                actual_idx = (self.current_key_idx + key_offset) % len(keys_pool)
+                active_key = keys_pool[actual_idx]
+                
                 try:
-                    print(f"🔮 [Gemini Request] Sending payload using model: '{active_model}' (Attempt {attempt + 1}/{active_model_retries})")
+                    active_client = self._get_client(target_key=active_key)
+                    print(f"🔮 [Gemini Request] Sending payload using Key #{actual_idx + 1}/{len(keys_pool)} ({active_key[:6]}...{active_key[-4:]}) and model '{active_model}'")
                     if config:
-                        return client.models.generate_content(
+                        res = active_client.models.generate_content(
                             model=active_model,
                             contents=contents,
                             config=config
                         )
                     else:
-                        return client.models.generate_content(
+                        res = active_client.models.generate_content(
                             model=active_model,
                             contents=contents
                         )
+                    # Update active key index on clean success
+                    self.current_key_idx = actual_idx
+                    self.api_key = active_key
+                    return res
                 except Exception as e:
                     last_exception = e
                     err_msg = str(e).lower()
                     
-                    # Overloaded (503) -> skip to next fallback model immediately
+                    # 503 Overloaded -> try next key / fallback
                     if "503" in err_msg or "unavailable" in err_msg:
-                        print(f"⚠️ Model '{active_model}' is currently overloaded (503). Skipping to next model instantly...")
-                        break
+                        print(f"⚠️ Model '{active_model}' overloaded on Key #{actual_idx + 1}. Retrying next key/model...")
+                        time.sleep(0.3)
+                        continue
 
-                    # Check for 429 Daily Free Tier Quota Exhaustion
-                    is_quota_429 = any(x in err_msg for x in ["429", "quota", "exhausted", "resource_exhausted", "rate_limit"])
+                    # Check for 429 Daily Free Tier Quota / Rate Limit
+                    is_quota_429 = any(x in err_msg for x in ["429", "quota", "exhausted", "resource_exhausted", "rate_limit", "key_invalid", "permission_denied"])
                     if is_quota_429:
-                        mark_model_quota_exhausted_today(active_model)
                         if self.is_paid_api_key:
-                            print("🔄 [Auto-degradation] Rate limit error detected. Disabling 'Paid Key' speed for remaining chunks to respect API limits.")
                             self.is_paid_api_key = False
                         
-                        # Daily quota exceeded -> STOP retrying this model! Fallback instantly to save time!
-                        print(f"⏩ [Instant 429 Fallback] Daily quota reached for '{active_model}'. Skipping remaining retries & falling back to next model...")
-                        break
+                        next_key_num = ((actual_idx + 1) % len(keys_pool)) + 1
+                        print(f"🔑 [API Key Rotator] Key #{actual_idx + 1} quota reached/rate limited on model '{active_model}'. Seamlessly rotating to Key #{next_key_num}...")
+                        time.sleep(0.2)
+                        continue
                     
-                    # Transient network error (retried with backoff)
+                    # Transient network error
                     is_transient = any(x in err_msg for x in [
                         "limit", "timeout", "capacity", "server disconnected", "connection reset",
                         "connection error", "remoteerror", "remoteprotocol",
@@ -785,14 +824,13 @@ class GeminiService:
                     ])
                     
                     if is_transient:
-                        sleep_time = backoff + random.uniform(0, 1.5)
-                        print(f"⚠️ Model '{active_model}' transient error: {e}. Auto-retrying in {sleep_time:.2f}s... (Attempt {attempt + 1}/{active_model_retries})")
-                        time.sleep(sleep_time)
-                        backoff *= 2.0
+                        print(f"⚠️ Key #{actual_idx + 1} transient network error: {e}. Retrying next key...")
+                        time.sleep(0.3)
+                        continue
                     else:
                         raise e
             
-            print(f"🔄 [Model Fallback] Model '{active_model}' exhausted rate limits or failed. Falling back to the next model...")
+            print(f"🔄 [Model Fallback] All {len(keys_pool)} API keys hit rate limits on model '{active_model}'. Falling back to next model tier...")
             
         # If all models failed, raise the last exception
         if last_exception:

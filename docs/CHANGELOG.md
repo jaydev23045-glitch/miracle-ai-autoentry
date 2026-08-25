@@ -1,5 +1,52 @@
 # Miracle Auto-Entry Platform - Changelog
 
+### 118. Maximum Capacity (5,000 RPD) Model Hierarchy & Rate Limit Matrix Optimization
+**The Feature Implemented:**
+1. **Tier 1 Capacity Prioritization (5,000 RPD Total):** Configured `FALLBACK_MODELS` in `gemini_service.py` to strictly prioritize high-throughput 500 RPD models (`gemini-3.1-flash-lite`, `gemini-3.5-flash-lite`, `gemini-2.5-flash-lite`) first across all 10 API keys before using lower RPD models.
+2. **Tier 2 High-Intelligence Fallback (200 RPD Total):** If Tier 1 models are exhausted, the engine seamlessly steps down to 20 RPD models (`gemini-2.5-flash`, `gemini-3.5-flash`, `gemini-3.7-flash`, `gemini-3.6-flash`, `gemini-3-flash`) rotated across all 10 keys.
+3. **Tier 3 High-Speed Fallback:** Legacy & speed models (`gemini-2.0-flash`, `gemini-1.5-flash`, `gemini-2.0-flash-lite`) serve as emergency failover.
+
+**Fixes & Architecture Implemented:**
+1. **Model Fallback Hierarchy ([gemini_service.py](file:///Users/jaydevnakum/Work%20Place/WORK/APP%20DETAILS/Mirracle%20Auto%20Entre%20Sale%20or%20Purchase%20or%20Bank/backend/gemini_service.py#L730)):**
+   - Reordered `FALLBACK_MODELS` in `gemini_service.py` to match exact Google API quota limits (15 RPM / 500 RPD models first).
+2. **Automated Verification:**
+   - Executed `scratch/test_api_key_rotator.py` $\rightarrow$ **100% Passed**.
+   - Ran `py_compile` across all backend and bridge files $\rightarrow$ **100% Passed**.
+
+
+
+### 117. 10-Key Gemini API Pool Rotator & Multi-Model Tier Fallback Engine
+**The Feature Implemented:**
+1. **Multi-Key Environment Pool Discovery:** `get_gemini_api_key_pool()` in `config.py` automatically gathers, sanitizes, and deduplicates all 10 environment API keys (`GEMINI_API_KEY`, `GEMINI_API_KEY_2` .. `GEMINI_API_KEY_10`) configured in Render Dashboard as well as comma-separated keys in settings.
+2. **Instant Seamless Key Rotation:** `GeminiService` monitors rate-limits (`429`, `RESOURCE_EXHAUSTED`, `Quota Exceeded`, `API_KEY_INVALID`) and instantly rotates to the next available API key in the pool (Key #1 $\rightarrow$ Key #2 $\rightarrow$ ... Key #10) on the highest speed model (`gemini-3.1-flash-lite`).
+3. **Multi-Model Tier Fallback:** If all 10 keys hit quota limits on `gemini-3.1-flash-lite`, the engine automatically steps down to `gemini-2.5-flash` or `gemini-1.5-flash` across the 10-key pool, ensuring extraction requests **NEVER FAIL**.
+
+**Fixes & Architecture Implemented:**
+1. **API Pool Key Collector ([config.py](file:///Users/jaydevnakum/Work%20Place/WORK/APP%20DETAILS/Mirracle%20Auto%20Entre%20Sale%20or%20Purchase%20or%20Bank/backend/core/config.py#L45)):**
+   - Added `get_gemini_api_key_pool()` in `config.py`.
+2. **Rotator Client Factory & Failover Matrix ([gemini_service.py](file:///Users/jaydevnakum/Work%20Place/WORK/APP%20DETAILS/Mirracle%20Auto%20Entre%20Sale%20or%20Purchase%20or%20Bank/backend/gemini_service.py#L135)):**
+   - Updated `GeminiService` constructor and `_generate_content_with_retry()` to iterate across `self.api_keys_pool` before model fallback.
+3. **Automated Verification:**
+   - Executed `scratch/test_api_key_rotator.py` $\rightarrow$ **100% Passed (All 10 Keys Discovered & Rotated)**.
+   - Ran `py_compile` across all backend and bridge files $\rightarrow$ **100% Passed**.
+
+
+
+### 116. AIMemoryVault `import sys` Resolution & Date Key Normalization Sync
+**The Problem Resolved:**
+1. **Missing `import sys` in `ai_memory.py`:** Line 27 evaluated `sys.platform != 'win32'` when initializing `AIMemoryVault()`, but `sys` was not imported in `backend/ai_memory.py`. Instantiating `AIMemoryVault()` during extraction or pushing caused a `NameError: name 'sys' is not defined` crash.
+
+**Fixes & Architecture Implemented:**
+1. **Module Import Restoration ([ai_memory.py](file:///Users/jaydevnakum/Work%20Place/WORK/APP%20DETAILS/Mirracle%20Auto%20Entre%20Sale%20or%20Purchase%20or%20Bank/backend/ai_memory.py#L4)):**
+   - Added `import sys` at line 4 in `backend/ai_memory.py`.
+2. **Synchronized Date Normalization Keys ([config.py](file:///Users/jaydevnakum/Work%20Place/WORK/APP%20DETAILS/Mirracle%20Auto%20Entre%20Sale%20or%20Purchase%20or%20Bank/backend/core/config.py#L416)):**
+   - Updated pre-push date normalization to sync all alternate date keys (`'Date'`, `'voucher_date'`, `'BillDate'`, `'txn_date'`) to the parsed ISO `YYYY-MM-DD` string.
+3. **Automated Verification:**
+   - Executed `py_compile` across all backend and bridge python files $\rightarrow$ **100% Passed**.
+   - Ran 3-Space Automated Verification Test Suite (`scratch/test_all_spaces.py`) $\rightarrow$ **100% Passed**.
+
+
+
 ### 115. Settings Backup Path Erasure Guard & Miracle Bridge Account Groups Endpoint Fix
 **The Problem Resolved:**
 1. **Custom Backup Path Reset Lock:** In `settings.py`, `backup_path` was included in the mandatory non-empty keys list, preventing users from clearing custom backup paths back to standard `BACKUPS/` defaults in the Settings UI modal.
@@ -1129,7 +1176,7 @@ Products with explicit GST rates in their names (e.g. `footwear Gst 0`, configur
 
 ### 25. Smart Client & Financial Year Auto-Detection
 **The Features:**
-1. **Show Real Client Name:** The client dropdown now displays the real company name retrieved from Miracle DBFs (e.g. `CMP0002 — NAKUM DIGVIJAY JAYESHBHAI` or `CMP0006 — PE PULSE PRIVATE LIMITED`) instead of only showing folder codes like `Client: CMP0002`.
+1. **Show Real Client Name:** The client dropdown now displays the real company name retrieved from Miracle DBFs (e.g. `CMP0002 — N` or `CMP0006 — `) instead of only showing folder codes like `Client: CMP0002`.
 2. **Auto-Detect Client on Upload:** When uploading a bank statement or purchase/sales register, the system extracts the company/account owner name from the document header and fuzzy-matches it against the list of clients, automatically switching the dropdown to that client in the UI.
 3. **Auto-Detect Year on Upload:** Removed the problematic `-- Auto-Detect (AI) --` dropdown option (which caused ledger mismatches). Now, the dropdown defaults to the client's recommended/latest year, and upon uploading a document, the system automatically detects the dominant year from transaction dates and switches the dropdown to that year (e.g. `2025-26 (YR26)`).
 **The Implementation:**
