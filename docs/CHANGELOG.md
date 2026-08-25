@@ -1,5 +1,128 @@
 # Miracle Auto-Entry Platform - Changelog
 
+### 115. Settings Backup Path Erasure Guard & Miracle Bridge Account Groups Endpoint Fix
+**The Problem Resolved:**
+1. **Custom Backup Path Reset Lock:** In `settings.py`, `backup_path` was included in the mandatory non-empty keys list, preventing users from clearing custom backup paths back to standard `BACKUPS/` defaults in the Settings UI modal.
+2. **Bridge `AttributeError` on `/api/local-groups`:** `miracle_bridge_agent.py` invoked `handler.get_account_groups()`, but the method on `MiracleDBFHandler` was named `read_account_groups()`, throwing a 500 AttributeError and breaking group dropdowns in Hybrid mode.
+
+**Fixes & Architecture Implemented:**
+1. **Clearable Settings Attributes ([settings.py](file:///Users/jaydevnakum/Work%20Place/WORK/APP%20DETAILS/Mirracle%20Auto%20Entre%20Sale%20or%20Purchase%20or%20Bank/backend/routers/settings.py#L77)):**
+   - Removed `backup_path` from the mandatory non-empty guard list in `update_settings()`, allowing users to reset custom backup paths to default.
+2. **Bridge Group Endpoint & Handler Alias ([miracle_bridge_agent.py](file:///Users/jaydevnakum/Work%20Place/WORK/APP%20DETAILS/Mirracle%20Auto%20Entre%20Sale%20or%20Purchase%20or%20Bank/miracle_bridge/miracle_bridge_agent.py#L341) & [dbf_handler.py](file:///Users/jaydevnakum/Work%20Place/WORK/APP%20DETAILS/Mirracle%20Auto%20Entre%20Sale%20or%20Purchase%20or%20Bank/backend/dbf_handler.py#L670)):**
+   - Updated `get_local_groups()` in `miracle_bridge_agent.py` to call `read_account_groups()`, and added a `get_account_groups = read_account_groups` alias on `MiracleDBFHandler`.
+3. **Automated Verification:**
+   - Executed `py_compile` across all backend and bridge python files $\rightarrow$ **100% Passed**.
+   - Ran 3-Space Automated Verification Test Suite (`scratch/test_all_spaces.py`) $\rightarrow$ **100% Passed**.
+
+
+
+### 114. GST Auto-Calculation & Proper CGST/SGST vs IGST Tax Split in Excel Parser
+**The Problem Resolved:**
+1. **Missing GST Amount Column:** In `excel_parser.py`, Excel files containing `Taxable Amount` and `GST %` (e.g. 18%) but missing an explicit `GST Amount` column caused `gst_amt` to default to `0.0`. Consequently, `cgst` and `sgst` evaluated to `0.0`, resulting in vouchers missing tax calculations in Miracle DBFs.
+
+**Fixes & Architecture Implemented:**
+1. **GST Amount Auto-Calculator ([excel_parser.py](file:///Users/jaydevnakum/Work%20Place/WORK/APP%20DETAILS/Mirracle%20Auto%20Entre%20Sale%20or%20Purchase%20or%20Bank/backend/core/excel_parser.py#L502)):**
+   - Added automatic tax computation `gst_amt = round(taxable * (gst_pct / 100.0), 2)` whenever `gst_amt == 0.0` and `taxable > 0` and `gst_pct > 0` across all 4 sheet parsing engines (Flat, Macro, Header-Only, and Generic Tabular).
+2. **Precision CGST/SGST vs IGST Tax Split ([excel_parser.py](file:///Users/jaydevnakum/Work%20Place/WORK/APP%20DETAILS/Mirracle%20Auto%20Entre%20Sale%20or%20Purchase%20or%20Bank/backend/core/excel_parser.py#L520)):**
+   - Implemented 2-decimal rounded tax splitting: `cgst, sgst = round(gst_amt / 2.0, 2), round(gst_amt / 2.0, 2)` for intra-state transactions, and `igst = gst_amt` for inter-state transactions.
+3. **Automated Verification:**
+   - Executed `py_compile` across all backend and bridge python files $\rightarrow$ **100% Passed**.
+   - Ran 3-Space Automated Verification Test Suite (`scratch/test_all_spaces.py`) $\rightarrow$ **100% Passed**.
+
+
+
+### 113. ISO Date Normalization Guard & Cross-Platform Slash Resilience
+**The Problem Resolved:**
+1. **DD-MM-YYYY Date Normalization Bypass:** `validate_vouchers_pre_push()` bypassed date normalization for strings like `"15-07-2025"` (DD-MM-YYYY) because `len == 10` and `count("-") == 2` passed the naive format check, injecting non-ISO dates into Miracle DBF index fields.
+2. **Cross-Platform Slash Incompatibility:** `clear_cross_year_cache()` failed to match client paths on Unix/macOS when path strings mixed forward slashes `/` and backslashes `\`.
+
+**Fixes & Architecture Implemented:**
+1. **ISO Year Normalization Guard ([config.py](file:///Users/jaydevnakum/Work%20Place/WORK/APP%20DETAILS/Mirracle%20Auto%20Entre%20Sale%20or%20Purchase%20or%20Bank/backend/core/config.py#L407)):**
+   - Added `v_date_str[:4].isdigit() and int(v_date_str[:4]) >= 1900` check to `validate_vouchers_pre_push()`, forcing dateutil parsing and ISO `YYYY-MM-DD` conversion for all non-ISO date formats.
+2. **Platform-Independent Slash Normalizer ([dbf_handler.py](file:///Users/jaydevnakum/Work%20Place/WORK/APP%20DETAILS/Mirracle%20Auto%20Entre%20Sale%20or%20Purchase%20or%20Bank/backend/dbf_handler.py#L18) & [miracle_bridge/dbf_handler.py](file:///Users/jaydevnakum/Work%20Place/WORK/APP%20DETAILS/Mirracle%20Auto%20Entre%20Sale%20or%20Purchase%20or%20Bank/miracle_bridge/dbf_handler.py#L18)):**
+   - Added `.replace("\\", "/").rstrip("/").upper()` normalization in `clear_cross_year_cache()`.
+3. **Automated Verification:**
+   - Created & executed 3-Space Automated Test Suite (`scratch/test_all_spaces.py`) $\rightarrow$ **100% Passed**.
+
+
+
+### 112. macOS/Linux Path Sanitization & Case-Insensitive Compaction Unlinking
+**The Problem Resolved:**
+1. **Frontend Path Reset:** `app.js` contained a rigid `/Users/` and `/home/` string check that reset macOS and Linux workspace paths to `C:\Miracle` in `localStorage`, breaking company discovery on non-Windows development hosts.
+2. **Linux Compaction Extension Mismatch:** In `compact_table()`, `pathlib.Path.with_suffix()` checked single fixed-case extension variants, failing to delete existing uppercase `.CDX` files before moving temporary files on case-sensitive Linux filesystems.
+
+**Fixes & Architecture Implemented:**
+1. **Host-Agnostic Settings Sync ([app.js](file:///Users/jaydevnakum/Work%20Place/WORK/APP%20DETAILS/Mirracle%20Auto%20Entre%20Sale%20or%20Purchase%20or%20Bank/frontend/app.js#L253)):**
+   - Removed rigid `/Users/` and `/home/` string checks from `loadSettingsFromServer()` in `app.js`.
+2. **Case-Variant Unlinking Helper ([dbf_handler.py](file:///Users/jaydevnakum/Work%20Place/WORK/APP%20DETAILS/Mirracle%20Auto%20Entre%20Sale%20or%20Purchase%20or%20Bank/backend/dbf_handler.py#L5577) & [miracle_bridge/dbf_handler.py](file:///Users/jaydevnakum/Work%20Place/WORK/APP%20DETAILS/Mirracle%20Auto%20Entre%20Sale%20or%20Purchase%20or%20Bank/miracle_bridge/dbf_handler.py#L5577)):**
+   - Updated `compact_table()` to check and unlink both lowercase and uppercase extension variants (`.dbf`/`.DBF`, `.fpt`/`.FPT`, `.cdx`/`.CDX`) before moving compacted files.
+3. **Automated Verification:**
+   - Executed `py_compile` across all backend and bridge files $\rightarrow$ **100% Passed**.
+
+
+
+### 111. Memory Vault Product Mapping Deletion & PDF Encryption Exception Handling
+**The Problem Resolved:**
+1. **Memory Vault Item Delete Omission:** `delete_memory_vault_entry` omitted handlers for `product_mappings`, `keyword_rules`, and `gst_rules`, causing deletes from the UI Memory Vault tab to return `deleted: false` without removing rules from memory JSON files.
+2. **Cryptic PDF Encryption Errors:** Password-protected PDFs uploaded without a password (or with missing/invalid credentials) returned unhandled 500 error tracebacks instead of clean JSON error responses.
+
+**Fixes & Architecture Implemented:**
+1. **Product Keyword & GST Rule Deletion ([vouchers.py](file:///Users/jaydevnakum/Work%20Place/WORK/APP%20DETAILS/Mirracle%20Auto%20Entre%20Sale%20or%20Purchase%20or%20Bank/backend/routers/vouchers.py#L1690)):**
+   - Added category handlers for `product_mappings`, `keyword_rules`, `product_keyword_rules`, `gst_rules`, and `product_gst_rules` in `delete_memory_vault_entry()`.
+2. **Encrypted PDF Exception Handler ([vouchers.py](file:///Users/jaydevnakum/Work%20Place/WORK/APP%20DETAILS/Mirracle%20Auto%20Entre%20Sale%20or%20Purchase%20or%20Bank/backend/routers/vouchers.py#L979)):**
+   - Added `file has not been decrypted`, `is encrypted`, and `passwordrequired` pattern checks to catch PDF decryption exceptions and return a user-friendly `400 Bad Request` HTTP response requesting the PDF password.
+3. **Automated Verification:**
+   - Executed `py_compile` across all backend and bridge files $\rightarrow$ **100% Passed**.
+
+
+
+### 110. Router Ledger Cache Invalidation, Pre-Push Backup Protection & Path Normalization
+**The Problem Resolved:**
+1. **Stale Router Ledger Cache:** `api_create_ledger` and `api_update_ledger` did not invalidate router-level `_LEDGER_CACHE` in `vouchers.py`, causing `upload_document` to send stale master ledger names to Gemini AI extraction prompts for 60 seconds after creating a ledger.
+2. **Skipped Pre-Push Backup:** `/api/push` skipped database backups when `backup_path` was empty `""`, leaving default users without safety ZIP backups prior to DBF injection.
+3. **Cross-Year Cache Case Sensitivity:** Path casing differences in Windows paths caused `clear_cross_year_cache()` to fail string matching.
+
+**Fixes & Architecture Implemented:**
+1. **Router Ledger Cache Invalidation ([vouchers.py](file:///Users/jaydevnakum/Work%20Place/WORK/APP%20DETAILS/Mirracle%20Auto%20Entre%20Sale%20or%20Purchase%20or%20Bank/backend/routers/vouchers.py#L599)):**
+   - Added `_LEDGER_CACHE.pop(client_id, None)` in `api_create_ledger()` and `api_update_ledger()`.
+2. **Default Pre-Push Backup Protection ([vouchers.py](file:///Users/jaydevnakum/Work%20Place/WORK/APP%20DETAILS/Mirracle%20Auto%20Entre%20Sale%20or%20Purchase%20or%20Bank/backend/routers/vouchers.py#L1147)):**
+   - Updated `/api/push` backup check to execute backups into `BACKUPS/` by default when `backup_path` is empty `""`, skipping only if explicitly set to `"SKIP"`.
+3. **Case-Insensitive Path Normalization ([dbf_handler.py](file:///Users/jaydevnakum/Work%20Place/WORK/APP%20DETAILS/Mirracle%20Auto%20Entre%20Sale%20or%20Purchase%20or%20Bank/backend/dbf_handler.py#L18)):**
+   - Added `os.path.normpath(client_path).upper()` normalization in `clear_cross_year_cache()`.
+4. **Automated Verification:**
+   - Executed `py_compile` across all backend and bridge files $\rightarrow$ **100% Passed**.
+
+
+
+### 109. Full System Audit & Hybrid Miracle Bridge Synchronization Fixes
+**The Problem Resolved:**
+During a comprehensive line-by-line audit across backend APIs, DBF handler engines, Miracle Bridge agent, and frontend sync scripts, 5 key hybrid mode integration bugs were identified:
+1. Creating/updating ledgers in Hybrid mode wiped newly created ledgers from UI dropdowns due to `app.js` refreshing ledgers from Cloud backend `API_URL/api/refresh-ledgers` instead of Local Bridge.
+2. Account groups (`RKACCM11.DBF`) and Product masters (`RKACCM21.DBF`) failed to load in Cloud/Hybrid mode due to missing `/api/local-products` endpoint on Bridge agent and `app.js` querying Cloud server.
+3. Pushing Opening Balances bypassed Local Bridge and attempted to write to Cloud server disk.
+4. Chromium Private Network Access (PNA) preflight `OPTIONS` requests were blocked in Chrome/Edge.
+5. Base path settings in `config.py` were automatically overwritten to `"C:\\Miracle"` on non-Windows hosts.
+
+**Fixes & Architecture Implemented:**
+1. **Hybrid Ledger Sync ([app.js](file:///Users/jaydevnakum/Work%20Place/WORK/APP%20DETAILS/Mirracle%20Auto%20Entre%20Sale%20or%20Purchase%20or%20Bank/frontend/app.js#L3162)):**
+   - Replaced raw `fetch('${API_URL}/api/refresh-ledgers')` calls in ledger creation and update callbacks with `fetchLedgers()`, which dynamically queries `LOCAL_BRIDGE_URL/api/local-ledgers` when `isLocalBridgeOnline` is active.
+2. **Local Product Masters & Groups via Bridge ([miracle_bridge_agent.py](file:///Users/jaydevnakum/Work%20Place/WORK/APP%20DETAILS/Mirracle%20Auto%20Entre%20Sale%20or%20Purchase%20or%20Bank/miracle_bridge/miracle_bridge_agent.py#L343) & [app.js](file:///Users/jaydevnakum/Work%20Place/WORK/APP%20DETAILS/Mirracle%20Auto%20Entre%20Sale%20or%20Purchase%20or%20Bank/frontend/app.js#L3043)):**
+   - Added `@app.get("/api/local-products")` endpoint to `miracle_bridge_agent.py`.
+   - Updated `fetchGroups()`, `loadEditAccountGroupsDropdown()`, and `showProductMappingModal()` in `app.js` to query `LOCAL_BRIDGE_URL` in Hybrid mode.
+3. **Opening Balances Hybrid Push ([app.js](file:///Users/jaydevnakum/Work%20Place/WORK/APP%20DETAILS/Mirracle%20Auto%20Entre%20Sale%20or%20Purchase%20or%20Bank/frontend/app.js#L6015)):**
+   - Updated `handleOpeningBalancesPush()` to check `isLocalBridgeOnline` and delegate pushing to `${LOCAL_BRIDGE_URL}/inject` with `module_type: 'opening_balance'`.
+4. **PNA Preflight Middleware ([miracle_bridge_agent.py](file:///Users/jaydevnakum/Work%20Place/WORK/APP%20DETAILS/Mirracle%20Auto%20Entre%20Sale%20or%20Purchase%20or%20Bank/miracle_bridge/miracle_bridge_agent.py#L191)):**
+   - Added explicit `@app.options("/{full_path:path}")` handler with `Access-Control-Allow-Private-Network: true` to prevent Chrome/Edge CORS PNA preflight blocks.
+5. **Platform-Aware Path Sanitization & Date Normalization ([config.py](file:///Users/jaydevnakum/Work%20Place/WORK/APP%20DETAILS/Mirracle%20Auto%20Entre%20Sale%20or%20Purchase%20or%20Bank/backend/core/config.py#L103)):**
+   - Restricted `miracle_base_path` reset to `sys.platform == "win32"`.
+   - Added normalized key lookup (`date`, `Date`, `voucher_date`, `BillDate`, `txn_date`) and fallback dateutil parser in `validate_vouchers_pre_push()`.
+6. **CDX Flag Healing Alias ([dbf_handler.py](file:///Users/jaydevnakum/Work%20Place/WORK/APP%20DETAILS/Mirracle%20Auto%20Entre%20Sale%20or%20Purchase%20or%20Bank/backend/dbf_handler.py#L2517)):**
+   - Added `heal_cdx_header_flags()` alias to `ensure_cdx_flags_active()` in `dbf_handler.py`.
+7. **Automated Verification:**
+   - Executed `py_compile` across all backend and bridge files $\rightarrow$ **100% Passed**.
+
+
+
 ### 108. Render Free Plan Cloud Server & MiracleBridge Local Agent Architecture
 **The Problem Resolved:**
 When hosting the web backend on Render Cloud (`https://miracle-ai-app.onrender.com`), browsers forbid remote web pages from directly editing local hard drive files (`C:\Miracle\CMPxxxx\YRxx`). Additionally, hardcoded `:8000` port strings in frontend scripts break cloud HTTPS requests.

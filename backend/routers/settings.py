@@ -74,7 +74,7 @@ def update_settings(payload: SystemSettings):
     if "gemini_api_key" in payload_dict:
         payload_dict["gemini_api_key"] = clean_api_key(payload_dict["gemini_api_key"])
     for k, v in payload_dict.items():
-        if k in ['sales_series', 'sales_prefix', 'purchase_prefix', 'gemini_api_key', 'miracle_base_path', 'memory_path', 'backup_path']:
+        if k in ['sales_series', 'sales_prefix', 'purchase_prefix', 'gemini_api_key', 'miracle_base_path', 'memory_path']:
             if not v and settings.get(k):
                 continue
         settings[k] = v

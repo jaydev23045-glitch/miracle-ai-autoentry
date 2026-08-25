@@ -18,6 +18,10 @@ except ImportError:
     if os.path.exists(backend_venv_sp) and backend_venv_sp not in sys.path:
         sys.path.insert(0, backend_venv_sp)
 
+backend_dir = os.path.dirname(os.path.abspath(__file__))
+if backend_dir not in sys.path:
+    sys.path.insert(0, backend_dir)
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -58,8 +62,15 @@ app.include_router(settings_router)
 app.include_router(vouchers_router)
 
 # Mount frontend static files
-frontend_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "../frontend")
-app.mount("/", StaticFiles(directory=frontend_path, html=True), name="frontend")
+frontend_candidates = [
+    os.path.join(os.path.dirname(os.path.abspath(__file__)), "../frontend"),
+    os.path.join(os.path.dirname(os.path.abspath(__file__)), "frontend"),
+    os.path.join(os.getcwd(), "frontend"),
+    os.path.join(getattr(sys, "_MEIPASS", os.getcwd()), "frontend")
+]
+frontend_path = next((p for p in frontend_candidates if os.path.exists(p)), frontend_candidates[0])
+if os.path.exists(frontend_path):
+    app.mount("/", StaticFiles(directory=frontend_path, html=True), name="frontend")
 
 if __name__ == "__main__":
     import uvicorn

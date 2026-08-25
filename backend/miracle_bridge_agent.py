@@ -188,6 +188,16 @@ async def add_pna_and_cors_headers(request, call_next):
     response.headers["Access-Control-Allow-Private-Network"] = "true"
     return response
 
+@app.options("/{full_path:path}")
+async def options_preflight_handler(full_path: str):
+    from fastapi.responses import Response
+    res = Response(status_code=204)
+    res.headers["Access-Control-Allow-Origin"] = "*"
+    res.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS, PUT, DELETE"
+    res.headers["Access-Control-Allow-Headers"] = "*"
+    res.headers["Access-Control-Allow-Private-Network"] = "true"
+    return res
+
 class InjectRequestPayload(BaseModel):
     miracle_base_path: str
     active_client_id: str
@@ -328,10 +338,24 @@ def get_local_groups(base_path: str = "C:\\Miracle", client_id: str = "CMP0005")
         return {"status": "success", "groups": []}
     try:
         handler = MiracleDBFHandler(client_path)
-        groups = handler.get_account_groups()
+        groups = handler.read_account_groups()
         return {"status": "success", "groups": groups}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to read account groups: {str(e)}")
+
+@app.get("/api/local-products")
+def get_local_products(base_path: str = "C:\\Miracle", client_id: str = "CMP0005", year_folder: str = ""):
+    """Reads product masters directly from local RKACCM21.DBF"""
+    base_path = resolve_valid_base_path(base_path)
+    client_path = os.path.join(base_path, client_id)
+    if not os.path.exists(client_path):
+        return {"status": "success", "products": []}
+    try:
+        handler = MiracleDBFHandler(client_path)
+        products = handler.get_products(year_folder)
+        return {"status": "success", "products": products}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to read products: {str(e)}")
 
 @app.get("/api/repair-bank-flags")
 @app.post("/api/repair-bank-flags")

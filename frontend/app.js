@@ -250,14 +250,14 @@ document.addEventListener('DOMContentLoaded', () => {
             }
 
             let savedMiraclePath = settings.miracle_base_path || localStorage.getItem('miracleBasePath') || '';
-            if (!savedMiraclePath || savedMiraclePath.includes('/Users/') || savedMiraclePath.includes('/home/')) {
+            if (!savedMiraclePath) {
                 savedMiraclePath = 'C:\\Miracle';
             }
             miracleBasePathInput.value = savedMiraclePath;
             localStorage.setItem('miracleBasePath', savedMiraclePath);
 
             let savedMemoryPath = settings.memory_path || localStorage.getItem('memoryPath') || '';
-            if (!savedMemoryPath || savedMemoryPath.includes('/Users/') || savedMemoryPath.includes('/home/')) {
+            if (!savedMemoryPath) {
                 savedMemoryPath = 'C:\\Miracle\\AI_Memory_Vault';
             }
             memoryPathInput.value = savedMemoryPath;
@@ -3040,7 +3040,13 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         try {
-            const res = await fetch(`${API_URL}/api/groups${activeYearFolder ? '?year=' + activeYearFolder : ''}`);
+            const clientId = getActiveClientId();
+            const currentMiraclePath = (typeof miracleBasePathInput !== 'undefined' && miracleBasePathInput && miracleBasePathInput.value)
+                ? miracleBasePathInput.value.trim() : 'C:\\Miracle';
+            const targetUrl = isLocalBridgeOnline
+                ? `${LOCAL_BRIDGE_URL}/api/local-groups?client_id=${clientId}&base_path=${encodeURIComponent(currentMiraclePath)}`
+                : `${API_URL}/api/groups${activeYearFolder ? '?year=' + activeYearFolder : ''}`;
+            const res = await fetch(targetUrl);
             if (!res.ok) throw new Error("Failed to load account groups.");
             const data = await res.json();
 
@@ -3158,12 +3164,8 @@ document.addEventListener('DOMContentLoaded', () => {
                     showToast(`✨ Created Miracle Ledger "${data.ledger_name}" (${data.ledger_code})!`);
                     if (createLedgerModal) createLedgerModal.classList.add('hidden');
 
-                    // Refresh Miracle ledgers list
-                    const refreshRes = await fetch(`${API_URL}/api/refresh-ledgers`, { method: 'POST' });
-                    if (refreshRes.ok) {
-                        const refreshData = await refreshRes.json();
-                        clientLedgers = refreshData.data || [];
-                    }
+                    // Refresh Miracle ledgers list using hybrid fetchLedgers helper
+                    await fetchLedgers();
 
                     if (typeof activeSelectIdForNewLedger === 'number' && currentExtractedData && currentExtractedData[activeSelectIdForNewLedger]) {
                         currentExtractedData[activeSelectIdForNewLedger].mapped_ledger = data.ledger_name;
@@ -3216,7 +3218,13 @@ document.addEventListener('DOMContentLoaded', () => {
         select.innerHTML = '<option value="">-- Loading Account Groups... --</option>';
 
         try {
-            const res = await fetch(`${API_URL}/api/groups${activeYearFolder ? '?year=' + activeYearFolder : ''}`);
+            const clientId = getActiveClientId();
+            const currentMiraclePath = (typeof miracleBasePathInput !== 'undefined' && miracleBasePathInput && miracleBasePathInput.value)
+                ? miracleBasePathInput.value.trim() : 'C:\\Miracle';
+            const targetUrl = isLocalBridgeOnline
+                ? `${LOCAL_BRIDGE_URL}/api/local-groups?client_id=${clientId}&base_path=${encodeURIComponent(currentMiraclePath)}`
+                : `${API_URL}/api/groups${activeYearFolder ? '?year=' + activeYearFolder : ''}`;
+            const res = await fetch(targetUrl);
             if (!res.ok) throw new Error("Failed to load account groups.");
             const data = await res.json();
 
@@ -3312,11 +3320,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     showToast(`✨ Updated Master Ledger "${newName}"!`);
                     if (editLedgerModal) editLedgerModal.classList.add('hidden');
 
-                    const refreshRes = await fetch(`${API_URL}/api/refresh-ledgers`, { method: 'POST' });
-                    if (refreshRes.ok) {
-                        const refreshData = await refreshRes.json();
-                        clientLedgers = refreshData.data || [];
-                    }
+                    await fetchLedgers();
 
                     if (typeof activeRowIndexForEditLedger === 'number' && currentExtractedData && currentExtractedData[activeRowIndexForEditLedger]) {
                         currentExtractedData[activeRowIndexForEditLedger].mapped_ledger = newName;
@@ -3542,10 +3546,16 @@ document.addEventListener('DOMContentLoaded', () => {
         // Ensure products are loaded from DBFs across all years before building modal
         if (!clientProducts || clientProducts.length === 0) {
             try {
-                const res = await fetch(`${API_URL}/api/products${activeYearFolder ? '?year=' + activeYearFolder : ''}`);
+                const clientId = getActiveClientId();
+                const currentMiraclePath = (typeof miracleBasePathInput !== 'undefined' && miracleBasePathInput && miracleBasePathInput.value)
+                    ? miracleBasePathInput.value.trim() : 'C:\\Miracle';
+                const targetUrl = isLocalBridgeOnline
+                    ? `${LOCAL_BRIDGE_URL}/api/local-products?client_id=${clientId}&year_folder=${activeYearFolder || ''}&base_path=${encodeURIComponent(currentMiraclePath)}`
+                    : `${API_URL}/api/products${activeYearFolder ? '?year=' + activeYearFolder : ''}`;
+                const res = await fetch(targetUrl);
                 if (res.ok) {
                     const data = await res.json();
-                    clientProducts = data.data || [];
+                    clientProducts = data.data || data.products || [];
                 }
             } catch (e) {
                 console.error("Failed to pre-fetch products for mapping modal:", e);
@@ -6015,16 +6025,36 @@ document.addEventListener('DOMContentLoaded', () => {
             pushBtn.innerHTML = `<i class="fa-solid fa-circle-notch fa-spin mr-1"></i> Pushing ${vouchers.length} txns to ${targetCash}...`;
         } else if (currentModule === 'Opening Balances') {
             pushBtn.innerHTML = `<i class="fa-solid fa-circle-notch fa-spin mr-1"></i> Pushing ${vouchers.length} Opening Balances...`;
-            const payload = { 
-                entries: vouchers,
-                backup_path: inlineBackupPath ? inlineBackupPath.value.trim() : ""
-            };
+            const currentMiraclePath = (typeof miracleBasePathInput !== 'undefined' && miracleBasePathInput && miracleBasePathInput.value)
+                ? miracleBasePathInput.value.trim() : 'C:\\Miracle';
+            
             try {
-                const res = await fetch(`${API_URL}/api/opening-balances/push`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(payload)
-                });
+                let res;
+                if (isLocalBridgeOnline) {
+                    const bridgePayload = {
+                        miracle_base_path: currentMiraclePath,
+                        active_client_id: getActiveClientId(),
+                        active_year_folder: activeYearFolder || "YR25",
+                        module_type: "opening_balance",
+                        vouchers: vouchers,
+                        backup_path: inlineBackupPath ? inlineBackupPath.value.trim() : ""
+                    };
+                    res = await fetch(`${LOCAL_BRIDGE_URL}/inject`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(bridgePayload)
+                    });
+                } else {
+                    const payload = { 
+                        entries: vouchers,
+                        backup_path: inlineBackupPath ? inlineBackupPath.value.trim() : ""
+                    };
+                    res = await fetch(`${API_URL}/api/opening-balances/push`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(payload)
+                    });
+                }
                 
                 if (!res.ok) {
                     const errData = await res.json();
@@ -6032,7 +6062,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
                 
                 const result = await res.json();
-                alert(`Successfully processed ${result.processed} opening balances (Inserted: ${result.inserted}, Updated: ${result.updated}).`);
+                alert(`Successfully processed opening balances.`);
                 renderEmptyState();
             } catch (err) {
                 console.error("Push failed:", err);

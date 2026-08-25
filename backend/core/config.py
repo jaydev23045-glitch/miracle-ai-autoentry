@@ -3,6 +3,7 @@ import json
 import re
 import threading
 import time
+import sys
 from pathlib import Path
 from typing import List, Dict, Any, Optional
 from pydantic import BaseModel
@@ -100,12 +101,12 @@ def load_settings() -> dict:
             print(f"Error reading settings: {e}")
 
     base_path_str = default_settings.get("miracle_base_path", "")
-    if not base_path_str or "/Users/" in base_path_str or "/home/" in base_path_str:
+    if sys.platform == "win32" and (not base_path_str or "/Users/" in base_path_str or "/home/" in base_path_str):
         default_settings["miracle_base_path"] = "C:\\Miracle"
         modified = True
             
     mem_path_str = default_settings.get("memory_path", "")
-    if not mem_path_str or "/Users/" in mem_path_str or "/home/" in mem_path_str:
+    if sys.platform == "win32" and (not mem_path_str or "/Users/" in mem_path_str or "/home/" in mem_path_str):
         default_settings["memory_path"] = "C:\\Miracle\\AI_Memory_Vault"
         modified = True
 
@@ -398,14 +399,29 @@ def validate_vouchers_pre_push(module: str, vouchers: List[Dict[str, Any]], clie
         row_label = f"Row #{idx + 1}"
         
         # 1. Date & Empirical FY Bounds Check
-        v_date = v.get('date') or v.get('Date')
+        v_date = v.get('date') or v.get('Date') or v.get('voucher_date') or v.get('BillDate') or v.get('txn_date')
         if not v_date:
             errors.append(f"{row_label}: Missing date.")
         else:
-            v_date_str = str(v_date).strip()
-            if len(v_date_str) != 10 or v_date_str.count("-") != 2:
-                errors.append(f"{row_label}: Invalid date format '{v_date_str}' (expected YYYY-MM-DD).")
+            v_date_str = str(v_date).strip()[:10]
+            is_valid_iso = (
+                len(v_date_str) == 10 and 
+                v_date_str.count("-") == 2 and 
+                v_date_str[:4].isdigit() and 
+                int(v_date_str[:4]) >= 1900
+            )
+            if not is_valid_iso:
+                try:
+                    from dateutil import parser as _dparser
+                    dt_parsed = _dparser.parse(str(v_date), dayfirst=True)
+                    v_date_str = dt_parsed.strftime("%Y-%m-%d")
+                    v['date'] = v_date_str
+                except Exception:
+                    errors.append(f"{row_label}: Invalid date format '{v_date_str}' (expected YYYY-MM-DD).")
+                    continue
             else:
+                v['date'] = v_date_str
+            if True:
                 if pre_computed_bounds is not None:
                     res = resolve_year_folder_for_date_fast(pre_computed_bounds, v_date_str, client_path)
                 else:

@@ -15,7 +15,8 @@ class MiracleDBFHandler:
     def clear_cross_year_cache(cls, client_path: str = None):
         with cls._CROSS_YEAR_CACHE_LOCK:
             if client_path:
-                keys_to_del = [k for k in cls._CROSS_YEAR_CACHE if k[0] == client_path]
+                norm_target = os.path.normpath(client_path.replace("\\", "/")).rstrip("/").upper()
+                keys_to_del = [k for k in cls._CROSS_YEAR_CACHE if os.path.normpath(str(k[0]).replace("\\", "/")).rstrip("/").upper() == norm_target]
                 for k in keys_to_del:
                     cls._CROSS_YEAR_CACHE.pop(k, None)
             else:
@@ -666,6 +667,8 @@ class MiracleDBFHandler:
         except Exception as e:
             print(f"Error reading account groups for {year_folder}: {e}")
             return []
+
+    get_account_groups = read_account_groups
 
     def read_ledgers_all_years(self, active_year_folder: str | None = None) -> list:
         """
@@ -2513,6 +2516,9 @@ class MiracleDBFHandler:
                             print(f"❌ Failed to restore CDX flag on {dbf_path} after {max_retries} attempts. Database might require manual re-indexing.")
                         delay = base_delay * (2 ** attempt)
                         time.sleep(delay)
+
+    def heal_cdx_header_flags(self, year_folder: str = None) -> int:
+        return self.ensure_cdx_flags_active(year_folder)
 
     def ensure_cdx_flags_active(self, year_folder: str = None) -> int:
         """
@@ -5570,15 +5576,20 @@ class MiracleDBFHandler:
             new_table.close()
             table.close()
             
-            # Replace original files
-            for ext in [".dbf", ".DBF", ".fpt", ".FPT", ".cdx", ".CDX"]:
-                orig_ext_path = dbf_path.with_suffix(ext)
-                temp_ext_path = temp_file.with_suffix(ext)
-                
+            # Replace original files with robust case-variant unlinking
+            for base_ext in [".dbf", ".fpt", ".cdx"]:
+                temp_ext_path = temp_file.with_suffix(base_ext)
+                if not temp_ext_path.exists():
+                    temp_ext_path = temp_file.with_suffix(base_ext.upper())
+                    
                 if temp_ext_path.exists():
-                    if orig_ext_path.exists():
-                        orig_ext_path.unlink()
-                    shutil.move(str(temp_ext_path), str(orig_ext_path))
+                    for ext_var in [base_ext.lower(), base_ext.upper()]:
+                        target_var = dbf_path.with_suffix(ext_var)
+                        if target_var.exists():
+                            try: target_var.unlink()
+                            except Exception: pass
+                    dest_path = dbf_path.with_suffix(temp_ext_path.suffix)
+                    shutil.move(str(temp_ext_path), str(dest_path))
             print(f"[compact] Compacted {table_name} successfully, retained {copied} active records.")
                     
         except Exception as e:

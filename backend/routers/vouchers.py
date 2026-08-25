@@ -596,6 +596,9 @@ def api_create_ledger(payload: dict):
                 mem_data["expense_mappings"][clean_key] = name
                 vault.save_memory(client_id, mem_data)
 
+        # Invalidate router-level ledger cache so upload_document sees the new ledger immediately
+        _LEDGER_CACHE.pop(client_id, None)
+
         return {
             "status": "success",
             "ledger_code": ledger_code,
@@ -660,6 +663,9 @@ def api_update_ledger(payload: dict):
                     mem_data["expense_mappings"] = {}
                 mem_data["expense_mappings"][clean_old] = clean_new
                 vault.save_memory(client_id, mem_data)
+
+        # Invalidate router-level ledger cache so upload_document sees the updated ledger immediately
+        _LEDGER_CACHE.pop(client_id, None)
 
         return {
             "status": "success",
@@ -970,7 +976,7 @@ async def upload_document(module: str = Form(...), instruction: str = Form(""), 
     except Exception as e:
         print(f"Error extracting data: {e}")
         err_str = str(e)
-        if "PDF_PASSWORD_REQUIRED" in err_str:
+        if "PDF_PASSWORD_REQUIRED" in err_str or "file has not been decrypted" in err_str.lower() or "is encrypted" in err_str.lower() or "passwordrequired" in err_str.lower():
             from fastapi.responses import JSONResponse
             return JSONResponse(
                 status_code=400,
@@ -1146,8 +1152,8 @@ def push_vouchers_endpoint(payload: PushPayload):
             print(f"⚠️ Validation error (skipped): {val_err}")
             
         configured_backup_path = (payload.backup_path or "").strip()
-        if not configured_backup_path or configured_backup_path.upper() == "SKIP":
-            print("[backup] Skip backup requested or backup path is empty — skipping database backup.")
+        if configured_backup_path.upper() == "SKIP":
+            print("[backup] Skip backup requested — skipping database backup.")
         else:
             active_year = payload.year_folder.strip() if payload.year_folder else ""
             if not active_year:
@@ -1680,6 +1686,26 @@ def delete_memory_vault_entry(category: str, key: str):
             if target_k:
                 del cat[target_k]
                 mem_data["supplier_catalog"] = cat
+                vault.save_memory(active_client, mem_data)
+                deleted = True
+        elif category in ("product_mappings", "keyword_rules", "product_keyword_rules"):
+            pm = mem_data.get("product_mappings", {})
+            kr = pm.get("keyword_rules", {})
+            target_k = next((k for k in kr if k == key or k.lower() == key.lower()), None)
+            if target_k:
+                del kr[target_k]
+                pm["keyword_rules"] = kr
+                mem_data["product_mappings"] = pm
+                vault.save_memory(active_client, mem_data)
+                deleted = True
+        elif category in ("gst_rules", "product_gst_rules"):
+            pm = mem_data.get("product_mappings", {})
+            gr = pm.get("gst_rules", {})
+            target_k = next((k for k in gr if k == key or k.lower() == key.lower()), None)
+            if target_k:
+                del gr[target_k]
+                pm["gst_rules"] = gr
+                mem_data["product_mappings"] = pm
                 vault.save_memory(active_client, mem_data)
                 deleted = True
                 

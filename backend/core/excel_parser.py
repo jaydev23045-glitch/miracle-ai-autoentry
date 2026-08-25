@@ -499,7 +499,11 @@ def parse_excel_to_json(file_path: str, company_state_code: str = '24', instruct
                         print(f"⚠️ Swapping inverted taxable ({taxable}) and discount ({discount}) for item '{item_name}'.")
                         taxable, discount = discount, taxable
 
-                    item_total_amount = safe_float(item_row.get("total_amt", taxable + gst_amt)) if pd.notna(item_row.get("total_amt")) else (taxable + gst_amt)
+                    # Auto-compute missing GST Amount from Taxable and GST % if explicit GST Amount column is missing
+                    if gst_amt == 0.0 and taxable > 0.0 and gst_pct > 0.0:
+                        gst_amt = round(taxable * (gst_pct / 100.0), 2)
+
+                    item_total_amount = safe_float(item_row.get("total_amt", taxable + gst_amt)) if pd.notna(item_row.get("total_amt")) else round(taxable + gst_amt, 2)
                     if taxable == 0.0 and item_total_amount > 0:
                         taxable = round(item_total_amount - gst_amt, 2)
                         
@@ -511,13 +515,13 @@ def parse_excel_to_json(file_path: str, company_state_code: str = '24', instruct
                         uom = "OTH"
                         
                     is_igst = False
-                    if party_gstin and not party_gstin.startswith(company_state_code):
+                    if party_gstin and len(party_gstin.strip()) >= 2 and not party_gstin.strip().startswith(company_state_code):
                         is_igst = True
                         
                     if is_igst:
                         cgst, sgst, igst = 0.0, 0.0, gst_amt
                     else:
-                        cgst, sgst, igst = round(gst_amt / 2, 4), round(gst_amt / 2, 4), 0.0
+                        cgst, sgst, igst = round(gst_amt / 2.0, 2), round(gst_amt / 2.0, 2), 0.0
                         
                     items_list.append({
                         "name": item_name,
@@ -617,14 +621,17 @@ def parse_excel_to_json(file_path: str, company_state_code: str = '24', instruct
 
                 if taxable_raw == 0.0 and total_raw > 0:
                     taxable_raw = round(total_raw - gst_amt_raw, 2)
+                if gst_amt_raw == 0.0 and taxable_raw > 0.0 and gst_pct_raw > 0.0:
+                    gst_amt_raw = round(taxable_raw * (gst_pct_raw / 100.0), 2)
+
                 if total_raw == 0.0 and taxable_raw > 0:
                     total_raw = round(taxable_raw + gst_amt_raw, 2)
 
-                is_igst = party_gstin and not party_gstin.startswith(company_state_code)
+                is_igst = party_gstin and len(party_gstin.strip()) >= 2 and not party_gstin.strip().startswith(company_state_code)
                 if is_igst:
                     cgst, sgst, igst = 0.0, 0.0, gst_amt_raw
                 else:
-                    cgst, sgst, igst = round(gst_amt_raw / 2, 4), round(gst_amt_raw / 2, 4), 0.0
+                    cgst, sgst, igst = round(gst_amt_raw / 2.0, 2), round(gst_amt_raw / 2.0, 2), 0.0
 
                 synthetic_item = {
                     "name": "SALES",
@@ -708,12 +715,13 @@ def parse_excel_to_json(file_path: str, company_state_code: str = '24', instruct
                     gst_pct_val = row.get("gst_amt", 0.0)
                 gst_pct_raw = parse_gst_pct(gst_pct_val) if pd.notna(gst_pct_val) else 0.0
                 if gst_pct_raw < 1.0 and gst_pct_raw > 0: gst_pct_raw = gst_pct_raw * 100
+                if gst_amt_raw == 0.0 and taxable_raw > 0.0 and gst_pct_raw > 0.0: gst_amt_raw = round(taxable_raw * (gst_pct_raw / 100.0), 2)
                 if taxable_raw == 0.0 and total_raw > 0: taxable_raw = round(total_raw - gst_amt_raw, 2)
                 if total_raw == 0.0 and taxable_raw > 0: total_raw = round(taxable_raw + gst_amt_raw, 2)
-                is_igst = party_gstin and not party_gstin.startswith(company_state_code)
+                is_igst = party_gstin and len(party_gstin.strip()) >= 2 and not party_gstin.strip().startswith(company_state_code)
                 cgst = sgst = igst = 0.0
                 if is_igst: igst = gst_amt_raw
-                else: cgst = sgst = round(gst_amt_raw / 2, 4)
+                else: cgst = sgst = round(gst_amt_raw / 2.0, 2)
                 extracted_data.append({
                     "date": date_str, "bill_no": inv_no, "party_name": party_name, "party_gstin": party_gstin,
                     "party_address": "", "party_city": "", "party_pincode": "",
@@ -830,7 +838,10 @@ def parse_excel_to_json(file_path: str, company_state_code: str = '24', instruct
                     print(f"⚠️ Swapping inverted taxable ({taxable}) and discount ({discount}) for item '{item_name}'.")
                     taxable, discount = discount, taxable
 
-                item_total_amount = safe_float(item_row.get("total_amt", taxable + gst_amt)) if pd.notna(item_row.get("total_amt")) else (taxable + gst_amt)
+                if gst_amt == 0.0 and taxable > 0.0 and gst_pct > 0.0:
+                    gst_amt = round(taxable * (gst_pct / 100.0), 2)
+
+                item_total_amount = safe_float(item_row.get("total_amt", taxable + gst_amt)) if pd.notna(item_row.get("total_amt")) else round(taxable + gst_amt, 2)
                 if taxable == 0.0 and item_total_amount > 0:
                     taxable = round(item_total_amount - gst_amt, 2)
                     
@@ -841,13 +852,13 @@ def parse_excel_to_json(file_path: str, company_state_code: str = '24', instruct
                     uom = "OTH" if "service" in item_name.lower() else "UNT"
                     
                 is_igst = False
-                if party_gstin and not party_gstin.startswith(company_state_code):
+                if party_gstin and len(party_gstin.strip()) >= 2 and not party_gstin.strip().startswith(company_state_code):
                     is_igst = True
                     
                 if is_igst:
                     cgst, sgst, igst = 0.0, 0.0, gst_amt
                 else:
-                    cgst, sgst, igst = round(gst_amt / 2, 4), round(gst_amt / 2, 4), 0.0
+                    cgst, sgst, igst = round(gst_amt / 2.0, 2), round(gst_amt / 2.0, 2), 0.0
                     
                 items_list.append({
                     "name": item_name,
