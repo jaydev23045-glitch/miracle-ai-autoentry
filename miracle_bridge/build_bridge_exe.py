@@ -32,6 +32,7 @@ def build_exe():
         f"--paths={backend_dir}",
         "--hidden-import=core",
         "--hidden-import=core.config",
+        "--hidden-import=core.utils",
         "--hidden-import=dbf_handler",
         "--hidden-import=routers",
         "--hidden-import=routers.vouchers",

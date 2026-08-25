@@ -36,8 +36,23 @@ class MiracleDBFHandler:
 
     def _parse_float(self, val) -> float:
         """Safely parses float numbers, stripping commas, currency symbols, and spaces."""
-        from core.utils import parse_currency
-        return parse_currency(val)
+        try:
+            from core.utils import parse_currency
+            return parse_currency(val)
+        except Exception:
+            try:
+                from backend.core.utils import parse_currency
+                return parse_currency(val)
+            except Exception:
+                if val is None:
+                    return 0.0
+                if isinstance(val, (int, float)):
+                    return float(val)
+                s = str(val).replace(',', '').replace('₹', '').replace('$', '').strip()
+                try:
+                    return float(s)
+                except Exception:
+                    return 0.0
 
 
     def _write_raw_char_field(self, record, field_name: str, value: str, encoding: str = 'cp1252'):
