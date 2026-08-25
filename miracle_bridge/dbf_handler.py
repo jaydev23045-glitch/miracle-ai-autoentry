@@ -1469,7 +1469,7 @@ class MiracleDBFHandler:
         return led_code
 
     def resolve_group_code_from_hint(self, group_hint: str) -> str:
-        """Resolves human-readable group hint to Miracle Accounting master group code."""
+        """Resolves human-readable group hint to exact official Miracle Accounting master group code."""
         if not group_hint:
             return ""
         gh = group_hint.strip().upper()
@@ -1477,29 +1477,35 @@ class MiracleDBFHandler:
             return "G0000009"
         if "SUNDRY CREDITORS" in gh or "CREDITOR" in gh or "SUPPLIER" in gh:
             return "G0000013"
-        if "UNSECURED LOANS" in gh or "UNSECURED" in gh:
+        if "INDIRECT EXPENSE" in gh or "EXPENSE" in gh or "INDIRECT EXP" in gh:
+            return "G0000017"
+        if "DIRECT EXPENSE" in gh:
+            return "G0000014"
+        if "INDIRECT INCOME" in gh or "INCOME" in gh:
+            return "G0000016"
+        if "DIRECT INCOME" in gh:
+            return "G0000015"
+        if "BANK" in gh or "BANK ACCOUNTS" in gh:
             return "G0000004"
-        if "SECURED LOANS" in gh or "SECURED" in gh:
-            return "G0000003"
-        if "INDIRECT EXPENSE" in gh or "EXPENSE" in gh:
-            return "G0000024"
-        if "DUTIES & TAXES" in gh or "TAXES" in gh or "DUTIES" in gh:
-            return "G0000006"
-        if "INVESTMENT" in gh:
-            return "G0000008"
-        if "CASH" in gh:
+        if "CASH" in gh or "CASH-IN-HAND" in gh:
             return "G0000005"
-        if "BANK" in gh:
+        if "DUTIES & TAXES" in gh or "TAXES" in gh or "DUTIES" in gh:
+            return "G0000003"
+        if "SALES" in gh:
             return "G0000011"
+        if "PURCHASE" in gh:
+            return "G0000012"
         if "CAPITAL" in gh or "DRAWING" in gh:
             return "G0000001"
-        if "SALES" in gh:
-            return "G0000014"
-        if "PURCHASE" in gh:
-            return "G0000015"
+        if "FIXED ASSETS" in gh or "ASSET" in gh:
+            return "G0000006"
+        if "UNSECURED LOANS" in gh or "UNSECURED" in gh:
+            return "G0000019"
+        if "SECURED LOANS" in gh or "SECURED" in gh:
+            return "G0000008"
         if "SUSPENSE" in gh:
             return "G0000028"
-        return ""
+        return "G0000009"
 
     def update_party_ledger(self, old_name: str, new_name: str, print_name: str = "", group_code: str = "", gstin: str = "", city: str = "", year_folder: str | None = None) -> str:
         """Updates an existing master ledger record in RKACCM01.DBF with new name, print name, group code, and gstin."""
@@ -4137,38 +4143,40 @@ class MiracleDBFHandler:
         
         STRICT ACCOUNTING RULES:
         1. Contra (BC/CV) is ONLY for movement of funds between OWN Cash and Bank accounts.
-        2. Bank Charges, Bank Fees, SMS Charges, MDR Charges, Interest, etc. are Indirect Expenses (BP), NEVER Contra!
-        3. Excludes any ledger classified under Expenses, Income, Debtors, Creditors, or Taxes.
+        2. Customer payments, vendor payments, expenses, and suspense entries are NEVER Contra!
         """
+        if not party_code:
+            return False
+
         if party_code == 'ACASHACT':
             return True
 
-        name_up = (party_name or "").strip().upper()
-        
-        # 1. HARD EXCLUSION: Any bank charge, fee, or expense keyword is NEVER Contra!
-        if any(kw in name_up for kw in self.BANK_EXPENSE_KEYWORDS):
-            return False
-            
-        # 2. HARD EXCLUSION: Check ledger classification
         party_class = code_to_classification.get(party_code, 'Other')
-        if party_class in ('Expense', 'Indirect Expenses', 'Direct Expenses', 'Income', 'Indirect Income', 'Debtor', 'Creditor', 'Duties & Taxes'):
+        grp_up = (party_group_code or "").strip().upper()
+
+        # 1. HARD EXCLUSION: Debtors, Creditors, Expenses, Income, Taxes, Sales, Purchases, or Suspense -> NEVER Contra!
+        if party_class in ('Expense', 'Indirect Expenses', 'Direct Expenses', 'Income', 'Indirect Income', 'Debtor', 'Sundry Debtors', 'Creditor', 'Sundry Creditors', 'Duties & Taxes'):
             return False
             
-        if party_group_code in ('G0000009', 'G0000010', 'G0000026', 'G0000027', 'G0000002', 'G0000003', 'G0000016', 'G0000017'):
+        if grp_up in ('G0000009', 'G0000013', 'G0000017', 'G0000016', 'G0000003', 'G0000011', 'G0000012', 'G0000028', 'SUNDRY DEBTORS', 'SUNDRY CREDITORS', 'INDIRECT EXPENSES', 'INDIRECT INCOME'):
             return False
 
-        # 3. Must be classified as Cash or Bank
-        if party_class in ('Cash', 'Bank', 'Cash-in-Hand', 'Bank Accounts'):
+        name_up = (party_name or "").strip().upper()
+        
+        # 2. HARD EXCLUSION: Any bank charge, fee, or expense keyword is NEVER Contra!
+        if any(kw in name_up for kw in getattr(self, 'BANK_EXPENSE_KEYWORDS', [])):
+            return False
+
+        # 3. CASH ACCOUNT CONTRA: Only if classified as Cash/Cash-in-Hand (G0000005) or exact Cash name
+        CASH_EXPACT = ('CASH ACCOUNT', 'CASH A/C', 'PETTY CASH', 'CASH IN HAND', 'CASH')
+        if party_class in ('Cash', 'Cash-in-Hand') or grp_up == 'G0000005':
             return True
-            
-        # 4. Cash Account names or Cash Deposit / Withdrawal narration
-        if name_up in ('CASH ACCOUNT', 'CASH A/C', 'PETTY CASH', 'CASH IN HAND', 'CASH') or 'CASH DEPOSIT' in name_up or 'CASH WITHDRAWAL' in name_up:
+        if name_up in CASH_EXPACT and party_class != 'Expense':
             return True
-            
-        # 5. Bank Account names (must NOT contain expense/charge words)
-        if ('BANK' in name_up or 'A/C' in name_up) and not any(exp in name_up for exp in ['EXP', 'FEE', 'CHG', 'COMM', 'INT', 'TAX', 'DUTY', 'CHARGE']):
-            if party_class == 'Bank' or party_group_code in ('G0000004', 'Bank Accounts'):
-                return True
+
+        # 4. BANK-TO-BANK CONTRA: Only if explicitly classified as Bank Accounts (G0000004) AND NOT an expense/party
+        if (party_class == 'Bank' or grp_up in ('G0000004', 'BANK ACCOUNTS')) and not any(exp in name_up for exp in ['EXP', 'FEE', 'CHG', 'COMM', 'INT', 'TAX', 'DUTY', 'CHARGE']):
+            return True
 
         return False
 
