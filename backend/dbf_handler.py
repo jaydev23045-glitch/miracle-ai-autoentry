@@ -2638,6 +2638,18 @@ class MiracleDBFHandler:
                 except:
                     pass
 
+    def _inject_sales(self, vouchers: list, year_folder: str = "", setup_id: int = 5, sales_prefix: str = "SS,SS") -> int:
+        """Helper alias for injecting Sales vouchers directly."""
+        return self.inject_vouchers("Sales", vouchers, year_folder=year_folder, sales_setup_id=setup_id, sales_prefix=sales_prefix)
+
+    def _inject_purchases(self, vouchers: list, year_folder: str = "", setup_id: int = 6, purchase_prefix: str = "PP,PP") -> int:
+        """Helper alias for injecting Purchase vouchers directly."""
+        return self.inject_vouchers("Purchases", vouchers, year_folder=year_folder, purchase_setup_id=setup_id, purchase_prefix=purchase_prefix)
+
+    def push_opening_balances(self, vouchers: list, year_folder: str = "") -> dict:
+        """Helper alias for injecting opening balances."""
+        return self.inject_opening_balances(vouchers, year_folder=year_folder)
+
     def inject_vouchers(self, module: str, vouchers: list, year_folder: str | None = None, sales_prefix: str = "SS,SS", purchase_prefix: str = "PP,PP", sales_setup_id: int = 5, purchase_setup_id: int = 6, sales_series: str = "", bill_format_pattern: str = "", last_bill_number: int = 0, format_override: str | None = None, bank_name: str | None = None, target_cash_code: str | None = None) -> int:
         """Injects a list of vouchers directly into RKACCT41.DBF, RKACCT02.DBF, and RKACCT52.DBF."""
         from datetime import datetime, date
@@ -5831,7 +5843,10 @@ ENDPROC
         }
 
 
-    def _inject_cash_entries(self, vouchers: list, target_cash_code: str, year_folder: str) -> int:
+    def _inject_cash_entries(self, vouchers: list, target_cash_code: str = "ACASHACT", year_folder: str = "") -> int:
+        if isinstance(target_cash_code, str) and (target_cash_code.upper().startswith("YR") or not year_folder):
+            year_folder = target_cash_code
+            target_cash_code = "ACASHACT"
         import os
         import dbf
         import random

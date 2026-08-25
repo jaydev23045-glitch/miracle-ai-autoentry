@@ -6083,6 +6083,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         : (currentModule === 'Cash Entries') ? 'cash' : 'opening_balance',
                     vouchers: vouchers,
                     target_bank_name: window.currentBankName || "Bank Account",
+                    target_cash_code: (document.getElementById('targetCashAccount') ? document.getElementById('targetCashAccount').value : "ACASHACT") || "ACASHACT",
                     backup_path: backupPathVal
                 };
                 targetBody = JSON.stringify(bridgePayload);

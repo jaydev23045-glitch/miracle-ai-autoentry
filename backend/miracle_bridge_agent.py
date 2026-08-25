@@ -199,6 +199,7 @@ class InjectRequestPayload(BaseModel):
     sales_prefix: Optional[str] = "SS,SS"
     purchase_prefix: Optional[str] = "PP,PP"
     target_bank_name: Optional[str] = "Bank Account"
+    target_cash_code: Optional[str] = "ACASHACT"
     backup_path: Optional[str] = ""
 
 @app.get("/health")
@@ -397,7 +398,8 @@ def inject_vouchers(payload: InjectRequestPayload):
                     purchase_prefix=payload.purchase_prefix
                 )
             elif module_type == "cash":
-                res = handler._inject_cash_entries(vouchers, year_dir)
+                c_code = getattr(payload, "target_cash_code", None) or "ACASHACT"
+                res = handler._inject_cash_entries(vouchers, c_code, year_dir)
             elif module_type == "opening_balance":
                 res = handler.push_opening_balances(vouchers, year_dir)
             else:
