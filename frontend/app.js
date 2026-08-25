@@ -6082,6 +6082,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         : (currentModule === 'Purchases') ? 'purchase' 
                         : (currentModule === 'Cash Entries') ? 'cash' : 'opening_balance',
                     vouchers: vouchers,
+                    target_bank_name: window.currentBankName || "Bank Account",
                     backup_path: backupPathVal
                 };
                 targetBody = JSON.stringify(bridgePayload);

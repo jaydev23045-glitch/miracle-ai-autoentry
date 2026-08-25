@@ -198,6 +198,7 @@ class InjectRequestPayload(BaseModel):
     purchase_setup_id: Optional[int] = 6
     sales_prefix: Optional[str] = "SS,SS"
     purchase_prefix: Optional[str] = "PP,PP"
+    target_bank_name: Optional[str] = "Bank Account"
     backup_path: Optional[str] = ""
 
 @app.get("/health")
@@ -356,7 +357,8 @@ def inject_vouchers(payload: InjectRequestPayload):
             
             # Delegate injection based on module type
             if module_type == "bank":
-                res = handler._inject_bank_statements(vouchers, year_dir)
+                b_name = getattr(payload, "target_bank_name", None) or "Bank Account"
+                res = handler._inject_bank_statements(vouchers, b_name, year_dir)
             elif module_type == "sales":
                 res = handler._inject_sales(
                     vouchers, 

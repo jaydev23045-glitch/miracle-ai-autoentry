@@ -4157,7 +4157,10 @@ class MiracleDBFHandler:
 
         return False
 
-    def _inject_bank_statements(self, vouchers: list, payload_bank_name: str, year_folder: str) -> int:
+    def _inject_bank_statements(self, vouchers: list, payload_bank_name: str = "Bank Account", year_folder: str = "") -> int:
+        if isinstance(payload_bank_name, str) and (payload_bank_name.upper().startswith("YR") or not year_folder):
+            year_folder = payload_bank_name
+            payload_bank_name = "Bank Account"
         import os
         import dbf
         import random
