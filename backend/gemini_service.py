@@ -789,9 +789,13 @@ class GeminiService:
                             model=active_model,
                             contents=contents
                         )
-                    # Update active key index on clean success
-                    self.current_key_idx = actual_idx
-                    self.api_key = active_key
+                    # Update active key index on clean success with thread safety
+                    if not hasattr(self, '_key_lock'):
+                        import threading
+                        self._key_lock = threading.Lock()
+                    with self._key_lock:
+                        self.current_key_idx = actual_idx
+                        self.api_key = active_key
                     return res
                 except Exception as e:
                     last_exception = e
@@ -2191,42 +2195,68 @@ Return the extracted data EXACTLY following this JSON schema. Do not output anyt
                         
                     return res
 
-                # Walk through chunks sequentially
+                # Walk through chunks (Sequential for Bank, Parallel across 10 API keys for Sales/Purchase)
                 current_balance = ""
                 self._update_status(base_filename, 0, num_chunks, "Initializing PDF splitting...")
                 
-                for chunk_idx, (start_idx, end_idx) in enumerate(chunk_ranges):
-                    res = extract_pdf_pages_recursive(start_idx, end_idx, current_balance)
-                    
-                    # Inter-Chunk Boundary Balance Recovery Check
-                    if current_balance and isinstance(res, dict) and res.get("extracted_data"):
-                        first_rows = [r for r in res["extracted_data"] if r.get("running_balance")]
-                        if first_rows:
-                            first_row = first_rows[0]
-                            f_bal = float(first_row.get("running_balance", 0))
-                            f_amt = float(first_row.get("amount", 0))
-                            f_type = str(first_row.get("transaction_type", "")).strip().capitalize()
-                            expected_start_bal = f_bal - f_amt if f_type == "Receipt" else f_bal + f_amt
-                            
-                            delta = abs(expected_start_bal - float(current_balance))
-                            if delta > 1.0:
-                                print(f"⚠️ [Boundary Gap Detected] Discrepancy between Chunk {chunk_idx} and Chunk {chunk_idx+1}: expected start {expected_start_bal:.2f}, got prev balance {current_balance:.2f} (delta = {delta:.2f})")
-                                if start_idx > 0:
-                                    boundary_page_idx = start_idx - 1
-                                    print(f"🔧 [Boundary Recovery] Auto-extracting missing boundary Page {boundary_page_idx + 1}...")
-                                    b_res = extract_pdf_pages_recursive(boundary_page_idx, boundary_page_idx, current_balance)
-                                    if b_res and isinstance(b_res, dict) and b_res.get("extracted_data"):
-                                        results_array.append(b_res)
-                                        b_last_rows = [r for r in b_res["extracted_data"] if r.get("running_balance")]
-                                        if b_last_rows:
-                                            current_balance = float(b_last_rows[-1].get("running_balance", 0))
+                if module in ["Bank Statements", "Cash Entries"]:
+                    # Bank Statements require sequential flow to pass running balances across chunk boundaries
+                    for chunk_idx, (start_idx, end_idx) in enumerate(chunk_ranges):
+                        self._update_status(base_filename, chunk_idx + 1, num_chunks, f"Extracting bank pages {start_idx+1}-{end_idx+1}...")
+                        res = extract_pdf_pages_recursive(start_idx, end_idx, current_balance)
+                        
+                        # Inter-Chunk Boundary Balance Recovery Check
+                        if current_balance and isinstance(res, dict) and res.get("extracted_data"):
+                            first_rows = [r for r in res["extracted_data"] if r.get("running_balance")]
+                            if first_rows:
+                                first_row = first_rows[0]
+                                f_bal = float(first_row.get("running_balance", 0))
+                                f_amt = float(first_row.get("amount", 0))
+                                f_type = str(first_row.get("transaction_type", "")).strip().capitalize()
+                                expected_start_bal = f_bal - f_amt if f_type == "Receipt" else f_bal + f_amt
+                                
+                                delta = abs(expected_start_bal - float(current_balance))
+                                if delta > 1.0:
+                                    print(f"⚠️ [Boundary Gap Detected] Discrepancy between Chunk {chunk_idx} and Chunk {chunk_idx+1}: expected start {expected_start_bal:.2f}, got prev balance {current_balance:.2f} (delta = {delta:.2f})")
+                                    if start_idx > 0:
+                                        boundary_page_idx = start_idx - 1
+                                        print(f"🔧 [Boundary Recovery] Auto-extracting missing boundary Page {boundary_page_idx + 1}...")
+                                        b_res = extract_pdf_pages_recursive(boundary_page_idx, boundary_page_idx, current_balance)
+                                        if b_res and isinstance(b_res, dict) and b_res.get("extracted_data"):
+                                            results_array.append(b_res)
+                                            b_last_rows = [r for r in b_res["extracted_data"] if r.get("running_balance")]
+                                            if b_last_rows:
+                                                current_balance = float(b_last_rows[-1].get("running_balance", 0))
 
-                    results_array.append(res)
+                        results_array.append(res)
+                        
+                        if isinstance(res, dict) and res.get("extracted_data"):
+                            last_rows = [r for r in res["extracted_data"] if r.get("running_balance")]
+                            if last_rows:
+                                current_balance = float(last_rows[-1].get("running_balance", 0))
+                else:
+                    # Sales / Purchase: Chunks are independent — extract concurrently across 10 API keys!
+                    from concurrent.futures import ThreadPoolExecutor, as_completed
+                    pool_len = len(self.api_keys_pool) if hasattr(self, 'api_keys_pool') and self.api_keys_pool else 1
+                    max_workers = max(1, min(pool_len, num_chunks))
+                    print(f"⚡ [Parallel PDF Extraction] Processing {num_chunks} PDF chunk(s) across {max_workers} concurrent API Key worker(s)...")
                     
-                    if isinstance(res, dict) and res.get("extracted_data"):
-                        last_rows = [r for r in res["extracted_data"] if r.get("running_balance")]
-                        if last_rows:
-                            current_balance = float(last_rows[-1].get("running_balance", 0))
+                    future_to_idx = {}
+                    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+                        for chunk_idx, (start_idx, end_idx) in enumerate(chunk_ranges):
+                            future = executor.submit(extract_pdf_pages_recursive, start_idx, end_idx, "")
+                            future_to_idx[future] = chunk_idx
+                            
+                    ordered_results = [None] * num_chunks
+                    for future in as_completed(future_to_idx):
+                        idx = future_to_idx[future]
+                        try:
+                            ordered_results[idx] = future.result()
+                        except Exception as pe:
+                            print(f"❌ Parallel PDF chunk {idx} failed: {pe}")
+                            ordered_results[idx] = {"status": "error", "extracted_data": []}
+                            
+                    results_array.extend([r for r in ordered_results if r is not None])
                         
             elif ext in [".png", ".jpg", ".jpeg"]:
                 print(f"Uploading {file_path} to Gemini File API...")

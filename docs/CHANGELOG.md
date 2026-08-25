@@ -1,5 +1,22 @@
 # Miracle Auto-Entry Platform - Changelog
 
+### 119. Concurrent Multi-Key Parallel PDF/Excel Extraction & Thread-Safe Key Rotator
+**The Feature Implemented:**
+1. **Concurrent Multi-Key Worker Pool:** Large 100-page PDF and multi-chunk Excel registers now process chunk extractions **concurrently in parallel** using a `ThreadPoolExecutor` scaled up to the full 10 API keys pool (`max_workers = min(len(api_keys_pool), num_chunks)`).
+2. **Thread-Safe Key Rotation Guard:** Implemented `threading.Lock()` synchronization around `self.current_key_idx` mutations inside `_generate_content_with_retry()`, allowing parallel extraction workers to safely rotate keys on `429` rate-limit events without race conditions or lock contention.
+3. **Sequential Balance Flow Guard:** Preserved sequential chunk execution for Bank Statements and Cash Entries to pass running balances across chunk boundaries accurately while maintaining active 10-key failover.
+
+**Fixes & Architecture Implemented:**
+1. **Thread-Safe Key Rotator ([gemini_service.py](file:///Users/jaydevnakum/Work%20Place/WORK/APP%20DETAILS/Mirracle%20Auto%20Entre%20Sale%20or%20Purchase%20or%20Bank/backend/gemini_service.py#L790)):**
+   - Wrapped `current_key_idx` and `api_key` updates with `self._key_lock`.
+2. **Parallel PDF Chunk Executor ([gemini_service.py](file:///Users/jaydevnakum/Work%20Place/WORK/APP%20DETAILS/Mirracle%20Auto%20Entre%20Sale%20or%20Purchase%20or%20Bank/backend/gemini_service.py#L2230)):**
+   - Added parallel PDF chunk execution for Sales & Purchase registers.
+3. **Automated Verification:**
+   - Executed `scratch/test_api_key_rotator.py` $\rightarrow$ **100% Passed**.
+   - Executed 3-Space Automated Suite (`scratch/test_all_spaces.py`) $\rightarrow$ **100% Passed**.
+
+
+
 ### 118. Maximum Capacity (5,000 RPD) Model Hierarchy & Rate Limit Matrix Optimization
 **The Feature Implemented:**
 1. **Tier 1 Capacity Prioritization (5,000 RPD Total):** Configured `FALLBACK_MODELS` in `gemini_service.py` to strictly prioritize high-throughput 500 RPD models (`gemini-3.1-flash-lite`, `gemini-3.5-flash-lite`, `gemini-2.5-flash-lite`) first across all 10 API keys before using lower RPD models.
