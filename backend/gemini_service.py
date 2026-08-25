@@ -38,24 +38,39 @@ def _save_exhausted_models_cache(cache: dict):
 
 _EXHAUSTED_MODELS_CACHE = _load_exhausted_models_cache()
 
-def is_model_quota_exhausted_today(model_name: str) -> bool:
+import hashlib
+
+def _make_key_model_cache_key(api_key: str | None, model_name: str) -> str:
+    k_hash = hashlib.md5((api_key or "default").encode('utf-8')).hexdigest()[:12]
+    return f"{k_hash}:{model_name}"
+
+def is_key_model_quota_exhausted_today(api_key: str | None, model_name: str) -> bool:
     global _EXHAUSTED_MODELS_CACHE
     today_str = datetime.date.today().isoformat()
-    if model_name in _EXHAUSTED_MODELS_CACHE:
-        if _EXHAUSTED_MODELS_CACHE[model_name] == today_str:
+    cache_key = _make_key_model_cache_key(api_key, model_name)
+    if cache_key in _EXHAUSTED_MODELS_CACHE:
+        if _EXHAUSTED_MODELS_CACHE[cache_key] == today_str:
             return True
         else:
-            del _EXHAUSTED_MODELS_CACHE[model_name]
+            del _EXHAUSTED_MODELS_CACHE[cache_key]
             _save_exhausted_models_cache(_EXHAUSTED_MODELS_CACHE)
             return False
     return False
 
-def mark_model_quota_exhausted_today(model_name: str):
+def mark_key_model_quota_exhausted_today(api_key: str | None, model_name: str):
     global _EXHAUSTED_MODELS_CACHE
     today_str = datetime.date.today().isoformat()
-    _EXHAUSTED_MODELS_CACHE[model_name] = today_str
+    cache_key = _make_key_model_cache_key(api_key, model_name)
+    _EXHAUSTED_MODELS_CACHE[cache_key] = today_str
     _save_exhausted_models_cache(_EXHAUSTED_MODELS_CACHE)
-    print(f"🚫 [Quota Blacklist] Model '{model_name}' hit daily quota (429 RESOURCE_EXHAUSTED). Blacklisted until 12:00 AM reset!")
+    masked_key = (api_key[:6] + "...") if api_key and len(api_key) > 6 else "key"
+    print(f"🚫 [Daily Key Blacklist] Key '{masked_key}' hit 429 daily quota on '{model_name}'. Blacklisted until 12:00 AM midnight reset!")
+
+def is_model_quota_exhausted_today(model_name: str) -> bool:
+    return is_key_model_quota_exhausted_today("default", model_name)
+
+def mark_model_quota_exhausted_today(model_name: str):
+    mark_key_model_quota_exhausted_today("default", model_name)
 try:
     from google import genai
     from google.genai import types
@@ -722,7 +737,7 @@ class GeminiService:
         except Exception as e:
             print(f"Warning: Failed to update extraction status file: {e}")
 
-    def _generate_content_with_retry(self, client, model, contents, config=None, max_retries=4, initial_backoff=2.0):
+    def _generate_content_with_retry(self, client, model, contents, config=None, max_retries=4, initial_backoff=2.0, start_key_offset: int = 0):
         import time
         import random
         
@@ -772,9 +787,14 @@ class GeminiService:
 
         for active_model in models_to_try:
             for key_offset in range(len(keys_pool)):
-                actual_idx = (self.current_key_idx + key_offset) % len(keys_pool)
+                actual_idx = (self.current_key_idx + start_key_offset + key_offset) % len(keys_pool)
                 active_key = keys_pool[actual_idx]
                 
+                # Instant 0.00s skip for keys blacklisted today for this model
+                if is_key_model_quota_exhausted_today(active_key, active_model):
+                    print(f"⚡ [Daily Blacklist Skip] Key #{actual_idx + 1} ({active_key[:6]}...) is daily quota-exhausted for '{active_model}'. Skipping instantly...")
+                    continue
+
                 try:
                     active_client = self._get_client(target_key=active_key)
                     print(f"🔮 [Gemini Request] Sending payload using Key #{actual_idx + 1}/{len(keys_pool)} ({active_key[:6]}...{active_key[-4:]}) and model '{active_model}'")
@@ -810,11 +830,17 @@ class GeminiService:
                     # Check for 429 Daily Free Tier Quota / Rate Limit
                     is_quota_429 = any(x in err_msg for x in ["429", "quota", "exhausted", "resource_exhausted", "rate_limit", "key_invalid", "permission_denied"])
                     if is_quota_429:
+                        # Only blacklist for the whole day if it's a true daily quota exhaustion error
+                        is_daily_exhausted = any(x in err_msg for x in ["quota", "resource_exhausted", "daily", "exceeded your current quota", "free tier", "limit reached"])
+                        if is_daily_exhausted:
+                            mark_key_model_quota_exhausted_today(active_key, active_model)
+                            
                         if self.is_paid_api_key:
                             self.is_paid_api_key = False
                         
                         next_key_num = ((actual_idx + 1) % len(keys_pool)) + 1
-                        print(f"🔑 [API Key Rotator] Key #{actual_idx + 1} quota reached/rate limited on model '{active_model}'. Seamlessly rotating to Key #{next_key_num}...")
+                        reason_lbl = "Daily 500 RPD Limit" if is_daily_exhausted else "Per-Minute RPM Spike"
+                        print(f"🔑 [API Key Rotator] Key #{actual_idx + 1} ({reason_lbl}) on model '{active_model}'. Seamlessly rotating to Key #{next_key_num}...")
                         time.sleep(0.2)
                         continue
                     
@@ -1144,14 +1170,15 @@ Return your response ONLY as a JSON object matching this schema:
             
         return parsed
 
-    def _extract_single_content(self, client, contents) -> dict:
+    def _extract_single_content(self, client, contents, start_key_offset: int = 0) -> dict:
         response = self._generate_content_with_retry(
             client=client,
             model=self.model_name,
             contents=contents,
             config=types.GenerateContentConfig(
                 response_mime_type="application/json"
-            )
+            ),
+            start_key_offset=start_key_offset
         )
         text = response.text.strip() if response and response.text else ""
         text = self.repair_json_string(text)
@@ -1994,7 +2021,7 @@ Return the extracted data EXACTLY following this JSON schema. Do not output anyt
                 num_chunks = len(chunk_ranges)
                 print(f"Deep Extraction: Processing PDF {file_path} sequentially in {num_chunks} base chunks (with recursive split-on-failure)...")
                 
-                def extract_pdf_pages_recursive(start_page_idx, end_page_idx, prev_balance, trial=1, feedback_msg=""):
+                def extract_pdf_pages_recursive(start_page_idx, end_page_idx, prev_balance, trial=1, feedback_msg="", chunk_offset: int = 0):
                     pages_count = end_page_idx - start_page_idx + 1
                     start_p = start_page_idx + 1
                     end_p = end_page_idx + 1
@@ -2129,7 +2156,7 @@ Return the extracted data EXACTLY following this JSON schema. Do not output anyt
                         if feedback_msg:
                             chunk_prompt += f"\n\n⚠️ IMPORTANT FEEDBACK FROM PREVIOUS ATTEMPT:\n{feedback_msg}\nPlease correct this mistake in your new output and make sure no entries are missing or hallucinated."
                         try:
-                            res = self._extract_single_content(client, [chunk_prompt])
+                            res = self._extract_single_content(client, [chunk_prompt], start_key_offset=chunk_offset)
                         except Exception as err:
                             print(f"❌ Error processing PDF text range {start_p}-{end_p}: {err}")
                             raise err
@@ -2244,7 +2271,7 @@ Return the extracted data EXACTLY following this JSON schema. Do not output anyt
                     future_to_idx = {}
                     with ThreadPoolExecutor(max_workers=max_workers) as executor:
                         for chunk_idx, (start_idx, end_idx) in enumerate(chunk_ranges):
-                            future = executor.submit(extract_pdf_pages_recursive, start_idx, end_idx, "")
+                            future = executor.submit(extract_pdf_pages_recursive, start_idx, end_idx, "", 1, "", chunk_idx)
                             future_to_idx[future] = chunk_idx
                             
                     ordered_results = [None] * num_chunks
