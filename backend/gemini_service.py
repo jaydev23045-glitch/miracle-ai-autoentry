@@ -1,5 +1,16 @@
 import os
 import sys
+import warnings
+import logging
+
+# Suppress google-genai SDK automatic function calling (AFC) recommendation warnings
+warnings.filterwarnings("ignore", category=UserWarning, message=".*Automatic function calling.*")
+warnings.filterwarnings("ignore", category=UserWarning, message=".*automatic function calling.*")
+warnings.filterwarnings("ignore", message=".*Automatic function calling.*")
+warnings.filterwarnings("ignore", message=".*automatic function calling.*")
+
+logging.getLogger("google.genai").setLevel(logging.ERROR)
+logging.getLogger("google.generativeai").setLevel(logging.ERROR)
 
 # Ensure pandas & Excel parsing packages from backend/venv site-packages are in sys.path
 try:
@@ -2190,12 +2201,20 @@ Return the extracted data EXACTLY following this JSON schema. Do not output anyt
                     elif op_balance:
                         is_valid, feedback_msg = verify_chunk_math(extracted_data, op_balance, pages_count=pages_count)
                         
-                    # If math check fails and range has multiple pages, split range in half
-                    if not is_valid and pages_count > 1:
-                        print(f"⚠️ [Recursive Extract] Math check failed for Pages {start_p}-{end_p}. Splitting page range in half...")
+                    # If math check fails on small/medium chunks (pages <= 10), RETRY Trial 2 first with feedback & key rotation!
+                    if not is_valid and trial < 2 and pages_count <= 10:
+                        print(f"⚠️ [Recursive Extract] Math check failed for Pages {start_p}-{end_p} (Size: {pages_count} pgs). Retrying Trial {trial + 1} with feedback & key rotation before splitting...")
+                        return extract_pdf_pages_recursive(
+                            start_page_idx, end_page_idx, prev_balance, 
+                            trial=trial + 1, feedback_msg=feedback_msg, chunk_offset=chunk_offset + 1
+                        )
+                        
+                    # If math check STILL fails after Trial 2 (or for large chunks > 10 pages), split range in half
+                    elif not is_valid and pages_count > 1:
+                        print(f"⚠️ [Recursive Extract] Math check failed for Pages {start_p}-{end_p} after Trial {trial}. Splitting page range in half...")
                         mid = (start_page_idx + end_page_idx) // 2
                         
-                        res_first = extract_pdf_pages_recursive(start_page_idx, mid, prev_balance, trial=trial)
+                        res_first = extract_pdf_pages_recursive(start_page_idx, mid, prev_balance, trial=1, chunk_offset=chunk_offset)
                         
                         first_extracted = res_first.get("extracted_data", [])
                         end_balance_first = prev_balance
@@ -2204,7 +2223,7 @@ Return the extracted data EXACTLY following this JSON schema. Do not output anyt
                             if last_rows:
                                 end_balance_first = float(last_rows[-1].get("running_balance", 0))
                                 
-                        res_second = extract_pdf_pages_recursive(mid + 1, end_page_idx, end_balance_first, trial=trial)
+                        res_second = extract_pdf_pages_recursive(mid + 1, end_page_idx, end_balance_first, trial=1, chunk_offset=chunk_offset + 1)
                         
                         combined_res = {
                           "status": "success",
@@ -2214,11 +2233,13 @@ Return the extracted data EXACTLY following this JSON schema. Do not output anyt
                         }
                         return combined_res
                         
-                    # If math check fails on single page, retry up to 2 times
+                    # If math check fails on single page after Trial 2, retry Trial 3
                     elif not is_valid and pages_count == 1 and trial < 3:
                         print(f"⚠️ [Recursive Extract] Math check failed for single Page {start_p}. Retrying (Attempt {trial + 1})...")
-                        # Only sleep if API quota is exhausted (not preemptively)
-                        return extract_pdf_pages_recursive(start_page_idx, end_page_idx, prev_balance, trial=trial + 1, feedback_msg=feedback_msg)
+                        return extract_pdf_pages_recursive(
+                            start_page_idx, end_page_idx, prev_balance, 
+                            trial=trial + 1, feedback_msg=feedback_msg, chunk_offset=chunk_offset + 1
+                        )
                         
                     return res
 

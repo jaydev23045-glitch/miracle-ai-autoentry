@@ -1144,6 +1144,93 @@ class MiracleDBFHandler:
                 # Non-fatal: if sync to one year fails, continue with others
                 print(f"[sync] ⚠️ Failed to sync {party_name} to {yr}: {e}")
 
+    def sync_closing_balances_to_next_year(self, source_year_folder: str, affected_ledger_codes: list | None = None):
+        """
+        After injecting vouchers into source_year_folder (e.g. YR25 / 2025-26), automatically
+        calculate updated closing balances for affected ledgers and carry them forward into the
+        Opening Balance of the NEXT financial year folder (e.g. YR26 / 2026-27).
+        """
+        if not source_year_folder:
+            return
+            
+        import dbf as dbf_lib
+        import re
+        
+        # Calculate next year folder name (e.g. YR25 -> YR26)
+        match = re.search(r'(\d+)', source_year_folder)
+        if not match:
+            return
+        curr_num = int(match.group(1))
+        next_yr_name = f"YR{curr_num + 1}"
+        
+        all_folders = self.get_available_year_folders()
+        next_folder = None
+        for f in all_folders:
+            f_name = f['name']
+            if f_name.upper() == next_yr_name.upper():
+                next_folder = f_name
+                break
+                
+        if not next_folder:
+            return
+            
+        src_m01 = self._get_table_path('rkaccm01.dbf', source_year_folder)
+        if not os.path.exists(src_m01): src_m01 = self._get_table_path('RKACCM01.DBF', source_year_folder)
+        
+        dst_m01 = self._get_table_path('rkaccm01.dbf', next_folder)
+        if not os.path.exists(dst_m01): dst_m01 = self._get_table_path('RKACCM01.DBF', next_folder)
+        
+        if not os.path.exists(src_m01) or not os.path.exists(dst_m01):
+            return
+
+        # Calculate closing balances in source year for affected ledgers
+        src_vouchers = self.read_vouchers(source_year_folder, limit=50000)
+        src_ledgers = {l['code']: l for l in self.read_ledgers(source_year_folder)}
+        
+        target_codes = set(affected_ledger_codes or src_ledgers.keys())
+        
+        ledger_debits = {}
+        ledger_credits = {}
+        for v in src_vouchers:
+            dr_code = str(v.get('dr_ledger_code', '')).strip()
+            cr_code = str(v.get('cr_ledger_code', '')).strip()
+            amt = float(v.get('amount', 0.0) or 0.0)
+            if dr_code in target_codes:
+                ledger_debits[dr_code] = ledger_debits.get(dr_code, 0.0) + amt
+            if cr_code in target_codes:
+                ledger_credits[cr_code] = ledger_credits.get(cr_code, 0.0) + amt
+                
+        for code in target_codes:
+            if code not in src_ledgers:
+                continue
+            m = src_ledgers[code]
+            op_amt = float(m.get('opening_balance', 0.0) or 0.0)
+            op_type = str(m.get('opening_type', 'D')).strip().upper()
+            
+            op_signed = op_amt if op_type in ('D', '1', 'DB') else -op_amt
+            net_dr = ledger_debits.get(code, 0.0)
+            net_cr = ledger_credits.get(code, 0.0)
+            
+            closing_signed = op_signed + net_dr - net_cr
+            closing_amt = round(abs(closing_signed), 2)
+            closing_type = '1' if closing_signed >= 0 else '2'
+            
+            try:
+                with self.safe_cdx_context(dst_m01):
+                    t = dbf_lib.Table(dst_m01)
+                    t.open(mode=dbf_lib.READ_WRITE)
+                    try:
+                        for r in t:
+                            if not dbf_lib.is_deleted(r):
+                                if str(r['FIELD01']).strip() == code:
+                                    dbf_lib.write(r, FIELD08=closing_amt, FIELD09=closing_type)
+                                    print(f"[carry-forward] ✅ Updated Opening Balance for {m.get('name')} ({code}) in {next_folder} to {closing_amt} ({'DB' if closing_type=='1' else 'CR'})")
+                                    break
+                    finally:
+                        t.close()
+            except Exception as ex:
+                print(f"[carry-forward] ⚠️ Could not update opening balance in {next_folder} for {code}: {ex}")
+
     def create_party_ledger(self, name: str, module: str, gstin: str = "", address: str = "", city: str = "", pincode: str = "", year_folder: str | None = None, transaction_type: str = "", group_hint: str = "", explicit_group_code: str = "") -> str:
         """Automatically creates a new party ledger in RKACCM01 and RKACCM02. Handles B2B and B2C based on gstin."""
         MiracleDBFHandler.clear_cross_year_cache(self.client_path)
@@ -4818,6 +4905,20 @@ class MiracleDBFHandler:
                 
         # Trigger reindexing
         self.reindex_tables(year_folder)
+
+        if injected_count > 0:
+            try:
+                self.sync_closing_balances_to_next_year(year_folder)
+            except Exception as sy_err:
+                print(f"[carry-forward] Non-critical sync notice: {sy_err}")
+            
+            y_label = year_folder
+            if "YR25" in year_folder.upper(): y_label = "2025–2026 (YR25)"
+            elif "YR26" in year_folder.upper(): y_label = "2026–2027 (YR26)"
+            self.audit_report["messages"].append(
+                f"ℹ️ Vouchers injected into Financial Year: {y_label}. In Miracle Software, please switch active year to {y_label} or set Date Filter (01/04/2025 – 31/03/2026) to view individual voucher rows."
+            )
+
         return injected_count
 
     def _find_gid_path(self) -> str | None:

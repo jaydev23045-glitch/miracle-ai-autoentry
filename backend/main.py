@@ -1,5 +1,16 @@
 import os
 import sys
+import warnings
+import logging
+
+# Suppress google-genai SDK automatic function calling (AFC) recommendation warnings
+warnings.filterwarnings("ignore", category=UserWarning, message=".*Automatic function calling.*")
+warnings.filterwarnings("ignore", category=UserWarning, message=".*automatic function calling.*")
+warnings.filterwarnings("ignore", message=".*Automatic function calling.*")
+warnings.filterwarnings("ignore", message=".*automatic function calling.*")
+
+logging.getLogger("google.genai").setLevel(logging.ERROR)
+logging.getLogger("google.generativeai").setLevel(logging.ERROR)
 
 # Ensure pandas & Excel dependencies from backend/venv site-packages are in sys.path
 try:
