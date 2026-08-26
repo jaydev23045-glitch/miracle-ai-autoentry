@@ -1,0 +1,30 @@
+{
+    "expense_mappings": {
+        "BELINT DIV": "Belintdiv In30021479061",
+        "JANMAR MIRMIR": "Janmar25Instaalertchg3Sms040425 Mir Mir2615428708245",
+        "PAID ERGO GENERAL": "Chqpaid Transferin Hdfcergogenerali",
+        "SECURITIES LIMCMS": "Kotaksecuritieslim",
+        "INTEREST PAID TILL": "Interestpaidtill",
+        "DEBIT CARD ANNUAL FEEMIR": "BANK CHARGES A/C",
+        "HSAVALIYAOKAXIS HSAVALIYA": "Hsavaliya0761Okaxis",
+        "MUNICIPAL COR RMCORP BDPG": "Rajkotmunicipal Cor",
+        "SECURITIES LIM KOTAKNEO RZP": "Kotaksecuritieslim",
+        "SHREEJI GORAS GOPALBHAIDANGARIYA": "Shreeji Goras",
+        "ASODARIYA JAYDIP JAYDEEPASODARIY": "Asodariya Jaydip Ba",
+        "SECURITIES LIM KOTAKSECURITIES RZPBRK": "Kotaksecurities",
+        "CHANDRESHBHAI MOHANB HAIDANGARIYA MUM TOUR": "Chandreshbhai Mohanb Haidangariya Netbank, Mum Hdfcn52025091",
+        "GOOGLE INDIA DIGITAL GOOG PAYMENTS XISBANK": "Google India Digital",
+        "SECURITIES LIMIT KKBK XXXXXXXXXX KKBKTRANSFER": "KOTAK SECURITIES LIMITED"
+    },
+    "custom_fields": {},
+    "company_settings": {
+        "sales_prefix": "SS,SS",
+        "purchase_prefix": "PP,PP",
+        "sales_setup_id": 5,
+        "purchase_setup_id": 6,
+        "sales_bill_format": "{num}",
+        "sales_last_bill_number": 0,
+        "purchase_bill_format": "{num}",
+        "purchase_last_bill_number": 0
+    }
+}

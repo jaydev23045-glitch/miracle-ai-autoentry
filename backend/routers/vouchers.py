@@ -1202,6 +1202,7 @@ class PushPayload(BaseModel):
     target_cash_code: Optional[str] = None
     year_folder: Optional[str] = None
     backup_path: Optional[str] = ""
+    force_push: Optional[bool] = False
 
 @router.post("/api/push")
 def push_vouchers_endpoint(payload: PushPayload):
@@ -1363,7 +1364,8 @@ def push_vouchers_endpoint(payload: PushPayload):
                     last_bill_number=last_bill_num,
                     format_override=payload.format_override,
                     bank_name=payload.target_bank_name,
-                    target_cash_code=payload.target_cash_code
+                    target_cash_code=payload.target_cash_code,
+                    force_push=bool(payload.force_push)
                 )
                 
                 total_count += count

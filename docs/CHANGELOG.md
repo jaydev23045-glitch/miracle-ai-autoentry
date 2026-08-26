@@ -1,5 +1,19 @@
 # Miracle Auto-Entry Platform - Changelog
 
+### 137. Force Push & Duplicate Bypass Engine
+**The Problem Resolved:**
+- **Duplicate Skipping on Re-Testing:** When pushing a bank statement that had been previously injected during testing, 25 vouchers were skipped as "Already in Miracle (Skipped Duplicate)", preventing clean re-injection of updated native DBF records.
+
+**Fixes & Architecture Implemented:**
+1. **Force Push Parameter ([vouchers.py](file:///Users/jaydevnakum/Work%20Place/WORK/APP%20DETAILS/Mirracle%20Auto%20Entre%20Sale%20or%20Purchase%20or%20Bank/backend/routers/vouchers.py#L1205) & [dbf_handler.py](file:///Users/jaydevnakum/Work%20Place/WORK/APP%20DETAILS/Mirracle%20Auto%20Entre%20Sale%20or%20Purchase%20or%20Bank/backend/dbf_handler.py#L4295)):**
+   - Added `force_push: bool = False` to `PushPayload`, `inject_vouchers`, and `_inject_bank_statements`.
+   - When `force_push=True`, duplicate checking is bypassed, allowing clean injection/overwriting of all vouchers with updated native fields (`T41F83 = '1   '`, `FIELD03 = 2`, `FIELD17 = 'UU000001'`).
+2. **Automated Verification:**
+   - Executed `scratch/test_all_spaces.py` $\rightarrow$ **100% Passed**.
+   - Executed `py_compile` across all files $\rightarrow$ **100% Passed**.
+
+
+
 ### 136. Miracle Software Bank Voucher Indexing & Grid Display Realignment
 **The Problem Resolved:**
 - **Bank Ledger Grid Empty Bug:** In Miracle software, opening `Account Books -> Ledger -> HDFC BANK ACCOUNT` displayed 0 transaction rows even though vouchers were present in `RKACCT41.DBF`.
