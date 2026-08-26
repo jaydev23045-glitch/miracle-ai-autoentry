@@ -736,13 +736,16 @@ def refresh_ledgers(year: Optional[str] = None, handler: MiracleDBFHandler = Dep
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.get("/api/products")
+@router.get("/api/products/")
 def get_products(year: Optional[str] = None, handler: MiracleDBFHandler = Depends(get_handler)):
     """Reads all products from active Miracle DBFs across all financial years."""
     try:
         if not handler.client_path or not os.path.exists(handler.client_path):
+            settings = load_settings()
+            client_id = settings.get("active_client_id", "CMP0013")
             import requests
             try:
-                r = requests.get(f"http://localhost:9123/api/local-products?year_folder={year or ''}", timeout=3)
+                r = requests.get(f"http://localhost:9123/api/local-products?client_id={client_id}&year_folder={year or ''}", timeout=3)
                 if r.status_code == 200:
                     return r.json()
             except Exception:
@@ -757,13 +760,16 @@ def get_products(year: Optional[str] = None, handler: MiracleDBFHandler = Depend
         return {"status": "success", "year": year or "", "count": 0, "data": []}
 
 @router.post("/api/refresh-products")
+@router.post("/api/refresh-products/")
 def refresh_products(year: Optional[str] = None, handler: MiracleDBFHandler = Depends(get_handler)):
     """Forces re-reading of Miracle DBF files across all years and returns fresh products."""
     try:
         if not handler.client_path or not os.path.exists(handler.client_path):
+            settings = load_settings()
+            client_id = settings.get("active_client_id", "CMP0013")
             import requests
             try:
-                r = requests.get(f"http://localhost:9123/api/local-products?year_folder={year or ''}", timeout=3)
+                r = requests.get(f"http://localhost:9123/api/local-products?client_id={client_id}&year_folder={year or ''}", timeout=3)
                 if r.status_code == 200:
                     return r.json()
             except Exception:

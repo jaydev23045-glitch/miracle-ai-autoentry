@@ -1,5 +1,19 @@
 # Miracle Auto-Entry Platform - Changelog
 
+### 138. Miracle Bridge Client ID Forwarding & Dual-Decorator Route Protection
+**The Problem Resolved:**
+- **Product Inventory Mismatch on Render Cloud:** When requesting product inventory on Render Cloud without server disk DBF files, `get_products` forwarded requests to Miracle Bridge without explicitly passing `client_id`, causing Miracle Bridge to default to `CMP0005` instead of active client `CMP0013`.
+
+**Fixes & Architecture Implemented:**
+1. **Explicit Client ID Forwarding ([vouchers.py](file:///Users/jaydevnakum/Work%20Place/WORK/APP%20DETAILS/Mirracle%20Auto%20Entre%20Sale%20or%20Purchase%20or%20Bank/backend/routers/vouchers.py#L740)):**
+   - Updated `get_products` and `refresh_products` to dynamically retrieve `active_client_id` from settings and explicitly pass `client_id={active_client_id}` in requests to Miracle Bridge port 9123 (`/api/local-products`).
+   - Added dual route decorators (`@router.get("/api/products")` and `@router.get("/api/products/")`) to guarantee clean `200 OK` routing regardless of trailing slash format.
+2. **Automated Verification:**
+   - Executed `scratch/test_all_spaces.py` $\rightarrow$ **100% Passed**.
+   - Executed `py_compile` across all files $\rightarrow$ **100% Passed**.
+
+
+
 ### 137. Force Push & Duplicate Bypass Engine
 **The Problem Resolved:**
 - **Duplicate Skipping on Re-Testing:** When pushing a bank statement that had been previously injected during testing, 25 vouchers were skipped as "Already in Miracle (Skipped Duplicate)", preventing clean re-injection of updated native DBF records.
