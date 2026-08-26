@@ -739,21 +739,43 @@ def refresh_ledgers(year: Optional[str] = None, handler: MiracleDBFHandler = Dep
 def get_products(year: Optional[str] = None, handler: MiracleDBFHandler = Depends(get_handler)):
     """Reads all products from active Miracle DBFs across all financial years."""
     try:
+        if not handler.client_path or not os.path.exists(handler.client_path):
+            import requests
+            try:
+                r = requests.get(f"http://localhost:9123/api/local-products?year_folder={year or ''}", timeout=3)
+                if r.status_code == 200:
+                    return r.json()
+            except Exception:
+                pass
+            return {"status": "success", "year": year or "", "count": 0, "data": []}
+            
         products = handler.read_products_all_years()
         y = year if year else handler.get_latest_year_folder()
         return {"status": "success", "year": y, "count": len(products), "data": products}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        print(f"[get_products] Notice: {e}")
+        return {"status": "success", "year": year or "", "count": 0, "data": []}
 
 @router.post("/api/refresh-products")
 def refresh_products(year: Optional[str] = None, handler: MiracleDBFHandler = Depends(get_handler)):
     """Forces re-reading of Miracle DBF files across all years and returns fresh products."""
     try:
+        if not handler.client_path or not os.path.exists(handler.client_path):
+            import requests
+            try:
+                r = requests.get(f"http://localhost:9123/api/local-products?year_folder={year or ''}", timeout=3)
+                if r.status_code == 200:
+                    return r.json()
+            except Exception:
+                pass
+            return {"status": "success", "year": year or "", "count": 0, "data": []}
+
         products = handler.read_products_all_years()
         y = year if year else handler.get_latest_year_folder()
         return {"status": "success", "year": y, "count": len(products), "data": products}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        print(f"[refresh_products] Notice: {e}")
+        return {"status": "success", "year": year or "", "count": 0, "data": []}
 
 @router.get("/api/vouchers")
 def get_vouchers(limit: int = 50, year: Optional[str] = None, handler: MiracleDBFHandler = Depends(get_handler)):

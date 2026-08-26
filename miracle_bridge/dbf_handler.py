@@ -4758,7 +4758,7 @@ class MiracleDBFHandler:
                         'FIELD99': f98,
                         'FIELD01': v_id,
                         'FIELD02': v_date,
-                        'FIELD03': '2',
+                        'FIELD03': 2,       # Integer 2 matching native Miracle DBF specification
                         'FIELD04': party_code,
                         'FIELD05': bank_ledger_code,
                         'FIELD06': amount,
@@ -4768,7 +4768,7 @@ class MiracleDBFHandler:
                         'FIELD12': str(vou_no),
                         'FIELD14': 'N',
                         'FIELD16': 'C' if f98 == 'BC' else ('R' if tx_type == 'Receipt' else 'P'),  # BC=Contra ('C'), BR=Receipt ('R'), BP=Payment ('P')
-                        'FIELD17': 'U0000000',
+                        'FIELD17': 'UU000001', # Matching native Miracle DBF user/unit specification
                         'FIELD18': 0.0,
                         'FIELD20': 0,
                         'FIELD21': 'O',    # Aligned with native Cash/Bank voucher type
@@ -4776,7 +4776,7 @@ class MiracleDBFHandler:
                         'FIELD74': 'CB',   # Aligned with native Cash/Bank voucher type
                         'FIELD75': '0',
                         'FIELD82': self.fit_dbf_str(narration, 50), # Narration
-                        'T41F83': '9' if f98 == 'BC' else '6',     # Native Miracle Contra flag ('9' for Contra, '6' for Bank)
+                        'T41F83': '9   ' if f98 == 'BC' else '1   ',     # Native Miracle Contra flag ('9   ' for Contra, '1   ' for Bank)
                         'T41FVNO': str(vou_no),
                         'T41F45': year_num,
                         'T41F97': '01',
@@ -4816,7 +4816,7 @@ class MiracleDBFHandler:
                         'FIELD06': bank_dr_cr,
                         'FIELD08': 0.0,
                         'FIELD09': f"{line_idx_t01:>4}",
-                        'FIELD11': '2',
+                        'FIELD11': 2,        # Integer 2 matching native Miracle DBF specification
                         'FIELD12': str(vou_no),
                         'T41FVNO': str(vou_no),
                         'FIELD15': ref_no.strip(),
@@ -4862,7 +4862,7 @@ class MiracleDBFHandler:
                         'FIELD06': party_dr_cr,
                         'FIELD08': 0.0,
                         'FIELD09': f"{line_idx_t01:>4}",
-                        'FIELD11': '2',
+                        'FIELD11': 2,        # Integer 2 matching native Miracle DBF specification
                         'FIELD12': str(vou_no),
                         'T41FVNO': str(vou_no),
                         'FIELD16': party_f16_val,
