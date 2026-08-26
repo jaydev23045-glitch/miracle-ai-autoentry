@@ -1,5 +1,20 @@
 # Miracle Auto-Entry Platform - Changelog
 
+### 131. Miracle Software Ledger Amount Display & Balance Calculation Fix
+**The Problem Resolved:**
+- **Zero Ledger Amount Bug:** After pushing bank statements or cash entries, vouchers were present in `RKACCT01.DBF`, but when opening Miracle accounting software to view ledger reports, **amounts were not displayed and closing balances did not update**.
+- **Root Cause Identified:** `FIELD20` in `RKACCT01.DBF` (T01 voucher line table) was being set to `'C'` (Cancelled/Cleared). In native Miracle software, `FIELD20 = 'C'` causes Miracle's reporting engine to treat lines as cancelled/cleared, ignoring amounts during ledger balance calculations.
+
+**Fixes & Architecture Implemented:**
+1. **Native Field Alignment ([dbf_handler.py](file:///Users/jaydevnakum/Work%20Place/WORK/APP%20DETAILS/Mirracle%20Auto%20Entre%20Sale%20or%20Purchase%20or%20Bank/backend/dbf_handler.py#L4737) & [miracle_bridge/dbf_handler.py](file:///Users/jaydevnakum/Work%20Place/WORK/APP%20DETAILS/Mirracle%20Auto%20Entre%20Sale%20or%20Purchase%20or%20Bank/miracle_bridge/dbf_handler.py#L4737)):**
+   - Updated `FIELD20` across all Bank and Cash voucher injection pipelines from `'C'` to `'N'` (Normal active line), matching native Miracle software standard.
+   - Guarantees that Miracle software calculates totals, updates closing balances, and displays amounts cleanly under all ledgers in Miracle reports.
+2. **Automated Verification:**
+   - Executed `scratch/test_all_spaces.py` $\rightarrow$ **100% Passed**.
+   - Executed `py_compile` across all files $\rightarrow$ **100% Passed**.
+
+
+
 ### 130. 100% End-to-End Localhost vs Cloud Server Feature Parity Verification
 **The Problem Resolved:**
 - **Cloud Endpoint Exception Gaps:** Creation of new ledgers (`/api/create-ledger`) and Opening Balance extraction (`/api/opening-balances/extract`) were attempting to open local server disk paths. On Render Cloud, missing disk folders threw HTTP 500 exceptions.

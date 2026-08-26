@@ -4734,7 +4734,7 @@ class MiracleDBFHandler:
                         'T41FVNO': str(vou_no),
                         'FIELD15': ref_no.strip(),
                         'FIELD16': v_date,
-                        'FIELD20': 'C',   # FIXED: 'C' = Cash/Bank line (Miracle requires 'C' to display narration in Bank Ledger)
+                        'FIELD20': 'N',   # 'N' = Normal active line (Native Miracle requirement so amounts display in Ledger reports)
                         'FIELD21': 'BK',
                         'FIELD22': t01_f22_val,  # Reconciliation / clearance date
                         'FIELD26': 0.0,
@@ -4779,7 +4779,7 @@ class MiracleDBFHandler:
                         'FIELD12': str(vou_no),
                         'T41FVNO': str(vou_no),
                         'FIELD16': party_f16_val,
-                        'FIELD20': 'C',   # FIXED: 'C' = Cash/Bank line (Miracle requires 'C' to display narration in Bank Ledger)
+                        'FIELD20': 'N',   # 'N' = Normal active line (Native Miracle requirement so amounts display in Ledger reports)
                         'FIELD21': resolved_f21,  # Dynamic PT/PR/BK mapping
                         'FIELD22': party_f22_val,  # Reconciliation / clearance date
                         'FIELD26': 0.0,
@@ -6196,7 +6196,7 @@ ENDPROC
                         'T41FVNO': str(vou_no),
                         'FIELD15': '',
                         'FIELD16': None,
-                        'FIELD20': 'C',   # FIXED: 'C' = Cash/Bank line (Miracle requires 'C' to display narration in Cash Ledger)
+                        'FIELD20': 'N',   # 'N' = Normal active line (Native Miracle requirement so amounts display in Ledger reports)
                         'FIELD21': 'CS',
                         'FIELD22': None,
                         'FIELD26': 0.0,
@@ -6240,7 +6240,7 @@ ENDPROC
                         'FIELD12': str(vou_no),
                         'T41FVNO': str(vou_no),
                         'FIELD16': party_f16_val,
-                        'FIELD20': 'C',   # FIXED: 'C' = Cash/Bank line (Miracle requires 'C' to display narration in Cash Ledger)
+                        'FIELD20': 'N',   # 'N' = Normal active line (Native Miracle requirement so amounts display in Ledger reports)
                         'FIELD21': resolved_f21,  # Dynamic PT/PR/CS mapping
                         'FIELD22': None,
                         'FIELD26': 0.0,
