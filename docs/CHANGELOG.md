@@ -1,5 +1,20 @@
 # Miracle Auto-Entry Platform - Changelog
 
+### 139. Miracle Bridge Multi-Year Date Partitioning & Inject Realignment
+**The Problem Resolved:**
+- **Miracle Bridge Push Missing Data Bug:** When pushing vouchers through Miracle Bridge on port 9123 (`/inject`), Miracle Bridge bypassed `inject_vouchers` and called `_inject_bank_statements` directly without date partitioning, dumping 2025 vouchers into default financial year folders (e.g. `YR27`/`YR26`). As a result, opening FY `2025-2026` (`YR25`) in Miracle software showed 0 vouchers.
+
+**Fixes & Architecture Implemented:**
+1. **Miracle Bridge Inject Pipeline Realignment ([miracle_bridge_agent.py](file:///Users/jaydevnakum/Work%20Place/WORK/APP%20DETAILS/Mirracle%20Auto%20Entre%20Sale%20or%20Purchase%20or%20Bank/miracle_bridge/miracle_bridge_agent.py#L509)):**
+   - Updated Miracle Bridge `/inject` endpoint to route all voucher pushes through `handler.inject_vouchers(...)`.
+   - Enables automatic multi-year date partitioning (`resolve_year_folder_for_date_fast`), ensuring 2025 dates route to `YR25` and 2026 dates route to `YR26`.
+   - Passes `force_push`, exact native DBF fields (`T41F83 = '1   '`, `FIELD03 = 2`, `FIELD17 = 'UU000001'`, `FIELD11 = 2`, `FIELD20 = 'N'`), and triggers `sync_closing_balances_to_next_year()` on Miracle Bridge.
+2. **Automated Verification:**
+   - Executed `scratch/test_all_spaces.py` $\rightarrow$ **100% Passed**.
+   - Executed `py_compile` across all files $\rightarrow$ **100% Passed**.
+
+
+
 ### 138. Miracle Bridge Client ID Forwarding & Dual-Decorator Route Protection
 **The Problem Resolved:**
 - **Product Inventory Mismatch on Render Cloud:** When requesting product inventory on Render Cloud without server disk DBF files, `get_products` forwarded requests to Miracle Bridge without explicitly passing `client_id`, causing Miracle Bridge to default to `CMP0005` instead of active client `CMP0013`.

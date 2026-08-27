@@ -211,6 +211,7 @@ class InjectRequestPayload(BaseModel):
     target_bank_name: Optional[str] = "Bank Account"
     target_cash_code: Optional[str] = "ACASHACT"
     backup_path: Optional[str] = ""
+    force_push: Optional[bool] = False
 
 @app.get("/health")
 @app.get("/status")
@@ -506,32 +507,40 @@ def inject_vouchers(payload: InjectRequestPayload):
         with get_client_lock(active_client_id):
             handler = MiracleDBFHandler(client_dir)
             
-            # Delegate injection based on module type with robust string matching
+            # Delegate injection based on module type with robust string matching & multi-year date partitioning
             m_type = (module_type or "").strip().lower()
             if m_type in ("bank", "bank_statements", "bank statements"):
-                b_name = getattr(payload, "target_bank_name", None) or "Bank Account"
-                res = handler._inject_bank_statements(vouchers, b_name, active_year_folder)
+                norm_module = "Bank Statements"
             elif m_type in ("sales", "sale"):
-                res = handler._inject_sales(
-                    vouchers, 
-                    active_year_folder, 
-                    setup_id=payload.sales_setup_id, 
-                    sales_prefix=payload.sales_prefix
-                )
+                norm_module = "Sales"
             elif m_type in ("purchase", "purchases"):
-                res = handler._inject_purchases(
-                    vouchers, 
-                    active_year_folder, 
-                    setup_id=payload.purchase_setup_id, 
-                    purchase_prefix=payload.purchase_prefix
-                )
+                norm_module = "Purchases"
             elif m_type in ("cash", "cash_entries", "cash entries"):
-                c_code = getattr(payload, "target_cash_code", None) or "ACASHACT"
-                res = handler._inject_cash_entries(vouchers, c_code, active_year_folder)
+                norm_module = "Cash Entries"
             elif m_type in ("opening_balance", "opening_balances", "opening balance"):
-                res = handler.push_opening_balances(vouchers, active_year_folder)
+                norm_module = "Opening Balances"
             else:
                 raise HTTPException(status_code=400, detail=f"Unsupported module_type '{module_type}'")
+
+            if norm_module == "Opening Balances":
+                res = handler.push_opening_balances(vouchers, active_year_folder)
+            else:
+                b_name = getattr(payload, "target_bank_name", None) or "Bank Account"
+                c_code = getattr(payload, "target_cash_code", None) or "ACASHACT"
+                force_p = bool(getattr(payload, "force_push", False))
+                
+                res = handler.inject_vouchers(
+                    module=norm_module,
+                    vouchers=vouchers,
+                    year_folder=active_year_folder,
+                    sales_prefix=payload.sales_prefix or "SS,SS",
+                    purchase_prefix=payload.purchase_prefix or "PP,PP",
+                    sales_setup_id=payload.sales_setup_id or 5,
+                    purchase_setup_id=payload.purchase_setup_id or 6,
+                    bank_name=b_name,
+                    target_cash_code=c_code,
+                    force_push=force_p
+                )
 
             audit_rep = handler.audit_report if hasattr(handler, 'audit_report') else {}
             return {
