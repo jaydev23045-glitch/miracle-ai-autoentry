@@ -1,5 +1,20 @@
 # Miracle Auto-Entry Platform - Changelog
 
+### 140. End-to-End Force Overwrite UI Toggle Integration
+**The Problem Resolved:**
+- **Manual Force Push Parameter Control:** Previously, the backend supported `force_push: bool`, but the Web UI had no visible toggle to let users explicitly choose between duplicate suppression vs force re-pushing.
+
+**Fixes & Architecture Implemented:**
+1. **Frontend Toggle & Payload Binding ([index.html](file:///Users/jaydevnakum/Work%20Place/WORK/APP%20DETAILS/Mirracle%20Auto%20Entre%20Sale%20or%20Purchase%20or%20Bank/frontend/index.html#L620) & [app.js](file:///Users/jaydevnakum/Work%20Place/WORK/APP%20DETAILS/Mirracle%20Auto%20Entre%20Sale%20or%20Purchase%20or%20Bank/frontend/app.js#L6143)):**
+   - Added a sleek **"Force Overwrite"** checkbox toggle next to the "Push to Miracle" button in `frontend/index.html`.
+   - Updated `frontend/app.js` to attach `force_push: isForcePush` to both Backend API `/api/push` and Miracle Bridge `/inject` payloads.
+   - Allows users to force re-injecting all vouchers into Miracle DBF tables whenever needed.
+2. **Automated Verification:**
+   - Executed `scratch/test_all_spaces.py` $\rightarrow$ **100% Passed**.
+   - Executed `py_compile` across all files $\rightarrow$ **100% Passed**.
+
+
+
 ### 139. Miracle Bridge Multi-Year Date Partitioning & Inject Realignment
 **The Problem Resolved:**
 - **Miracle Bridge Push Missing Data Bug:** When pushing vouchers through Miracle Bridge on port 9123 (`/inject`), Miracle Bridge bypassed `inject_vouchers` and called `_inject_bank_statements` directly without date partitioning, dumping 2025 vouchers into default financial year folders (e.g. `YR27`/`YR26`). As a result, opening FY `2025-2026` (`YR25`) in Miracle software showed 0 vouchers.

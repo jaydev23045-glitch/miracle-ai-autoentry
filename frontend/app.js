@@ -6142,12 +6142,16 @@ document.addEventListener('DOMContentLoaded', () => {
             
         pushBtn.innerHTML = `<i class="fa-solid fa-circle-notch fa-spin mr-1"></i> Pushing ${vouchers.length} ${currentModule} bills (Setup ID: ${activeSetupId})...`;
 
+        const forcePushCheckbox = document.getElementById('forcePushCheckbox');
+        const isForcePush = forcePushCheckbox ? forcePushCheckbox.checked : false;
+
         let formatOverride = document.getElementById('formatOverrideSelect') ? document.getElementById('formatOverrideSelect').value : "";
         let pushPayload = {
             module: currentModule,
             vouchers: vouchers,
             year_folder: activeYearFolder || null,
-            backup_path: inlineBackupPath ? inlineBackupPath.value.trim() : ""
+            backup_path: inlineBackupPath ? inlineBackupPath.value.trim() : "",
+            force_push: isForcePush
         };
         if (currentModule === 'Bank Statements' && window.currentBankName) {
             pushPayload.target_bank_name = window.currentBankName;
@@ -6208,7 +6212,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 purchase_prefix: purchasePrefixVal,
                 target_bank_name: window.currentBankName || "Bank Account",
                 target_cash_code: (document.getElementById('targetCashAccount') ? document.getElementById('targetCashAccount').value : "ACASHACT") || "ACASHACT",
-                backup_path: backupPathVal
+                backup_path: backupPathVal,
+                force_push: isForcePush
             };
             targetBody = JSON.stringify(bridgePayload);
             console.log("⚡ Hybrid Mode active: Routing push directly to Local Miracle Bridge on port 9123");
