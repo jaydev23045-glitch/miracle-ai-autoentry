@@ -2046,55 +2046,53 @@ Return the extracted data EXACTLY following this JSON schema. Do not output anyt
                     start_p = start_page_idx + 1
                     end_p = end_page_idx + 1
                     
-                    # Extract page text locally (highly resilient fallback to handle digitally signed/corrupt object PDFs)
+                    # Extract page text locally (Ultra Fast pypdf primary with pdfplumber fallback)
                     extracted_chunk_text_lines = []
                     try:
-                        import pdfplumber
-                        open_kwargs = {"password": pdf_password} if pdf_password else {}
-                        with pdfplumber.open(file_path, **open_kwargs) as pdf:
-                            page_indices = list(range(start_page_idx, end_page_idx + 1))
-                            if chronology == "reverse":
-                                page_indices.reverse()
-                            for idx in page_indices:
-                                if idx < len(pdf.pages):
-                                    txt = pdf.pages[idx].extract_text() or ""
-                                    import re
-                                    txt = re.sub(r'(\d{4}-)\s*\n\s*(\d{2}-\d{2})', r'\1\2', txt)
-                                    txt = re.sub(r'(\d{2}-\d{2})\s*\n\s*(\d{4}-)', r'\2\1', txt)
-                                    if chronology == "reverse":
-                                        lines = [l for l in txt.split('\n') if l.strip()]
-                                        lines.reverse()
-                                        txt = '\n'.join(lines)
+                        from pypdf import PdfReader
+                        local_reader = PdfReader(file_path, strict=False)
+                        if getattr(local_reader, 'is_encrypted', False) and pdf_password:
+                            try: local_reader.decrypt(pdf_password)
+                            except: pass
+                        page_indices = list(range(start_page_idx, end_page_idx + 1))
+                        if chronology == "reverse":
+                            page_indices.reverse()
+                        for idx in page_indices:
+                            if idx < len(local_reader.pages):
+                                txt = local_reader.pages[idx].extract_text() or ""
+                                import re
+                                txt = re.sub(r'(\d{4}-)\s*\n\s*(\d{2}-\d{2})', r'\1\2', txt)
+                                txt = re.sub(r'(\d{2}-\d{2})\s*\n\s*(\d{4}-)', r'\2\1', txt)
+                                if chronology == "reverse":
+                                    lines = [l for l in txt.split('\n') if l.strip()]
+                                    lines.reverse()
+                                    txt = '\n'.join(lines)
+                                if txt.strip():
                                     extracted_chunk_text_lines.append(txt)
-                    except Exception as pe:
-                        print(f"⚠️ pdfplumber text extraction failed during chunking: {pe}. Trying pypdf...")
+                    except Exception:
+                        pass
+
+                    if not extracted_chunk_text_lines:
                         try:
-                            from pypdf import PdfReader
-                            local_reader = PdfReader(file_path, strict=False)
-                            if getattr(local_reader, 'is_encrypted', False):
-                                if pdf_password:
-                                    try: local_reader.decrypt(pdf_password)
-                                    except: pass
-                                else:
-                                    try: local_reader.decrypt("")
-                                    except: pass
-                            page_indices = list(range(start_page_idx, end_page_idx + 1))
-                            if chronology == "reverse":
-                                page_indices.reverse()
-                            for idx in page_indices:
-                                if idx < len(local_reader.pages):
-                                    txt = local_reader.pages[idx].extract_text() or ""
-                                    import re
-                                    txt = re.sub(r'(\d{4}-)\s*\n\s*(\d{2}-\d{2})', r'\1\2', txt)
-                                    txt = re.sub(r'(\d{2}-\d{2})\s*\n\s*(\d{4}-)', r'\2\1', txt)
-                                    if chronology == "reverse":
-                                        lines = [l for l in txt.split('\n') if l.strip()]
-                                        lines.reverse()
-                                        txt = '\n'.join(lines)
-                                    extracted_chunk_text_lines.append(txt)
-                        except Exception as pe2:
-                            print(f"❌ Text extraction failed for chunk pages {start_p}-{end_p}: {pe2}")
-                            raise pe2
+                            import pdfplumber
+                            open_kwargs = {"password": pdf_password} if pdf_password else {}
+                            with pdfplumber.open(file_path, **open_kwargs) as pdf:
+                                page_indices = list(range(start_page_idx, end_page_idx + 1))
+                                if chronology == "reverse":
+                                    page_indices.reverse()
+                                for idx in page_indices:
+                                    if idx < len(pdf.pages):
+                                        txt = pdf.pages[idx].extract_text() or ""
+                                        import re
+                                        txt = re.sub(r'(\d{4}-)\s*\n\s*(\d{2}-\d{2})', r'\1\2', txt)
+                                        txt = re.sub(r'(\d{2}-\d{2})\s*\n\s*(\d{4}-)', r'\2\1', txt)
+                                        if chronology == "reverse":
+                                            lines = [l for l in txt.split('\n') if l.strip()]
+                                            lines.reverse()
+                                            txt = '\n'.join(lines)
+                                        extracted_chunk_text_lines.append(txt)
+                        except Exception as pe:
+                            print(f"⚠️ pdfplumber text extraction failed during chunking: {pe}")
 
                     total_chars = sum(len(txt.strip()) for txt in extracted_chunk_text_lines)
                     is_scanned_pdf = total_chars < (10 * pages_count)
@@ -2465,7 +2463,7 @@ Return ONLY valid JSON.
             client = self._get_client()
             response = self._generate_content_with_retry(
                 client=client,
-                model=self.model_name or "gemini-1.5-flash",
+                model=self.model_name or "gemini-3.1-flash-lite",
                 contents=prompt,
                 config=make_config("application/json")
             )
@@ -3406,7 +3404,7 @@ Example Output:
                         client = self._get_client()
                         response = self._generate_content_with_retry(
                             client=client,
-                            model=self.model_name or "gemini-1.5-flash",
+                            model=self.model_name or "gemini-3.1-flash-lite",
                             contents=prompt,
                             config=types.GenerateContentConfig(
                                 response_mime_type="application/json"
@@ -3814,7 +3812,7 @@ Return your response strictly in the following JSON format matching this schema:
 
             response = self._generate_content_with_retry(
                 client=client,
-                model=self.model_name or "gemini-1.5-flash",
+                model=self.model_name or "gemini-3.1-flash-lite",
                 contents=contents,
                 config=make_config("application/json")
             )

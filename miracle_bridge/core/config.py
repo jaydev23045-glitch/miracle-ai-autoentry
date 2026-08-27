@@ -29,7 +29,7 @@ class SystemSettings(BaseModel):
     miracle_base_path: str = "C:\\Miracle"
     active_client_id: str = "CMP0001"
     memory_path: str = "C:\\Miracle\\AI_Memory_Vault"
-    gemini_model: str = "gemini-1.5-flash"
+    gemini_model: str = "gemini-3.1-flash-lite"
     sales_prefix: str = "SS,SS"
     purchase_prefix: str = "PP,PP"
     sales_setup_id: int = 5

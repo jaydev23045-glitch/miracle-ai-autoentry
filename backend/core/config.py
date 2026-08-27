@@ -94,7 +94,7 @@ def load_settings() -> dict:
         "miracle_base_path": "C:\\Miracle",
         "active_client_id": "CMP0001",
         "memory_path": "C:\\Miracle\\AI_Memory_Vault",
-        "gemini_model": "gemini-1.5-flash",
+        "gemini_model": "gemini-3.1-flash-lite",
         "sales_prefix": "SS,SS",
         "purchase_prefix": "PP,PP",
         "sales_setup_id": 5,
