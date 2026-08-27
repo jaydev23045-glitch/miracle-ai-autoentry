@@ -317,16 +317,17 @@ def get_local_years(base_path: str = "C:\\Miracle", client_id: str = "CMP0001"):
         return {"years": [], "recommended": ""}
 
 @app.get("/api/local-ledgers")
-def get_local_ledgers(base_path: str = "C:\\Miracle", client_id: str = "CMP0005", year_folder: str = "YR25"):
+def get_local_ledgers(base_path: str = "C:\\Miracle", client_id: str = "CMP0005", year_folder: str = "YR25", year: Optional[str] = None):
     """Reads classified party ledgers directly from local DBF files on client machine"""
     base_path = resolve_valid_base_path(base_path)
     client_path = os.path.join(base_path, client_id)
     if not os.path.exists(client_path):
         return {"status": "success", "ledgers": []}
     try:
+        target_year = year or year_folder or "YR25"
         handler = MiracleDBFHandler(client_path)
-        ledgers = handler.get_all_ledgers(year_folder)
-        return {"status": "success", "year": year_folder, "ledgers": ledgers}
+        ledgers = handler.get_all_ledgers(target_year)
+        return {"status": "success", "year": target_year, "ledgers": ledgers}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to read local ledgers: {str(e)}")
 
@@ -345,60 +346,64 @@ def get_local_groups(base_path: str = "C:\\Miracle", client_id: str = "CMP0005")
         raise HTTPException(status_code=500, detail=f"Failed to read account groups: {str(e)}")
 
 @app.get("/api/local-products")
-def get_local_products(base_path: str = "C:\\Miracle", client_id: str = "CMP0005", year_folder: str = ""):
+def get_local_products(base_path: str = "C:\\Miracle", client_id: str = "CMP0005", year_folder: str = "", year: Optional[str] = None):
     """Reads product masters directly from local RKACCM21.DBF"""
     base_path = resolve_valid_base_path(base_path)
     client_path = os.path.join(base_path, client_id)
     if not os.path.exists(client_path):
         return {"status": "success", "products": []}
     try:
+        target_year = year or year_folder or ""
         handler = MiracleDBFHandler(client_path)
-        products = handler.get_products(year_folder)
+        products = handler.get_products(target_year)
         return {"status": "success", "products": products}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to read products: {str(e)}")
 
 @app.get("/api/repair-bank-flags")
 @app.post("/api/repair-bank-flags")
-def repair_bank_flags(base_path: str = "C:\\Miracle", client_id: str = "CMP0005", year: str = ""):
+def repair_bank_flags(base_path: str = "C:\\Miracle", client_id: str = "CMP0005", year: str = "", year_folder: str = ""):
     """Repairs closing balance flags for all pushed bank and cash entries on local PC"""
     try:
         base_path = resolve_valid_base_path(base_path)
         client_path = os.path.join(base_path, client_id)
         if not os.path.exists(client_path):
             return {"status": "error", "message": f"Client directory '{client_path}' not found."}
+        target_year = year_folder or year or ""
         handler = MiracleDBFHandler(client_path)
-        count = handler.repair_bank_closing_flags(year_folder=year)
+        count = handler.repair_bank_closing_flags(year_folder=target_year)
         return {"status": "success", "message": f"Repaired closing balance flags for {count} bank/cash entries."}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/api/repair-narrations")
 @app.post("/api/repair-narrations")
-def repair_narrations(base_path: str = "C:\\Miracle", client_id: str = "CMP0005", year_folder: str = ""):
+def repair_narrations(base_path: str = "C:\\Miracle", client_id: str = "CMP0005", year_folder: str = "", year: str = ""):
     """Repairs memo narrations (RKACCT40.DBF) for local client database"""
     try:
         base_path = resolve_valid_base_path(base_path)
         client_path = os.path.join(base_path, client_id)
         if not os.path.exists(client_path):
             return {"status": "error", "message": f"Client directory '{client_path}' not found."}
+        target_year = year_folder or year or ""
         handler = MiracleDBFHandler(client_path)
-        res = handler.repair_missing_narrations(year_folder=year_folder)
+        res = handler.repair_missing_narrations(year_folder=target_year)
         return {"status": "success", "message": "Narrations repaired successfully.", "result": res}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/api/repair-cdx-flags")
 @app.post("/api/repair-cdx-flags")
-def repair_cdx_flags(base_path: str = "C:\\Miracle", client_id: str = "CMP0005", year: str = ""):
+def repair_cdx_flags(base_path: str = "C:\\Miracle", client_id: str = "CMP0005", year: str = "", year_folder: str = ""):
     """Heals CDX index byte 28 header flags for local client tables"""
     try:
         base_path = resolve_valid_base_path(base_path)
         client_path = os.path.join(base_path, client_id)
         if not os.path.exists(client_path):
             return {"status": "error", "message": f"Client directory '{client_path}' not found."}
+        target_year = year_folder or year or ""
         handler = MiracleDBFHandler(client_path)
-        count = handler.heal_cdx_header_flags(year_folder=year)
+        count = handler.heal_cdx_header_flags(year_folder=target_year)
         return {"status": "success", "message": f"Healed CDX flags for {count} DBF tables."}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

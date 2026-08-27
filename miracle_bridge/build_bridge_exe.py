@@ -34,6 +34,7 @@ def build_exe():
         "--hidden-import=core.config",
         "--hidden-import=core.utils",
         "--hidden-import=dbf_handler",
+        "--hidden-import=ai_memory",
         "--hidden-import=routers",
         "--hidden-import=routers.vouchers",
         "--hidden-import=dbfread",
