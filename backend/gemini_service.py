@@ -1352,9 +1352,17 @@ Return your response ONLY as a JSON object matching this schema:
         existing_ledgers = client_memory.get("existing_ledgers", [])
         ledgers_instruction = ""
         if existing_ledgers:
-            ledgers_instruction = "\nLIST OF EXISTING LEDGER ACCOUNTS IN MIRACLE:\n"
+            ledgers_instruction = "\nLIST OF EXISTING LEDGER ACCOUNTS IN MIRACLE (Prioritize matching to these names when possible):\n"
             for led in existing_ledgers:
-                ledgers_instruction += f"- {led}\n"
+                if isinstance(led, dict):
+                    l_name = (led.get("name") or led.get("print_name") or "").strip()
+                    l_grp = (led.get("group_name") or "").strip()
+                    if l_name:
+                        ledgers_instruction += f"- {l_name} ({l_grp})\n" if l_grp else f"- {l_name}\n"
+                elif led:
+                    l_str = str(led).strip()
+                    if l_str:
+                        ledgers_instruction += f"- {l_str}\n"
                 
         user_context = ""
         if instruction:
@@ -1468,6 +1476,7 @@ Return your response ONLY as a JSON object matching this schema:
       - Example: "UPI-CARS24 SERVICES-99@paytm" → mapped_ledger="Cars24 Services"
       - Example: "UPI-DODIYA VIRALBHAI-transfer@hdfc" → mapped_ledger="DODIYA VIRALBHAI"
       - Example: "NEFT-00023-HOTEL DARSHAN LTD" → mapped_ledger="Hotel Darshan"
+  * CRITICAL CLEAN NAME MANDATE: `mapped_ledger` and `party_name` MUST be a clean human or company name (e.g. "Patel Traders" or "Jaydev Nakum"). NEVER output the full raw narration string (such as "UPI-12345-PATEL TRADERS-MILK@OKHDFC" or "NEFT-00029384-HOTEL DARSHAN LTD") as the `mapped_ledger` or `party_name`. Strip all payment prefixes ("UPI-", "NEFT-"), "@bank" handles, and numeric reference codes.
   * Only default to 'Suspense Account' if there is absolutely NO discernible party name or purpose in the narration.
 - CRITICAL EXCEPTION FOR PERSONS (e.g. Personal Transfers / Loans): If the mapped_ledger is a person's name (NOT an expense/income type) — i.e. a human name like 'Jaydev', 'Dharmik', 'Mayur', 'Kalpeshbhai', 'Dodiya', 'Akbari', etc.:
   * If the transaction is a WITHDRAWAL / PAYMENT (Money Sent to person): You MUST ALWAYS set the 'group_hint' to 'Loans & Advances (Asset)'. This is money you are giving TO that person.
@@ -2943,7 +2952,9 @@ Return ONLY valid JSON.
 
             if matched_ledger:
                 mapped_count += 1
-                if any(h in matched_ledger.upper() for h in ["OKAXIS", "OKICICI", "KHDFCBANK", "OKHDFCBANK", "OKSBI", "PTYES", "NAVIAXIS", "KOTAK", "YBL", "@"]):
+                m_up = matched_ledger.upper().strip()
+                is_raw_narr = (m_up == narr.upper().strip()) or any(m_up.startswith(p) for p in ["UPI", "NEFT", "IMPS", "ACH", "RTGS", "TPT", "INB", "CHQ", "POS"]) or any(h in m_up for h in ["OKAXIS", "OKICICI", "KHDFCBANK", "OKHDFCBANK", "OKSBI", "PTYES", "NAVIAXIS", "KOTAK", "YBL", "@"])
+                if is_raw_narr:
                     clean_sanitized = self.extract_clean_party_from_narration(matched_ledger)
                     if clean_sanitized and len(clean_sanitized) >= 2:
                         matched_ledger = clean_sanitized

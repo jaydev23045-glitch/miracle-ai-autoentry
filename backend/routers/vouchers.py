@@ -869,8 +869,8 @@ async def upload_document(
                     with urllib.request.urlopen(req, timeout=1.5) as resp:
                         if resp.status == 200:
                             b_data = json.loads(resp.read().decode('utf-8'))
-                            b_ledgers = b_data.get("data", [])
-                            ledger_names = [led.get('name') for led in b_ledgers if isinstance(led, dict) and led.get('name')]
+                            b_ledgers = b_data.get("ledgers") or b_data.get("data") or []
+                            ledger_names = [led.get('name') if isinstance(led, dict) else str(led) for led in b_ledgers if led]
                             if ledger_names:
                                 client_memory["existing_ledgers"] = ledger_names
                                 print(f"⚡ [Bridge Ledger Sync] Retrieved {len(ledger_names)} client ledgers via Miracle Bridge port 9123!")
@@ -1471,7 +1471,7 @@ async def extract_opening_balances_endpoint(file: UploadFile = File(...)):
                 with urllib.request.urlopen(req, timeout=1.5) as resp:
                     if resp.status == 200:
                         b_data = json.loads(resp.read().decode('utf-8'))
-                        ledgers = b_data.get("data", [])
+                        ledgers = b_data.get("ledgers") or b_data.get("data") or []
             except Exception:
                 pass
 

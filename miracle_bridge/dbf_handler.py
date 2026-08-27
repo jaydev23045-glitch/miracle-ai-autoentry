@@ -179,6 +179,68 @@ class MiracleDBFHandler:
                 cleaned[k] = v
         return cleaned
 
+    def get_company_name(self) -> str:
+        """Reads RKCMPMEI.DBF or RKCMPMM.DBF to retrieve official Miracle company name."""
+        c_path = self.client_path
+        if not c_path or not os.path.exists(c_path):
+            return ""
+
+        # Method 1: RKCMPMEI.DBF (MEIF03 field)
+        mei_path = os.path.join(c_path, 'RKCMPMEI.DBF')
+        if not os.path.exists(mei_path):
+            mei_path = os.path.join(c_path, 'rkcmpmei.dbf')
+        if os.path.exists(mei_path):
+            try:
+                from dbfread import DBF
+                table = DBF(mei_path, encoding='latin1', ignore_missing_memofile=True)
+                for r in table:
+                    val = str(r.get('MEIF03', '') or r.get('meif03', '')).strip()
+                    if val:
+                        return val
+            except Exception:
+                pass
+
+        # Method 2: RKCMPMM.DBF (FIELD01 == 'CMP_LINFO', FIELD02 first segment)
+        mm_path = os.path.join(c_path, 'RKCMPMM.DBF')
+        if not os.path.exists(mm_path):
+            mm_path = os.path.join(c_path, 'rkcmpmm.dbf')
+        if os.path.exists(mm_path):
+            try:
+                from dbfread import DBF
+                table = DBF(mm_path, encoding='latin1', ignore_missing_memofile=True)
+                for r in table:
+                    f01 = str(r.get('FIELD01', '')).strip()
+                    if f01 == 'CMP_LINFO':
+                        val = str(r.get('FIELD02', '')).split('~')[0].strip()
+                        if val:
+                            return val
+            except Exception:
+                pass
+
+        # Method 3: RKCMPM98.DBF (FIELD01 == '_COMPNAME')
+        m98_path = os.path.join(c_path, 'RKCMPM98.DBF')
+        if not os.path.exists(m98_path):
+            m98_path = os.path.join(c_path, 'rkcmpm98.dbf')
+        if os.path.exists(m98_path):
+            try:
+                import dbf
+                with self.safe_cdx_context(m98_path):
+                    table = dbf.Table(m98_path)
+                    table.open(mode=dbf.READ_ONLY)
+                    for r in table:
+                        if not dbf.is_deleted(r):
+                            f01 = str(r['FIELD01']).strip()
+                            if f01 in ('_COMPNAME', '_COMPANY', '_NAME'):
+                                val = str(r['FIELD02']).strip()
+                                table.close()
+                                if val:
+                                    return val
+                    table.close()
+            except Exception:
+                pass
+
+        return ""
+
     def get_company_state_code(self) -> str:
         """Reads RKCMPM98.DBF to retrieve the company's own GST state code digits (e.g. '27')."""
         import dbf
@@ -434,6 +496,16 @@ class MiracleDBFHandler:
             return records
         except Exception as e:
             raise Exception(f"Failed to read {file_path}: {str(e)}")
+
+    def get_all_ledgers(self, year_folder: str | None = None) -> list:
+        """Helper alias for reading classified ledgers across all years."""
+        return self.read_ledgers_all_years(active_year_folder=year_folder)
+
+    def get_products(self, year_folder: str | None = None) -> list:
+        """Helper alias for reading products."""
+        if year_folder:
+            return self.read_products(year_folder=year_folder)
+        return self.read_products_all_years()
 
     def read_ledgers(self, year_folder: str | None = None):
         """Reads and classifies all account ledgers from Miracle DBFs."""
@@ -5239,6 +5311,15 @@ class MiracleDBFHandler:
                     print(f"Product Commodity Self-Healing complete. Updated {healed_comm_count} products.")
         except Exception as e:
             print(f"Error running HSN and Commodity self-healing: {e}")
+
+    def repair_bank_closing_flags(self, year_folder: str | None = None):
+        """Alias helper for repair_bank_entry_flags."""
+        res = self.repair_bank_entry_flags(year_folder=year_folder)
+        return res.get("repaired", 0) if isinstance(res, dict) else res
+
+    def repair_missing_narrations(self, year_folder: str | None = None):
+        """Alias helper for repair_all_voucher_narrations."""
+        return self.repair_all_voucher_narrations(year_folder=year_folder)
 
     def repair_bank_entry_flags(self, year_folder: str | None = None) -> dict:
         """

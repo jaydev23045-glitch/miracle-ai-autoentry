@@ -327,7 +327,7 @@ def get_local_ledgers(base_path: str = "C:\\Miracle", client_id: str = "CMP0005"
         target_year = year or year_folder or "YR25"
         handler = MiracleDBFHandler(client_path)
         ledgers = handler.get_all_ledgers(target_year)
-        return {"status": "success", "year": target_year, "ledgers": ledgers}
+        return {"status": "success", "year": target_year, "ledgers": ledgers, "data": ledgers}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to read local ledgers: {str(e)}")
 
