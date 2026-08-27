@@ -794,16 +794,9 @@ def get_vouchers(limit: int = 50, year: Optional[str] = None, handler: MiracleDB
 
 @router.get("/api/extraction-status")
 @router.post("/api/extraction-status")
-def get_extraction_status_endpoint():
-    status_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "extraction_status.json")
-    if os.path.exists(status_path):
-        try:
-            with open(status_path, "r") as f:
-                data = json.load(f)
-                return data
-        except Exception:
-            pass
-    return {"filename": "", "part": 0, "total": 0, "progress_pct": 0, "percentage": 0, "message": "Idle"}
+def get_extraction_status_endpoint(filename: str = ""):
+    from gemini_service import get_current_extraction_status
+    return get_current_extraction_status(filename)
 
 @router.post("/api/upload")
 async def upload_document(

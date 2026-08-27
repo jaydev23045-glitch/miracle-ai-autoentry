@@ -24,7 +24,20 @@ import json
 import re
 import hashlib
 import difflib
-import datetime
+import threading
+
+# --- THREAD-SAFE MULTI-USER STATUS STORE ---
+_GLOBAL_STATUS_LOCK = threading.Lock()
+_GLOBAL_STATUS_STORE = {}
+
+def get_current_extraction_status(filename: str = None) -> dict:
+    """Returns thread-safe in-memory status without disk lock delays."""
+    with _GLOBAL_STATUS_LOCK:
+        if filename and filename in _GLOBAL_STATUS_STORE:
+            return _GLOBAL_STATUS_STORE[filename]
+        return _GLOBAL_STATUS_STORE.get("_latest", {
+            "filename": "", "part": 0, "total": 0, "progress_pct": 0, "percentage": 0, "message": "Idle"
+        })
 
 # --- DAILY 429 MODEL QUOTA BLACKLIST TRACKER ---
 EXHAUSTED_MODELS_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "exhausted_models.json")
@@ -742,11 +755,17 @@ class GeminiService:
                 "percentage": pct,
                 "message": message
             }
-            status_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "extraction_status.json")
-            with open(status_path, "w") as f:
-                json.dump(status_data, f)
+            with _GLOBAL_STATUS_LOCK:
+                _GLOBAL_STATUS_STORE[filename] = status_data
+                _GLOBAL_STATUS_STORE["_latest"] = status_data
+            try:
+                status_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "extraction_status.json")
+                with open(status_path, "w") as f:
+                    json.dump(status_data, f)
+            except Exception:
+                pass
         except Exception as e:
-            print(f"Warning: Failed to update extraction status file: {e}")
+            print(f"Warning: Failed to update extraction status: {e}")
 
     def _generate_content_with_retry(self, client, model, contents, config=None, max_retries=4, initial_backoff=2.0, start_key_offset: int = 0):
         import time
