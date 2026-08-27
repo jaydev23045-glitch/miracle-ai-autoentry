@@ -2746,7 +2746,7 @@ class MiracleDBFHandler:
         """Helper alias for injecting opening balances."""
         return self.inject_opening_balances(vouchers, year_folder=year_folder)
 
-    def inject_vouchers(self, module: str, vouchers: list, year_folder: str | None = None, sales_prefix: str = "SS,SS", purchase_prefix: str = "PP,PP", sales_setup_id: int = 5, purchase_setup_id: int = 6, sales_series: str = "", bill_format_pattern: str = "", last_bill_number: int = 0, format_override: str | None = None, bank_name: str | None = None, target_cash_code: str | None = None) -> int:
+    def inject_vouchers(self, module: str, vouchers: list, year_folder: str | None = None, sales_prefix: str = "SS,SS", purchase_prefix: str = "PP,PP", sales_setup_id: int = 5, purchase_setup_id: int = 6, sales_series: str = "", bill_format_pattern: str = "", last_bill_number: int = 0, format_override: str | None = None, bank_name: str | None = None, target_cash_code: str | None = None, force_push: bool = False) -> int:
         """Injects a list of vouchers directly into RKACCT41.DBF, RKACCT02.DBF, and RKACCT52.DBF."""
         from datetime import datetime, date
 
@@ -2767,12 +2767,12 @@ class MiracleDBFHandler:
             total_injected = 0
             for yr, group in grouped.items():
                 print(f"Routing {len(group)} vouchers to {yr}")
-                total_injected += self.inject_vouchers(module, group, yr, sales_prefix, purchase_prefix, sales_setup_id, purchase_setup_id, sales_series, bill_format_pattern, last_bill_number, format_override, bank_name, target_cash_code)
+                total_injected += self.inject_vouchers(module, group, yr, sales_prefix, purchase_prefix, sales_setup_id, purchase_setup_id, sales_series, bill_format_pattern, last_bill_number, format_override, bank_name, target_cash_code, force_push=force_push)
                 last_bill_number += len(group) # roughly advance for the next year group if needed
             return total_injected
 
         if module == 'Bank Statements':
-            return self._inject_bank_statements(vouchers, bank_name or "Bank Account", year_folder) # type: ignore
+            return self._inject_bank_statements(vouchers, bank_name or "Bank Account", year_folder, force_push=force_push) # type: ignore
         elif module == 'Cash Entries':
             return self._inject_cash_entries(vouchers, target_cash_code, year_folder) # type: ignore
 
@@ -4292,7 +4292,7 @@ class MiracleDBFHandler:
 
         return False
 
-    def _inject_bank_statements(self, vouchers: list, payload_bank_name: str = "Bank Account", year_folder: str = "") -> int:
+    def _inject_bank_statements(self, vouchers: list, payload_bank_name: str = "Bank Account", year_folder: str = "", force_push: bool = False) -> int:
         if isinstance(payload_bank_name, str) and (payload_bank_name.upper().startswith("YR") or not year_folder):
             year_folder = payload_bank_name
             payload_bank_name = "Bank Account"
@@ -4728,7 +4728,7 @@ class MiracleDBFHandler:
                                     dup_reason_str = f"Already in Miracle (Matched Amount)"
                                     break
 
-                    if is_dup:
+                    if is_dup and not force_push:
                         self.audit_report["duplicates"] += 1
                         self.audit_report["duplicate_details"].append({
                             "date": v_date_str,
