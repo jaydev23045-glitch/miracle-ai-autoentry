@@ -159,10 +159,142 @@ def backup_full_client_folder(client_id: str, base_path: str, custom_backup_path
     return archive_path
 
 
+BRIDGE_VERSION = "1.1.0"
+CLOUD_URL = os.environ.get("RENDER_CLOUD_URL", "https://miracle-ai-autoentry.onrender.com").rstrip("/")
+
+
+def enable_windows_autostart():
+    """Registers MiracleBridge in Windows Startup (HKCU Run key) on client PC."""
+    if sys.platform != 'win32':
+        return
+    try:
+        import winreg
+        key_path = r"Software\Microsoft\Windows\CurrentVersion\Run"
+        key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, key_path, 0, winreg.KEY_SET_VALUE)
+        exe_path = os.path.abspath(sys.argv[0])
+        winreg.SetValueEx(key, "MiracleBridge", 0, winreg.REG_SZ, f'"{exe_path}"')
+        winreg.CloseKey(key)
+        print("✅ Registered MiracleBridge in Windows Startup (HKCU Run).")
+    except Exception as e:
+        print(f"⚠️ Could not register Windows Startup key: {e}")
+
+
+def trigger_ota_update(download_url: str):
+    """Downloads updated binary, creates batch replacement script, and restarts MiracleBridge."""
+    try:
+        import requests
+        import subprocess
+        print(f"🔄 MiracleBridge OTA Update starting from {download_url}...")
+        
+        target_dir = os.path.dirname(os.path.abspath(sys.argv[0]))
+        new_exe_path = os.path.join(target_dir, "MiracleBridge_new.exe")
+        current_exe_path = os.path.abspath(sys.argv[0])
+        exe_basename = os.path.basename(current_exe_path)
+        
+        full_url = download_url if download_url.startswith("http") else (CLOUD_URL + download_url)
+        resp = requests.get(full_url, stream=True, timeout=30)
+        if resp.status_code == 200:
+            with open(new_exe_path, "wb") as f:
+                for chunk in resp.iter_content(chunk_size=8192):
+                    f.write(chunk)
+            print("✅ Downloaded updated MiracleBridge binary.")
+            
+            bat_path = os.path.join(target_dir, "update_bridge.bat")
+            bat_content = f"""@echo off
+timeout /t 2 /nobreak > nul
+del /f /q "{exe_basename}"
+move /y "MiracleBridge_new.exe" "{exe_basename}"
+start "" "{exe_basename}"
+del "%~f0"
+"""
+            with open(bat_path, "w", encoding="utf-8") as bf:
+                bf.write(bat_content)
+                
+            print("🚀 Executing background updater batch script and closing agent...")
+            if sys.platform == 'win32':
+                subprocess.Popen(["cmd.exe", "/c", bat_path], creationflags=0x08000000, cwd=target_dir)
+            else:
+                subprocess.Popen(["/bin/bash", "-c", f"sleep 2 && mv -f MiracleBridge_new.exe '{exe_basename}' && python3 miracle_bridge_agent.py"], cwd=target_dir)
+            sys.exit(0)
+        else:
+            print(f"⚠️ OTA Update download failed with status {resp.status_code}")
+    except Exception as err:
+        print(f"❌ Error during MiracleBridge OTA Update: {err}")
+
+
+def check_for_updates_background(manual_trigger: bool = False):
+    """Queries Render Cloud version endpoint for OTA update triggers."""
+    try:
+        import requests
+        check_url = f"{CLOUD_URL}/api/bridge/version?current_version={BRIDGE_VERSION}"
+        r = requests.get(check_url, timeout=10)
+        if r.status_code == 200:
+            data = r.json()
+            if data.get("needs_update") and data.get("download_url"):
+                print(f"🔔 Update available: v{data.get('latest_version')} (Current: v{BRIDGE_VERSION})")
+                trigger_ota_update(data.get("download_url"))
+            else:
+                if manual_trigger:
+                    print(f"✅ MiracleBridge is up to date (v{BRIDGE_VERSION}).")
+        else:
+            if manual_trigger:
+                print(f"⚠️ Update check failed with status code {r.status_code}")
+    except Exception as err:
+        print(f"⚠️ Background update check warning: {err}")
+
+
+def start_update_checker_loop():
+    """Launches background thread for periodic version checks."""
+    def run_loop():
+        time.sleep(10)
+        check_for_updates_background(manual_trigger=False)
+        while True:
+            time.sleep(14400)  # Every 4 hours
+            check_for_updates_background(manual_trigger=False)
+            
+    t = threading.Thread(target=run_loop, daemon=True)
+    t.start()
+
+
+def start_system_tray_icon():
+    """Initializes Windows System Tray notification area icon."""
+    try:
+        import pystray
+        from PIL import Image, ImageDraw
+        
+        img = Image.new('RGB', (64, 64), color=(15, 23, 42))
+        draw = ImageDraw.Draw(img)
+        draw.ellipse([12, 12, 52, 52], fill=(16, 185, 129))
+        
+        def on_check_updates(icon, item):
+            threading.Thread(target=check_for_updates_background, kwargs={"manual_trigger": True}, daemon=True).start()
+            
+        def on_exit_app(icon, item):
+            icon.stop()
+            sys.exit(0)
+            
+        menu = pystray.Menu(
+            pystray.MenuItem("MiracleBridge Status: Active", lambda icon, item: None, enabled=False),
+            pystray.MenuItem(f"Version: v{BRIDGE_VERSION}", lambda icon, item: None, enabled=False),
+            pystray.MenuItem("Port: 9123 (Localhost)", lambda icon, item: None, enabled=False),
+            pystray.Menu.SEPARATOR,
+            pystray.MenuItem("Check for Updates", on_check_updates),
+            pystray.Menu.SEPARATOR,
+            pystray.MenuItem("Exit Agent", on_exit_app)
+        )
+        
+        icon = pystray.Icon("MiracleBridge", img, f"MiracleBridge v{BRIDGE_VERSION} (Port 9123)", menu)
+        tray_thread = threading.Thread(target=icon.run, daemon=True)
+        tray_thread.start()
+        print("🟢 MiracleBridge System Tray Icon initialized successfully.")
+    except Exception as e:
+        print(f"ℹ️ System Tray Notice (Running without Tray Icon UI): {e}")
+
+
 app = FastAPI(
     title="Miracle Local DBF Bridge Agent",
     description="Local Windows Agent for Miracle Accounting AI Auto-Entry",
-    version="1.0.0"
+    version=BRIDGE_VERSION
 )
 
 # CORS & Private Network Access (PNA): Allow communication from Render Cloud Web URL & Localhost
@@ -220,10 +352,11 @@ def health_check():
     return {
         "status": "online",
         "agent_name": "MiracleBridge Agent",
-        "version": "1.0.0",
+        "version": BRIDGE_VERSION,
         "port": 9123,
         "platform": sys.platform
     }
+
 
 def resolve_valid_base_path(base_path: str) -> str:
     """Intelligently resolves the actual Miracle folder on the local Windows PC if a Mac/cloud path is passed"""
@@ -561,7 +694,16 @@ def inject_vouchers(payload: InjectRequestPayload):
         raise HTTPException(status_code=500, detail=str(e))
 
 if __name__ == "__main__":
-    print("🚀 Starting Miracle DBF Local Bridge Agent on port 9123...")
+    print(f"🚀 Starting Miracle DBF Local Bridge Agent v{BRIDGE_VERSION} on port 9123...")
+    
+    # 1. Enable Windows Auto-Start on Windows Boot
+    enable_windows_autostart()
+    
+    # 2. Launch Background Version Checker Loop
+    start_update_checker_loop()
+    
+    # 3. Initialize Windows System Tray Icon
+    start_system_tray_icon()
     
     # Safe Uvicorn Log Configuration for PyInstaller --windowed / GUI mode
     UVICORN_LOG_CONFIG = {
@@ -589,3 +731,4 @@ if __name__ == "__main__":
         uvicorn.run(app, host="0.0.0.0", port=9123, log_config=UVICORN_LOG_CONFIG)
     except Exception as run_err:
         print(f"Server error: {run_err}")
+

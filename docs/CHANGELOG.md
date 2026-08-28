@@ -1,5 +1,23 @@
 # Miracle Auto-Entry Platform - Changelog
 
+### 141. Miracle Bridge System Tray & OTA Auto-Updater Engine
+**The Problem Resolved:**
+- **Manual Binary Distribution & Re-installation Burden:** Previously, when backend updates or DBF handling rules were updated, clients had to manually uninstall, redownload, and reinstall `MiracleBridge.exe`. There was no automated way for the bridge agent to update itself or start automatically on Windows boot.
+
+**Fixes & Architecture Implemented:**
+1. **Windows Auto-Start Registry & System Tray Area ([miracle_bridge_agent.py](file:///Users/jaydevnakum/Work%20Place/WORK/APP%20DETAILS/Mirracle%20Auto%20Entre%20Sale%20or%20Purchase%20or%20Bank/miracle_bridge/miracle_bridge_agent.py#L166)):**
+   - Added `enable_windows_autostart()`: Automatically registers `HKCU\Software\Microsoft\Windows\CurrentVersion\Run` key on Windows startup.
+   - Added `start_system_tray_icon()`: Renders an emerald green status tray icon in the Windows taskbar notification area using `pystray` and `PIL` with manual update check triggers and agent status menu items.
+2. **Background OTA Auto-Updater Loop & Self-Replacement Engine ([miracle_bridge_agent.py](file:///Users/jaydevnakum/Work%20Place/WORK/APP%20DETAILS/Mirracle%20Auto%20Entre%20Sale%20or%20Purchase%20or%20Bank/miracle_bridge/miracle_bridge_agent.py#L182) & [vouchers.py](file:///Users/jaydevnakum/Work%20Place/WORK/APP%20DETAILS/Mirracle%20Auto%20Entre%20Sale%20or%20Purchase%20or%20Bank/backend/routers/vouchers.py#L2258)):**
+   - Added `/api/bridge/version` and `/api/bridge/download` endpoints on the backend server.
+   - Background worker checks Render Cloud `/api/bridge/version` every 4 hours or on launch.
+   - When a new version is detected, it downloads `MiracleBridge_new.exe`, creates `update_bridge.bat` to swap binaries cleanly, and automatically restarts the updated agent with 0 client manual intervention.
+3. **Automated Verification:**
+   - Executed 3-Space Test Suite (`scratch/test_all_spaces.py`) $\rightarrow$ **100% Passed**.
+   - Executed `py_compile` across all files $\rightarrow$ **100% Passed**.
+
+
+
 ### 140. End-to-End Force Overwrite UI Toggle Integration
 **The Problem Resolved:**
 - **Manual Force Push Parameter Control:** Previously, the backend supported `force_push: bool`, but the Web UI had no visible toggle to let users explicitly choose between duplicate suppression vs force re-pushing.

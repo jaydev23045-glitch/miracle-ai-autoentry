@@ -39,9 +39,15 @@ def build_exe():
         "--hidden-import=routers.vouchers",
         "--hidden-import=dbfread",
         "--hidden-import=dbf",
+        "--hidden-import=pystray",
+        "--hidden-import=PIL",
+        "--hidden-import=PIL.Image",
+        "--hidden-import=PIL.ImageDraw",
+        "--hidden-import=winreg",
         "--clean",
         script_path
     ]
+
 
     print(f"Executing build command: {' '.join(command)}")
     try:

@@ -2255,4 +2255,48 @@ def export_excel_memory_vault():
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@router.get("/api/bridge/version")
+def check_miracle_bridge_version(current_version: str = "1.0.0"):
+    """Checks the latest available MiracleBridge release version for client auto-updates."""
+    LATEST_BRIDGE_VERSION = "1.1.0"
+    needs_update = current_version.strip() != LATEST_BRIDGE_VERSION
+    return {
+        "status": "success",
+        "latest_version": LATEST_BRIDGE_VERSION,
+        "current_version": current_version,
+        "needs_update": needs_update,
+        "download_url": "/api/bridge/download",
+        "changelog": "System tray agent, auto-start on boot, and background OTA binary update engine."
+    }
+
+
+@router.get("/api/bridge/download")
+def download_miracle_bridge_binary():
+    """Serves the compiled MiracleBridge executable binary for client auto-updates."""
+    import os
+    from fastapi.responses import FileResponse
+    
+    possible_paths = [
+        os.path.join(os.getcwd(), "miracle_bridge", "dist", "MiracleBridge.exe"),
+        os.path.join(os.getcwd(), "dist", "MiracleBridge.exe"),
+        os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "miracle_bridge", "dist", "MiracleBridge.exe")
+    ]
+    
+    target_exe = None
+    for p in possible_paths:
+        if os.path.exists(p):
+            target_exe = p
+            break
+            
+    if not target_exe:
+        raise HTTPException(status_code=404, detail="MiracleBridge.exe compiled binary not found on server.")
+        
+    return FileResponse(
+        path=target_exe,
+        filename="MiracleBridge.exe",
+        media_type="application/octet-stream"
+    )
+
+
+
 
