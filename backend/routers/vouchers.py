@@ -3,6 +3,7 @@ import shutil
 import re
 import time
 import datetime
+import json
 import tempfile
 import zipfile
 import subprocess
@@ -514,6 +515,7 @@ def normalize_confidence_and_flags(extracted_data: dict, module: str, client_mem
             else:
                 if len(dt) == 10 and dt.count("-") == 2:
                     try:
+                        settings = load_settings()
                         c_id = client_memory.get("client_id", "") if isinstance(client_memory, dict) else ""
                         c_path = os.path.join(settings.get("miracle_base_path", ""), c_id) if c_id else ""
                         if year_bounds is not None:

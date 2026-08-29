@@ -1,16 +1,23 @@
 # Miracle Auto-Entry Platform - Changelog
 
-### 142. Fix Missing `import datetime` in `gemini_service.py` Quota Tracker
+### 142. Full Codebase Scope Audit & Fix for Missing Module Imports (`NameError`)
 **The Problem Resolved:**
 - **PDF Extraction 500 Internal Server Error:** During PDF text extraction (both single-page and parallel multi-chunk), all worker tasks failed with `Gemini extraction failed: name 'datetime' is not defined`.
-- **Root Cause:** Functions in `backend/gemini_service.py` (`_load_exhausted_models_cache`, `is_key_model_quota_exhausted_today`, `mark_key_model_quota_exhausted_today`) referenced `datetime.date.today()`, but `import datetime` was missing from top-level module imports.
+- **Additional Undefined Symbol Vulnerabilities Found During AST Audit:**
+  1. `backend/routers/vouchers.py:518`: `normalize_confidence_and_flags` called `settings.get(...)` without defining or loading `settings`, causing `NameError: name 'settings' is not defined` when resolving date bounds.
+  2. `backend/routers/vouchers.py:2097`: `export_ai_memory_vault_json` called `json.dumps(...)`, but `import json` was missing from top-level imports.
 
 **Fixes & Architecture Implemented:**
 1. **Module Import Restoration ([gemini_service.py](file:///Users/jaydevnakum/Work%20Place/WORK/APP%20DETAILS/Mirracle%20Auto%20Entre%20Sale%20or%20Purchase%20or%20Bank/backend/gemini_service.py#L28)):**
    - Added `import datetime` to top level imports of `backend/gemini_service.py`.
-2. **Automated Verification:**
+2. **Vouchers Router Scope Corrections ([vouchers.py](file:///Users/jaydevnakum/Work%20Place/WORK/APP%20DETAILS/Mirracle%20Auto%20Entre%20Sale%20or%20Purchase%20or%20Bank/backend/routers/vouchers.py#L6) & [vouchers.py](file:///Users/jaydevnakum/Work%20Place/WORK/APP%20DETAILS/Mirracle%20Auto%20Entre%20Sale%20or%20Purchase%20or%20Bank/backend/routers/vouchers.py#L516)):**
+   - Added `import json` to top level imports of `backend/routers/vouchers.py`.
+   - Added `settings = load_settings()` inside `normalize_confidence_and_flags()`.
+3. **Automated Verification:**
+   - Executed full AST Scope Analysis across all Python modules $\rightarrow$ **100% Passed**.
    - Executed `py_compile` across all backend modules $\rightarrow$ **100% Passed**.
-   - Verified runtime execution of `is_key_model_quota_exhausted_today()` and status tracker $\rightarrow$ **100% Passed**.
+   - Verified runtime execution in `backend/venv/bin/python3` $\rightarrow$ **100% Passed**.
+
 
 
 ### 141. Miracle Bridge System Tray & OTA Auto-Updater Engine
