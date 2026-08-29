@@ -44,6 +44,20 @@ def get_handler() -> MiracleDBFHandler:
         raise HTTPException(status_code=404, detail=f"Client folder not found at {client_path}")
     return MiracleDBFHandler(client_path)
 
+def get_handler_optional() -> Optional[MiracleDBFHandler]:
+    """
+    FastAPI dependency: returns a MiracleDBFHandler if client folder exists, else None.
+    Does NOT raise 404 if client folder is missing on server disk (useful for cloud deployments).
+    """
+    settings = load_settings()
+    client_id = settings.get("active_client_id", "")
+    if not client_id:
+        return None
+    client_path = os.path.join(settings.get("miracle_base_path", ""), client_id)
+    if not os.path.exists(client_path):
+        return None
+    return MiracleDBFHandler(client_path)
+
 # Ledger cache with TTL: {client_id: (timestamp, ledgers_list)}
 _LEDGER_CACHE: dict = {}
 _LEDGER_CACHE_TTL_SECONDS = 60  # Refresh ledger list every 60 seconds
@@ -737,10 +751,10 @@ def refresh_ledgers(year: Optional[str] = None, handler: MiracleDBFHandler = Dep
 
 @router.get("/api/products")
 @router.get("/api/products/")
-def get_products(year: Optional[str] = None, handler: MiracleDBFHandler = Depends(get_handler)):
+def get_products(year: Optional[str] = None, handler: Optional[MiracleDBFHandler] = Depends(get_handler_optional)):
     """Reads all products from active Miracle DBFs across all financial years."""
     try:
-        if not handler.client_path or not os.path.exists(handler.client_path):
+        if not handler or not handler.client_path or not os.path.exists(handler.client_path):
             settings = load_settings()
             client_id = settings.get("active_client_id", "CMP0013")
             import requests
@@ -761,10 +775,10 @@ def get_products(year: Optional[str] = None, handler: MiracleDBFHandler = Depend
 
 @router.post("/api/refresh-products")
 @router.post("/api/refresh-products/")
-def refresh_products(year: Optional[str] = None, handler: MiracleDBFHandler = Depends(get_handler)):
+def refresh_products(year: Optional[str] = None, handler: Optional[MiracleDBFHandler] = Depends(get_handler_optional)):
     """Forces re-reading of Miracle DBF files across all years and returns fresh products."""
     try:
-        if not handler.client_path or not os.path.exists(handler.client_path):
+        if not handler or not handler.client_path or not os.path.exists(handler.client_path):
             settings = load_settings()
             client_id = settings.get("active_client_id", "CMP0013")
             import requests
@@ -968,7 +982,12 @@ async def upload_document(
         if module in ["Sales", "Purchases"] and temp_file_path.lower().endswith(('.xls', '.xlsx')):
             try:
                 print(f"{module} Excel detected! Bypassing Gemini LLM and using deterministic pandas parser for 100% math accuracy...")
-                company_state = handler.get_company_state_code()
+                company_state = "24"
+                if handler:
+                    try:
+                        company_state = handler.get_company_state_code() or "24"
+                    except Exception:
+                        pass
                 print(f"Detected company state code: {company_state}")
                 from core.excel_parser import parse_excel_to_json as _excel_parser
                 direct_result = _excel_parser(temp_file_path, company_state_code=company_state, instruction=instruction)
@@ -1005,13 +1024,23 @@ async def upload_document(
                         "detected_year": det_yr
                     }
             except Exception as e:
-                print(f"{module} direct parsing failed, falling back to Gemini: {e}")
+                print(f"{module} direct parsing failed, falling back to Gemini Excel processor: {e}")
                 
-        extracted_data = gemini.extract_invoice_data(temp_file_path, client_memory, module, instruction, pdf_password=pdf_password)
-        comp_state = ""
-        try:
-            comp_state = handler.get_company_state_code()
-        except: pass
+        if temp_file_path.lower().endswith(('.xls', '.xlsx')):
+            try:
+                extracted_data = gemini.extract_data_with_chunking(temp_file_path, client_memory, module, instruction)
+            except Exception as ex_err:
+                try: os.remove(temp_file_path)
+                except: pass
+                return {"status": "error", "message": f"Excel extraction failed: {str(ex_err)}", "extracted_data": []}
+        else:
+            extracted_data = gemini.extract_invoice_data(temp_file_path, client_memory, module, instruction, pdf_password=pdf_password)
+
+        comp_state = "24"
+        if handler:
+            try:
+                comp_state = handler.get_company_state_code() or "24"
+            except: pass
         if extracted_data.get("status") == "success":
             extracted_data = gemini.apply_product_mappings(extracted_data, client_memory, module, instruction)
         extracted_data = normalize_confidence_and_flags(extracted_data, module, client_memory=client_memory, company_state_code=comp_state, year_bounds=upload_year_bounds)

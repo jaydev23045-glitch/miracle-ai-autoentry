@@ -727,6 +727,10 @@ class AIMemoryVault:
         import traceback
         
         try:
+            if not client_path or not os.path.exists(client_path):
+                print(f"⚠️ [AI Memory] Client path '{client_path}' does not exist on this filesystem. Skipping history training.")
+                return 0
+
             folders = [d for d in os.listdir(client_path) if d.upper().startswith('YR') and os.path.isdir(os.path.join(client_path, d))]
             if not folders:
                 return 0

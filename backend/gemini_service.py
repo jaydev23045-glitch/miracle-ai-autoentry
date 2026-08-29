@@ -775,21 +775,16 @@ class GeminiService:
         # Tier 1 (15 RPM / 500 RPD = 5,000 daily requests across 10 keys):
         #   - gemini-3.1-flash-lite, gemini-3.5-flash-lite, gemini-2.5-flash-lite
         # Tier 2 (5 RPM / 20 RPD):
-        #   - gemini-2.5-flash, gemini-3.5-flash, gemini-3.7-flash, gemini-3.6-flash, gemini-3-flash
-        # Tier 3 (Legacy & High Speed):
-        #   - gemini-2.0-flash, gemini-1.5-flash, gemini-2.0-flash-lite
+        #   - gemini-3.6-flash, gemini-3.7-flash, gemini-3.5-flash, gemini-3-flash, gemini-2.5-flash
         FALLBACK_MODELS = [
             "gemini-3.1-flash-lite",
             "gemini-3.5-flash-lite",
             "gemini-2.5-flash-lite",
-            "gemini-2.5-flash",
-            "gemini-3.5-flash",
-            "gemini-3.7-flash",
             "gemini-3.6-flash",
+            "gemini-3.7-flash",
+            "gemini-3.5-flash",
             "gemini-3-flash",
-            "gemini-2.0-flash",
-            "gemini-1.5-flash",
-            "gemini-2.0-flash-lite"
+            "gemini-2.5-flash"
         ]
         
         # Build candidate list starting from requested model
@@ -850,6 +845,13 @@ class GeminiService:
                 except Exception as e:
                     last_exception = e
                     err_msg = str(e).lower()
+
+                    # Model Not Found / 404 -> skip model tier immediately
+                    is_not_found = any(x in err_msg for x in ["404", "not_found", "not found", "is not found for api version"])
+                    if is_not_found:
+                        print(f"⚠️ Model '{active_model}' returned 404 / unsupported on API. Blacklisting model '{active_model}' and trying next model tier...")
+                        mark_model_quota_exhausted_today(active_model)
+                        break
                     
                     # 503 Overloaded -> try next key / fallback
                     if "503" in err_msg or "unavailable" in err_msg:
