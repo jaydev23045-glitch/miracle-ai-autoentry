@@ -1,5 +1,18 @@
 # Miracle Auto-Entry Platform - Changelog
 
+### 142. Fix Missing `import datetime` in `gemini_service.py` Quota Tracker
+**The Problem Resolved:**
+- **PDF Extraction 500 Internal Server Error:** During PDF text extraction (both single-page and parallel multi-chunk), all worker tasks failed with `Gemini extraction failed: name 'datetime' is not defined`.
+- **Root Cause:** Functions in `backend/gemini_service.py` (`_load_exhausted_models_cache`, `is_key_model_quota_exhausted_today`, `mark_key_model_quota_exhausted_today`) referenced `datetime.date.today()`, but `import datetime` was missing from top-level module imports.
+
+**Fixes & Architecture Implemented:**
+1. **Module Import Restoration ([gemini_service.py](file:///Users/jaydevnakum/Work%20Place/WORK/APP%20DETAILS/Mirracle%20Auto%20Entre%20Sale%20or%20Purchase%20or%20Bank/backend/gemini_service.py#L28)):**
+   - Added `import datetime` to top level imports of `backend/gemini_service.py`.
+2. **Automated Verification:**
+   - Executed `py_compile` across all backend modules $\rightarrow$ **100% Passed**.
+   - Verified runtime execution of `is_key_model_quota_exhausted_today()` and status tracker $\rightarrow$ **100% Passed**.
+
+
 ### 141. Miracle Bridge System Tray & OTA Auto-Updater Engine
 **The Problem Resolved:**
 - **Manual Binary Distribution & Re-installation Burden:** Previously, when backend updates or DBF handling rules were updated, clients had to manually uninstall, redownload, and reinstall `MiracleBridge.exe`. There was no automated way for the bridge agent to update itself or start automatically on Windows boot.

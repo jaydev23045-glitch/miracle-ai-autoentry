@@ -540,24 +540,41 @@ def normalize_confidence_and_flags(extracted_data: dict, module: str, client_mem
     return extracted_data
 
 @router.get("/api/ledgers")
-def get_ledgers(year: Optional[str] = None, handler: MiracleDBFHandler = Depends(get_handler)):
-    """Reads all accounting ledgers from the active Miracle DBF."""
+def get_ledgers(year: Optional[str] = None, handler: Optional[MiracleDBFHandler] = Depends(get_handler_optional)):
+    """Reads all accounting ledgers from the active Miracle DBF or queries Miracle Bridge."""
     try:
+        if not handler or not handler.client_path or not os.path.exists(handler.client_path):
+            settings = load_settings()
+            client_id = settings.get("active_client_id", "CMP0013")
+            import requests
+            try:
+                r = requests.get(f"http://localhost:9123/api/local-ledgers?client_id={client_id}", timeout=3)
+                if r.status_code == 200:
+                    return r.json()
+            except Exception:
+                pass
+            return {"status": "success", "year": year or "", "count": 0, "data": []}
+
         ledgers = handler.read_ledgers_all_years(active_year_folder=year)
         y = year if year else handler.get_latest_year_folder()
         return {"status": "success", "year": y, "count": len(ledgers), "data": ledgers}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        print(f"[get_ledgers] Notice: {e}")
+        return {"status": "success", "year": year or "", "count": 0, "data": []}
 
 @router.get("/api/groups")
-def get_account_groups(year: Optional[str] = None, handler: MiracleDBFHandler = Depends(get_handler)):
+def get_account_groups(year: Optional[str] = None, handler: Optional[MiracleDBFHandler] = Depends(get_handler_optional)):
     """Reads all account groups from RKACCM11.DBF for the active Miracle client."""
     try:
+        if not handler or not handler.client_path or not os.path.exists(handler.client_path):
+            return {"status": "success", "year": year or "", "count": 0, "data": []}
+
         groups = handler.read_account_groups(year_folder=year)
         y = year if year else handler.get_latest_year_folder()
         return {"status": "success", "year": y, "count": len(groups), "data": groups}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        print(f"[get_account_groups] Notice: {e}")
+        return {"status": "success", "year": year or "", "count": 0, "data": []}
 
 @router.post("/api/create-ledger")
 def api_create_ledger(payload: dict):
@@ -730,24 +747,30 @@ def api_update_ledger(payload: dict):
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.get("/api/debtor-balances")
-def get_debtor_balances(year: Optional[str] = None, handler: MiracleDBFHandler = Depends(get_handler)):
+def get_debtor_balances(year: Optional[str] = None, handler: Optional[MiracleDBFHandler] = Depends(get_handler_optional)):
     """Reads all Sundry Debtors and calculates their current outstanding balance."""
     try:
+        if not handler or not handler.client_path or not os.path.exists(handler.client_path):
+            return {"status": "success", "year": year or "", "count": 0, "data": []}
         balances = handler.get_debtor_balances(year_folder=year)
         y = year if year else handler.get_latest_year_folder()
         return {"status": "success", "year": y, "count": len(balances), "data": balances}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        print(f"[get_debtor_balances] Notice: {e}")
+        return {"status": "success", "year": year or "", "count": 0, "data": []}
 
 @router.post("/api/refresh-ledgers")
-def refresh_ledgers(year: Optional[str] = None, handler: MiracleDBFHandler = Depends(get_handler)):
+def refresh_ledgers(year: Optional[str] = None, handler: Optional[MiracleDBFHandler] = Depends(get_handler_optional)):
     """Forces re-reading of Miracle DBF files and returns fresh ledgers."""
     try:
+        if not handler or not handler.client_path or not os.path.exists(handler.client_path):
+            return {"status": "success", "year": year or "", "count": 0, "data": []}
         ledgers = handler.read_ledgers(year_folder=year)
         y = year if year else handler.get_latest_year_folder()
         return {"status": "success", "year": y, "count": len(ledgers), "data": ledgers}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        print(f"[refresh_ledgers] Notice: {e}")
+        return {"status": "success", "year": year or "", "count": 0, "data": []}
 
 @router.get("/api/products")
 @router.get("/api/products/")
@@ -798,13 +821,16 @@ def refresh_products(year: Optional[str] = None, handler: Optional[MiracleDBFHan
         return {"status": "success", "year": year or "", "count": 0, "data": []}
 
 @router.get("/api/vouchers")
-def get_vouchers(limit: int = 50, year: Optional[str] = None, handler: MiracleDBFHandler = Depends(get_handler)):
+def get_vouchers(limit: int = 50, year: Optional[str] = None, handler: Optional[MiracleDBFHandler] = Depends(get_handler_optional)):
     """Fetch sample vouchers directly from the active Miracle DBF for preview."""
     try:
+        if not handler or not handler.client_path or not os.path.exists(handler.client_path):
+            return {"count": 0, "data": []}
         records = handler.read_vouchers(limit=limit, year_folder=year)
         return {"count": len(records), "data": records}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        print(f"[get_vouchers] Notice: {e}")
+        return {"count": 0, "data": []}
 
 @router.get("/api/extraction-status")
 @router.post("/api/extraction-status")

@@ -25,6 +25,7 @@ import re
 import hashlib
 import difflib
 import threading
+import datetime
 
 # --- THREAD-SAFE MULTI-USER STATUS STORE ---
 _GLOBAL_STATUS_LOCK = threading.Lock()
