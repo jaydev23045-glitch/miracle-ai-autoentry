@@ -27,6 +27,13 @@ def clean_gemini_error(e: Exception) -> str:
         return "Gemini API Quota Exceeded (429 Resource Exhausted). Free Tier keys are limited to 20 requests per day. Please check your Gemini API billing details or wait for the quota to reset."
     return error_msg
 
+@router.get("/api/test-keys")
+@router.post("/api/test-keys")
+def test_all_keys_endpoint():
+    """Endpoint to test and verify all Gemini API keys in the key pool."""
+    from verify_keys import verify_all_keys
+    return verify_all_keys()
+
 @router.get("/api/health")
 def read_health():
     return {"status": "Miracle AI Backend is running."}

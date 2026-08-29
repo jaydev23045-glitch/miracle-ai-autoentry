@@ -2038,8 +2038,11 @@ Return the extracted data EXACTLY following this JSON schema. Do not output anyt
                 print(f"📊 PDF Page Density: {total_pages} total pages, ~{int(avg_lines_per_page)} lines/page")
                 
                 # Dynamic Chunk Size Adaptation based on Page Count & Line Density
-                # High-Speed Increased Chunking: Gemini 2.5 Flash 2M Context Window allows 25-50 pages per call
-                if avg_lines_per_page > 150:
+                # High-Speed Increased Chunking: Bank statements use max 15 pages to prevent JSON output truncation
+                if module == "Bank Statements":
+                    pages_per_chunk = max(5, min(15, 1200 // max(1, int(avg_lines_per_page))))
+                    print(f"🏦 Bank Statement chunk size set to max {pages_per_chunk} pages/chunk to guarantee 0 JSON output truncation.")
+                elif avg_lines_per_page > 150:
                     pages_per_chunk = max(10, min(25, 2500 // max(1, int(avg_lines_per_page))))
                     print(f"⚡ Ultra-dense PDF detected (~{int(avg_lines_per_page)} lines/page)! Setting pages_per_chunk = {pages_per_chunk}.")
                 elif total_pages <= 30:

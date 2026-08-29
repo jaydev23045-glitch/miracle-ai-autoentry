@@ -17,6 +17,8 @@ backend/extraction_status.json
 AI_Memory_Vault/*.json
 backend/AI_Memory_Vault/*.json
 .env
+PROJECT.env
+*.env
 
 # Client Data & Local DBF Folders
 CMP*/

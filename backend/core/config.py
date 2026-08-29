@@ -52,15 +52,42 @@ def clean_api_key(key: str) -> str:
             return token_clean
     return key
 
+def _load_local_env_files():
+    """Reads PROJECT.env or .env from project root or backend dir if present."""
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    root_dir = os.path.dirname(os.path.dirname(base_dir))
+    backend_dir = os.path.dirname(base_dir)
+    env_paths = [
+        os.path.join(root_dir, "PROJECT.env"),
+        os.path.join(backend_dir, "PROJECT.env"),
+        os.path.join(root_dir, ".env"),
+        os.path.join(backend_dir, ".env"),
+    ]
+    for ep in env_paths:
+        if os.path.exists(ep):
+            try:
+                with open(ep, "r", encoding="utf-8") as f:
+                    for line in f:
+                        line = line.strip()
+                        if line and not line.startswith("#") and "=" in line:
+                            k, v = line.split("=", 1)
+                            k = k.strip()
+                            v = v.strip().strip("'\"")
+                            if k and v and k not in os.environ:
+                                os.environ[k] = v
+            except Exception:
+                pass
+
 def get_gemini_api_key_pool(settings: dict | None = None) -> list:
     """
     Gathers and sanitizes all available Gemini API keys from environment variables
-    (GEMINI_API_KEY, GEMINI_API_KEY_2 .. GEMINI_API_KEY_10) and settings.json.
+    (GEMINI_API_KEY, GEMINI_API_KEY_2 .. GEMINI_API_KEY_10), PROJECT.env/.env files, and settings.json.
     Returns a deduplicated list of clean API keys.
     """
+    _load_local_env_files()
     keys = []
     
-    # 1. Environment Variables (Render / System)
+    # 1. Environment Variables (Render / Local PROJECT.env / System)
     env_vars = ["GEMINI_API_KEY", "GEMINI_API_KEY_1"] + [f"GEMINI_API_KEY_{i}" for i in range(2, 11)]
     for var in env_vars:
         val = os.getenv(var, "").strip()
