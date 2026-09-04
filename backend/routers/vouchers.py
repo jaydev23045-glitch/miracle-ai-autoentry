@@ -31,6 +31,19 @@ from core.tax_compliance import allocate_landed_costs, calculate_section_194q_td
 
 router = APIRouter()
 
+def sanitize_surrogates(val: Any) -> Any:
+    """
+    Universally removes lone UTF-16/UTF-32 surrogate code points (U+D800 to U+DFFF)
+    from strings, dicts, and lists to prevent UnicodeEncodeError in json.dumps() and DBF files.
+    """
+    if isinstance(val, str):
+        return "".join(c for c in val if not (0xD800 <= ord(c) <= 0xDFFF))
+    elif isinstance(val, dict):
+        return {sanitize_surrogates(k): sanitize_surrogates(v) for k, v in val.items()}
+    elif isinstance(val, list):
+        return [sanitize_surrogates(item) for item in val]
+    return val
+
 def get_handler() -> MiracleDBFHandler:
     """
     FastAPI dependency: returns a MiracleDBFHandler for the currently active client.
@@ -476,12 +489,12 @@ def normalize_confidence_and_flags(extracted_data: dict, module: str, client_mem
     for row in rows:
         c_val = row.get("confidence_score")
         if c_val is None:
-            c_score = 95
+            c_score = 80
         else:
             try:
                 c_score = int(float(str(c_val).replace("%", "").strip()))
             except:
-                c_score = 95
+                c_score = 80
         row["confidence_score"] = max(0, min(100, c_score))
         
         flags_val = row.get("flags")
@@ -701,10 +714,7 @@ def api_update_ledger(payload: dict):
                     year_folder=year
                 )
                 if updated_code:
-                    try:
-                        handler._sync_party_to_other_years(new_name, updated_code, year)
-                    except Exception as sync_err:
-                        print(f"⚠️ Warning: Cross-year sync during ledger update failed: {sync_err}")
+                    pass
             else:
                 # Hybrid Bridge Fallback: Send update request to local Miracle Bridge on port 9123
                 try:
@@ -1255,6 +1265,7 @@ class PushPayload(BaseModel):
     vouchers: List[Dict[str, Any]]
     format_override: Optional[str] = None
     target_bank_name: Optional[str] = None
+    target_bank_code: Optional[str] = None
     target_cash_code: Optional[str] = None
     year_folder: Optional[str] = None
     backup_path: Optional[str] = ""
@@ -1262,6 +1273,11 @@ class PushPayload(BaseModel):
 
 @router.post("/api/push")
 def push_vouchers_endpoint(payload: PushPayload):
+    if payload.vouchers:
+        payload.vouchers = sanitize_surrogates(payload.vouchers)
+    payload.target_bank_name = sanitize_surrogates(payload.target_bank_name)
+    payload.target_bank_code = sanitize_surrogates(payload.target_bank_code)
+    payload.target_cash_code = sanitize_surrogates(payload.target_cash_code)
     settings = load_settings()
     client_id = settings.get("active_client_id", "")
     with get_client_lock(client_id):
@@ -1420,6 +1436,7 @@ def push_vouchers_endpoint(payload: PushPayload):
                     last_bill_number=last_bill_num,
                     format_override=payload.format_override,
                     bank_name=payload.target_bank_name,
+                    target_bank_code=payload.target_bank_code,
                     target_cash_code=payload.target_cash_code,
                     force_push=bool(payload.force_push)
                 )
@@ -1478,16 +1495,16 @@ def push_vouchers_endpoint(payload: PushPayload):
                 save_settings_to_file(settings)
 
             year_breakdown_str = ", ".join([f"{c} in {y}" for y, c in year_counts.items()])
-            return {
+            return sanitize_surrogates({
                 "status": "success", 
                 "count": total_count,
                 "primary_year": primary_year,
                 "year_counts": year_counts,
                 "audit_report": combined_audit, 
                 "message": f"Successfully injected {total_count} vouchers into Miracle ({year_breakdown_str})."
-            }
+            })
         except Exception as e:
-            raise HTTPException(status_code=500, detail=str(e))
+            raise HTTPException(status_code=500, detail=sanitize_surrogates(str(e)))
 
 @router.post("/api/opening-balances/extract")
 async def extract_opening_balances_endpoint(file: UploadFile = File(...)):
@@ -1736,7 +1753,7 @@ def train_memory_from_history():
         client_dir = os.path.join(base_path, active_client)
         
         from ai_memory import AIMemoryVault
-        vault = AIMemoryVault()
+        vault = AIMemoryVault(vault_path=settings.get("memory_path", "../AI_Memory_Vault"))
         trained_count = vault.train_from_history(active_client, client_dir)
         return {
             "status": "success",

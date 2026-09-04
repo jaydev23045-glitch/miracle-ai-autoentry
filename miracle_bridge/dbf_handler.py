@@ -1071,22 +1071,19 @@ class MiracleDBFHandler:
 
         return list(merged_products.values())
 
-    def _sync_party_to_other_years(self, party_name: str, party_code: str, source_year_folder: str):
+    def _sync_party_to_other_years(self, party_name: str, party_code: str, source_year_folder: str, target_year_folder: str | None = None):
         """
-        After creating a new party ledger in one year folder, copy its RKACCM01 + RKACCM02
-        records into ALL other year folders that are missing it.
+        Copy RKACCM01 + RKACCM02 records for party_code from source_year_folder into target_year_folder.
         
-        Why: Miracle stores a per-year copy of RKACCM01.DBF. A new party added to YR25
-        won't exist in YR26 unless explicitly added. This method keeps all years in sync
-        so next year's push never creates a duplicate.
+        Note: Ledgers are strictly created/updated in the active selected year. Cross-year sync only runs
+        when an explicit target_year_folder is provided (e.g., copying an existing ledger from a prior year into the current year).
         """
         import dbf as dbf_lib
         
-        all_folders = self.get_available_year_folders()
-        other_folders = [f['name'] for f in all_folders if f['name'] != source_year_folder and f['is_valid']]
-        
-        if not other_folders:
+        if not target_year_folder or target_year_folder == source_year_folder:
             return
+            
+        other_folders = [target_year_folder]
         
         # Read the source record from the source year
         src_m01 = self._get_table_path('rkaccm01.dbf', source_year_folder)
@@ -1549,10 +1546,6 @@ class MiracleDBFHandler:
                             existing_code = str(record['FIELD01']).strip()
                             t01.close()
                             print(f"[create_party_ledger] Party '{name}' already exists in RKACCM01 with code {existing_code}. Returning existing code.")
-                            try:
-                                self._sync_party_to_other_years(name, existing_code, year_folder)
-                            except Exception:
-                                pass
                             return existing_code
 
                 existing_codes = {str(r['FIELD01']).strip().upper() for r in t01}
@@ -1628,11 +1621,7 @@ class MiracleDBFHandler:
         # Register in RKACCGID.DBF
         self._register_guid('YRM01', led_code, is_header=False)
 
-        # Sync to all other year folders (YR25, YR26, YR27) so ledger exists everywhere in Miracle DBFs
-        try:
-            self._sync_party_to_other_years(name, led_code, year_folder)
-        except Exception as sync_ex:
-            print(f"Warning: Failed multi-year sync for {name}: {sync_ex}")
+        # Ledger created strictly in target year_folder (selected/current year)
 
         print(f"Auto-created new {'B2B' if is_registered else 'B2C'} ledger: {name} ({led_code}) with GSTIN {gstin}")
         return led_code
@@ -4504,8 +4493,6 @@ class MiracleDBFHandler:
             else:
                 print(f"[bank resolve] ⚠️ No match found for '{bank_name}' — creating new ledger.")
                 bank_ledger_code = self.create_party_ledger(bank_name, 'Bank Statements', year_folder=year_folder)
-                # Sync to all other year folders so it's never "missing" next year
-                self._sync_party_to_other_years(bank_name, bank_ledger_code, year_folder)
 
 
         # 1b. Build name→code lookup from ALL years
@@ -4527,7 +4514,6 @@ class MiracleDBFHandler:
         if not suspense_code:
             suspense_code = self.create_party_ledger(suspense_name, 'Bank Statements', year_folder=year_folder)
             name_to_code[suspense_name.upper()] = suspense_code
-            self._sync_party_to_other_years(suspense_name, suspense_code, year_folder)
 
         def gen_id(pfx):
             num = ''.join(random.choices(string.ascii_uppercase + string.digits, k=10))
@@ -4668,7 +4654,6 @@ class MiracleDBFHandler:
                             else:
                                 party_code = self.create_party_ledger(party_name, 'Bank Statements', year_folder=year_folder, transaction_type=tx_type, group_hint=v.get('group_hint', ''))
                                 name_to_code[party_up] = party_code
-                                self._sync_party_to_other_years(party_name, party_code, year_folder)
                                 
                         # CRITICAL CROSS-YEAR SYNC FIX (Bug #28):
                         # If the resolved party code exists in another year but is missing in the current year,
@@ -4692,7 +4677,7 @@ class MiracleDBFHandler:
                                 
                                 if not exists_in_current:
                                     print(f"Syncing existing ledger {party_name} ({party_code}) from {src_year} to current year {year_folder}...")
-                                    self._sync_party_to_other_years(party_name, party_code, src_year)
+                                    self._sync_party_to_other_years(party_name, party_code, src_year, target_year_folder=year_folder)
 
                         # USER GROUP OVERRIDE SYNC:
                         # If the user changed the group in the UI grid, ensure the group code in RKACCM01.DBF
@@ -4703,7 +4688,6 @@ class MiracleDBFHandler:
                             if target_grp:
                                 try:
                                     self.update_party_ledger(party_name, party_name, group_code=target_grp, year_folder=year_folder)
-                                    self._sync_party_to_other_years(party_name, party_code, year_folder)
                                 except Exception as grp_err:
                                     print(f"⚠️ Warning: Could not update group code for {party_name} ({party_code}): {grp_err}")
                     
@@ -4979,10 +4963,10 @@ class MiracleDBFHandler:
         self.reindex_tables(year_folder)
 
         if injected_count > 0:
-            try:
-                self.sync_closing_balances_to_next_year(year_folder)
-            except Exception as sy_err:
-                print(f"[carry-forward] Non-critical sync notice: {sy_err}")
+            # try:
+            #     self.sync_closing_balances_to_next_year(year_folder)
+            # except Exception as sy_err:
+            #     print(f"[carry-forward] Non-critical sync notice: {sy_err}")
             
             y_label = year_folder
             if "YR25" in year_folder.upper(): y_label = "2025–2026 (YR25)"
@@ -6235,7 +6219,7 @@ ENDPROC
                                 
                                 if not exists_in_current:
                                     print(f"Syncing existing ledger {party_name} ({party_code}) from {src_year} to current year {year_folder}...")
-                                    self._sync_party_to_other_years(party_name, party_code, src_year)
+                                    self._sync_party_to_other_years(party_name, party_code, src_year, target_year_folder=year_folder)
 
                         # USER GROUP OVERRIDE SYNC:
                         # If the user changed the group in the UI grid, ensure the group code in RKACCM01.DBF
@@ -6246,7 +6230,6 @@ ENDPROC
                             if target_grp:
                                 try:
                                     self.update_party_ledger(party_name, party_name, group_code=target_grp, year_folder=year_folder)
-                                    self._sync_party_to_other_years(party_name, party_code, year_folder)
                                 except Exception as grp_err:
                                     print(f"⚠️ Warning: Could not update group code for {party_name} ({party_code}): {grp_err}")
                     

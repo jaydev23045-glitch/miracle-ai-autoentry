@@ -48,6 +48,16 @@ if getattr(sys, 'frozen', False):
 sys.path.insert(0, BASE_DIR)
 sys.path.insert(0, os.path.abspath(os.path.join(BASE_DIR, "..", "backend")))
 
+def sanitize_surrogates(val: Any) -> Any:
+    """Universally removes lone UTF-16/UTF-32 surrogate code points (U+D800 to U+DFFF)."""
+    if isinstance(val, str):
+        return "".join(c for c in val if not (0xD800 <= ord(c) <= 0xDFFF))
+    elif isinstance(val, dict):
+        return {sanitize_surrogates(k): sanitize_surrogates(v) for k, v in val.items()}
+    elif isinstance(val, list):
+        return [sanitize_surrogates(item) for item in val]
+    return val
+
 # Imports from local self-contained modules
 try:
     from core.config import get_client_lock
@@ -209,6 +219,7 @@ class InjectRequestPayload(BaseModel):
     sales_prefix: Optional[str] = "SS,SS"
     purchase_prefix: Optional[str] = "PP,PP"
     target_bank_name: Optional[str] = "Bank Account"
+    target_bank_code: Optional[str] = None
     target_cash_code: Optional[str] = "ACASHACT"
     backup_path: Optional[str] = ""
 
@@ -290,18 +301,17 @@ def get_local_years(base_path: str = "C:\\Miracle", client_id: str = "CMP0001"):
             f_start = b_info.get("fy_start", "")
             f_end = b_info.get("fy_end", "")
             
-            if f_start and f_end and len(f_start) >= 4 and len(f_end) >= 4:
-                fy_s_yr = f_start[:4]
-                fy_e_yr = f_end[:4]
-                label = f"{fy_s_yr}-{str(fy_e_yr)[-2:]} ({y})"
-            else:
+            if f_start and f_end and len(f_start) >= 10 and len(f_end) >= 10:
                 try:
-                    num = int(y[2:])
-                    fy_end = 2000 + num
-                    fy_start = fy_end - 1
-                    label = f"{fy_start}-{str(fy_end)[-2:]} ({y})"
+                    dt_start = datetime.datetime.strptime(f_start, "%Y-%m-%d")
+                    dt_end = datetime.datetime.strptime(f_end, "%Y-%m-%d")
+                    label = f"{dt_start.strftime('%d-%b-%Y')} To {dt_end.strftime('%d-%b-%Y')}"
                 except Exception:
-                    label = y
+                    fy_s_yr = f_start[:4]
+                    fy_e_yr = f_end[:4]
+                    label = f"{fy_s_yr}-{str(fy_e_yr)[-2:]}"
+            else:
+                label = y
             
             mapped_years.append({
                 "folder": y,
@@ -470,7 +480,7 @@ def inject_vouchers(payload: InjectRequestPayload):
         active_client_id = payload.active_client_id
         active_year_folder = payload.active_year_folder
         module_type = payload.module_type
-        vouchers = payload.vouchers
+        vouchers = sanitize_surrogates(payload.vouchers or [])
         configured_backup_path = (payload.backup_path or "").strip()
 
         # Verify client path exists locally
@@ -510,7 +520,8 @@ def inject_vouchers(payload: InjectRequestPayload):
             m_type = (module_type or "").strip().lower()
             if m_type in ("bank", "bank_statements", "bank statements"):
                 b_name = getattr(payload, "target_bank_name", None) or "Bank Account"
-                res = handler._inject_bank_statements(vouchers, b_name, active_year_folder)
+                b_code = getattr(payload, "target_bank_code", None) or ""
+                res = handler._inject_bank_statements(vouchers, b_name, active_year_folder, payload_bank_code=b_code)
             elif m_type in ("sales", "sale"):
                 res = handler._inject_sales(
                     vouchers, 

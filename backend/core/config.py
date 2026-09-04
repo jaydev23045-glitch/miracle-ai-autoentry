@@ -37,6 +37,10 @@ class SystemSettings(BaseModel):
     purchase_setup_id: int = 6
     sales_series: str = ""
     auto_create_b2b: bool = True
+    auto_create_b2c: bool = True
+    is_paid_api_key: bool = False
+    active_year_folder: str = ""
+    backup_path: str = ""
 def clean_api_key(key: str) -> str:
     if not key:
         return ""
@@ -73,7 +77,7 @@ def _load_local_env_files():
                             k, v = line.split("=", 1)
                             k = k.strip()
                             v = v.strip().strip("'\"")
-                            if k and v and k not in os.environ:
+                            if k and v and (k not in os.environ or not os.environ[k] or "AIzaSy..." in os.environ[k]):
                                 os.environ[k] = v
             except Exception:
                 pass

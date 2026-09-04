@@ -96,13 +96,16 @@ class MiracleDBFHandler:
         """Safely converts val to string and trims to max_len bytes to prevent DBF field overflow."""
         if not val:
             return ""
-        s_val = str(val).strip()
+        s_val = "".join(c for c in str(val).strip() if not (0xD800 <= ord(c) <= 0xDFFF))
         return s_val[:max_len]
 
     @staticmethod
     def clean_dbf_string(val: str, encoding: str = 'cp1252') -> str:
         if not isinstance(val, str):
             return val
+        
+        # Clean unpaired UTF-16 surrogates (U+D800 to U+DFFF) first to prevent UnicodeEncodeError
+        val = "".join(c for c in val if not (0xD800 <= ord(c) <= 0xDFFF))
         
         # Map common Cyrillic/Greek/unencodeable look-alikes to Latin letters
         lookalikes = {
@@ -140,7 +143,7 @@ class MiracleDBFHandler:
             try:
                 return cleaned.encode('ascii', errors='ignore').decode('ascii')
             except Exception:
-                return val
+                return "".join(c for c in val if not (0xD800 <= ord(c) <= 0xDFFF))
 
     @staticmethod
     def clean_record_dict(rec_dict: dict, encoding: str = 'cp1252', table=None) -> dict:
@@ -315,54 +318,113 @@ class MiracleDBFHandler:
 
     def get_latest_year_folder(self) -> str:
         """
-        Finds the best financial year folder (e.g. YR26) in the client directory.
+        Finds the best active financial year folder (e.g. YR31) in the client directory.
         
-        SMART LOGIC (not just alphabetical):
-        1. Try to find the latest year that has the critical rkacct41.dbf file present.
-        2. If no folder has the file, fall back to the alphabetically latest folder.
-        
-        This prevents the issue where Miracle creates a new empty YR27 folder
-        and our code blindly picks it, causing data to be written to the wrong year.
+        SMART PRIORITY LOGIC:
+        1. Sort folders by true financial year start date (fy_start) descending (newest FY first).
+        2. Prefer the latest folder that has BOTH critical files and actual transactions.
+        3. If no transactions exist, pick the newest valid folder (e.g. YR31/YR32).
+        4. Fallback to highest numeric YR folder, NEVER hardcoded YR26.
         """
         if not os.path.exists(self.client_path):
-            return 'YR26'
+            return 'YR31'
         
         folders = self.get_available_year_folders()
-        
         if not folders:
-            return 'YR26'
+            return 'YR31'
         
-        # Priority 1: latest folder that has BOTH critical files (rkacct41 + rkacct01)
-        valid_folders = [f for f in folders if f['is_valid']]
+        bounds = self.get_all_year_folder_bounds()
+        
+        def year_sort_key(f):
+            yname = f['name']
+            b = bounds.get(yname, {})
+            fy_start = b.get('fy_start', '')
+            if fy_start:
+                return fy_start
+            num_match = re.search(r'\d+', yname)
+            return f"9999-{num_match.group(0)}" if num_match else yname
+
+        sorted_folders = sorted(folders, key=year_sort_key, reverse=True)
+        
+        # Priority 1: Latest folder that has transactions
+        tx_folders = [f for f in sorted_folders if f.get('is_valid') and f.get('has_transactions')]
+        if tx_folders:
+            return tx_folders[0]['name']
+        
+        # Priority 2: Latest valid folder
+        valid_folders = [f for f in sorted_folders if f.get('is_valid')]
         if valid_folders:
-            # Return the latest valid one (list is already sorted alphabetically)
-            return valid_folders[-1]['name']
+            return valid_folders[0]['name']
         
-        # Priority 2: latest folder with just rkacct41 (partial)
-        t41_folders = [f for f in folders if f['t41_size'] > 0]
-        if t41_folders:
-            return t41_folders[-1]['name']
-        
-        # Fallback: just return the alphabetically latest folder
-        return folders[-1]['name']
+        return sorted_folders[0]['name']
 
     def get_all_year_folder_bounds(self) -> dict:
-        """Returns a dict mapping year folder names (e.g. 'YR26') to financial year start/end dates."""
-        available = self.get_available_year_folders()
+        """
+        Reads exact Miracle company financial year bounds directly from Miracle's master table RKCMPF01.DBF.
+        Falls back to DBF transaction table inspection if RKCMPF01 is missing.
+        """
         bounds = {}
+        rkcmpf_path = os.path.join(self.client_path, 'RKCMPF01.DBF')
+        if not os.path.exists(rkcmpf_path):
+            rkcmpf_path = os.path.join(self.client_path, 'rkcmpf01.dbf')
+
+        if os.path.exists(rkcmpf_path):
+            try:
+                table = DBF(rkcmpf_path, encoding="latin-1", ignore_missing_memofile=True)
+                for r in table:
+                    ynum = str(r.get("FIELD01", "")).strip()
+                    s_date = str(r.get("FIELD02", "")).strip()
+                    e_date = str(r.get("FIELD03", "")).strip()
+                    suffix = str(r.get("FIELD04", "")).strip()
+                    if ynum:
+                        y_name = f"YR{ynum.zfill(2)}"
+                        bounds[y_name] = {
+                            "fy_start": s_date,
+                            "fy_end": e_date,
+                            "year_num": ynum,
+                            "voucher_suffix": suffix
+                        }
+            except Exception as e:
+                print(f"Error reading RKCMPF01.DBF in {self.client_path}: {e}")
+
+        # Fill in missing folders by inspecting RKACCT41.DBF
+        available = self.get_available_year_folders()
         for yinfo in available:
             y_name = yinfo['name']
-            try:
-                yr_num = int(re.sub(r'[^0-9]', '', y_name))
-                full_yr = 2000 + yr_num if yr_num < 100 else yr_num
+            if y_name not in bounds or not bounds[y_name].get("fy_start"):
+                t41_path = self._get_table_path('RKACCT41.DBF', y_name)
+                if not os.path.exists(t41_path):
+                    t41_path = self._get_table_path('rkacct41.dbf', y_name)
+
+                fy_start = ""
+                fy_end = ""
+                if os.path.exists(t41_path):
+                    try:
+                        table = DBF(t41_path, encoding="latin-1", ignore_missing_memofile=True)
+                        sp_dates = [str(r.get("FIELD02")) for r in table if r.get("FIELD98") in ["SS", "PP"] and r.get("FIELD02")]
+                        if not sp_dates:
+                            table.reset() if hasattr(table, 'reset') else None
+                            sp_dates = [str(r.get("FIELD02")) for r in table if r.get("FIELD02")]
+
+                        if sp_dates:
+                            fy_years = []
+                            for d in sp_dates:
+                                if len(d) >= 10:
+                                    y = int(d[:4])
+                                    m = int(d[5:7])
+                                    fy = y if m >= 4 else y - 1
+                                    fy_years.append(fy)
+                            if fy_years:
+                                from collections import Counter
+                                dominant_fy = Counter(fy_years).most_common(1)[0][0]
+                                fy_start = f"{dominant_fy}-04-01"
+                                fy_end = f"{dominant_fy + 1}-03-31"
+                    except Exception as e:
+                        print(f"Error reading dates for folder {y_name}: {e}")
+
                 bounds[y_name] = {
-                    "fy_start": f"{full_yr}-04-01",
-                    "fy_end": f"{full_yr + 1}-03-31"
-                }
-            except Exception:
-                bounds[y_name] = {
-                    "fy_start": "",
-                    "fy_end": ""
+                    "fy_start": fy_start,
+                    "fy_end": fy_end
                 }
         return bounds
 
@@ -778,16 +840,18 @@ class MiracleDBFHandler:
         folder_names = [f['name'] for f in all_folders if f['name'] != active_year_folder]
         folder_names.append(active_year_folder)  # active year is last = highest priority
         
-        merged: dict = {}  # key = ledger name (upper) → ledger dict
+        merged: dict = {}  # composite key = (code_key, name_key) -> ledger dict
         
         for yr in folder_names:
             try:
                 yr_ledgers = self.read_ledgers(yr)
                 for led in yr_ledgers:
-                    name_key = (led.get('name') or '').strip().upper()
+                    code_key = str(led.get('code') or '').strip().upper()
+                    name_key = str(led.get('print_name') or led.get('name') or '').strip().upper()
+                    composite_key = f"{code_key}_{name_key}"
                     if name_key:
                         led['year_folder'] = yr
-                        merged[name_key] = led  # later year overwrites earlier (active year wins)
+                        merged[composite_key] = led  # later year overwrites earlier (active year wins)
             except Exception as e:
                 # If a year folder has no ledger file, skip it silently
                 print(f"  [cross-year] Skipped {yr}: {e}")
@@ -1071,22 +1135,19 @@ class MiracleDBFHandler:
 
         return list(merged_products.values())
 
-    def _sync_party_to_other_years(self, party_name: str, party_code: str, source_year_folder: str):
+    def _sync_party_to_other_years(self, party_name: str, party_code: str, source_year_folder: str, target_year_folder: str | None = None):
         """
-        After creating a new party ledger in one year folder, copy its RKACCM01 + RKACCM02
-        records into ALL other year folders that are missing it.
+        Copy RKACCM01 + RKACCM02 records for party_code from source_year_folder into target_year_folder.
         
-        Why: Miracle stores a per-year copy of RKACCM01.DBF. A new party added to YR25
-        won't exist in YR26 unless explicitly added. This method keeps all years in sync
-        so next year's push never creates a duplicate.
+        Note: Ledgers are strictly created/updated in the active selected year. Cross-year sync only runs
+        when an explicit target_year_folder is provided (e.g., copying an existing ledger from a prior year into the current year).
         """
         import dbf as dbf_lib
         
-        all_folders = self.get_available_year_folders()
-        other_folders = [f['name'] for f in all_folders if f['name'] != source_year_folder and f['is_valid']]
-        
-        if not other_folders:
+        if not target_year_folder or target_year_folder == source_year_folder:
             return
+            
+        other_folders = [target_year_folder]
         
         # Read the source record from the source year
         src_m01 = self._get_table_path('rkaccm01.dbf', source_year_folder)
@@ -1549,10 +1610,6 @@ class MiracleDBFHandler:
                             existing_code = str(record['FIELD01']).strip()
                             t01.close()
                             print(f"[create_party_ledger] Party '{name}' already exists in RKACCM01 with code {existing_code}. Returning existing code.")
-                            try:
-                                self._sync_party_to_other_years(name, existing_code, year_folder)
-                            except Exception:
-                                pass
                             return existing_code
 
                 existing_codes = {str(r['FIELD01']).strip().upper() for r in t01}
@@ -1628,11 +1685,7 @@ class MiracleDBFHandler:
         # Register in RKACCGID.DBF
         self._register_guid('YRM01', led_code, is_header=False)
 
-        # Sync to all other year folders (YR25, YR26, YR27) so ledger exists everywhere in Miracle DBFs
-        try:
-            self._sync_party_to_other_years(name, led_code, year_folder)
-        except Exception as sync_ex:
-            print(f"Warning: Failed multi-year sync for {name}: {sync_ex}")
+        # Ledger created strictly in target year_folder (selected/current year)
 
         print(f"Auto-created new {'B2B' if is_registered else 'B2C'} ledger: {name} ({led_code}) with GSTIN {gstin}")
         return led_code
@@ -2818,7 +2871,7 @@ class MiracleDBFHandler:
         """Helper alias for injecting opening balances."""
         return self.inject_opening_balances(vouchers, year_folder=year_folder)
 
-    def inject_vouchers(self, module: str, vouchers: list, year_folder: str | None = None, sales_prefix: str = "SS,SS", purchase_prefix: str = "PP,PP", sales_setup_id: int = 5, purchase_setup_id: int = 6, sales_series: str = "", bill_format_pattern: str = "", last_bill_number: int = 0, format_override: str | None = None, bank_name: str | None = None, target_cash_code: str | None = None, force_push: bool = False) -> int:
+    def inject_vouchers(self, module: str, vouchers: list, year_folder: str | None = None, sales_prefix: str = "SS,SS", purchase_prefix: str = "PP,PP", sales_setup_id: int = 5, purchase_setup_id: int = 6, sales_series: str = "", bill_format_pattern: str = "", last_bill_number: int = 0, format_override: str | None = None, bank_name: str | None = None, target_cash_code: str | None = None, force_push: bool = False, target_bank_code: str | None = None) -> int:
         """Injects a list of vouchers directly into RKACCT41.DBF, RKACCT02.DBF, and RKACCT52.DBF."""
         from datetime import datetime, date
 
@@ -2839,12 +2892,12 @@ class MiracleDBFHandler:
             total_injected = 0
             for yr, group in grouped.items():
                 print(f"Routing {len(group)} vouchers to {yr}")
-                total_injected += self.inject_vouchers(module, group, yr, sales_prefix, purchase_prefix, sales_setup_id, purchase_setup_id, sales_series, bill_format_pattern, last_bill_number, format_override, bank_name, target_cash_code, force_push=force_push)
+                total_injected += self.inject_vouchers(module, group, yr, sales_prefix, purchase_prefix, sales_setup_id, purchase_setup_id, sales_series, bill_format_pattern, last_bill_number, format_override, bank_name, target_cash_code, force_push=force_push, target_bank_code=target_bank_code)
                 last_bill_number += len(group) # roughly advance for the next year group if needed
             return total_injected
 
         if module == 'Bank Statements':
-            return self._inject_bank_statements(vouchers, bank_name or "Bank Account", year_folder, force_push=force_push) # type: ignore
+            return self._inject_bank_statements(vouchers, bank_name or "Bank Account", year_folder, force_push=force_push, payload_bank_code=target_bank_code or "") # type: ignore
         elif module == 'Cash Entries':
             return self._inject_cash_entries(vouchers, target_cash_code, year_folder) # type: ignore
 
@@ -2925,15 +2978,15 @@ class MiracleDBFHandler:
                 print(f"✅ Space/Punctuation-insensitive matched party: '{val}' -> code '{matched_code}' (key: {val_an})")
                 return matched_code
 
-            # 3. Smart Fuzzy Match (cutoff=0.78)
+            # 3. Smart Fuzzy Match (cutoff=0.78) — uses pre-built key list (D6)
             import difflib
-            matches = difflib.get_close_matches(val_clean, list(name_to_code.keys()), n=1, cutoff=0.78)
+            matches = difflib.get_close_matches(val_clean, name_to_code_keys_list, n=1, cutoff=0.78)
             if matches:
                 print(f"✅ Fuzzy matched Sales/Purchase party: '{val}' -> '{matches[0]}'")
                 return name_to_code[matches[0]]
 
-            # 4. Alphanumeric Fuzzy Match (cutoff=0.80)
-            an_matches = difflib.get_close_matches(val_an, list(alpha_num_to_code.keys()), n=1, cutoff=0.80)
+            # 4. Alphanumeric Fuzzy Match (cutoff=0.80) — uses pre-built key list (D6)
+            an_matches = difflib.get_close_matches(val_an, alpha_num_to_code_keys_list, n=1, cutoff=0.80)
             if an_matches:
                 matched_code = alpha_num_to_code[an_matches[0]]
                 print(f"✅ Alphanumeric fuzzy matched party: '{val}' -> code '{matched_code}' (key: {an_matches[0]})")
@@ -3110,36 +3163,61 @@ class MiracleDBFHandler:
             company_state = self.get_company_state_code()
             print(f"Company state code: {company_state}")
 
-            # State code lookup helper
-            def get_party_state_code(p_code, party_gstin=''):
-                STATE_MIRACLE_TO_GST = {
-                    "ST000014": "02", "ST000028": "03", "ST000013": "06", "ST000010": "07",
-                    "ST000029": "08", "ST000033": "09", "ST000024": "15", "ST000004": "18",
-                    "ST000035": "19", "ST000016": "20", "ST000007": "22", "ST000020": "23",
-                    "ST000012": "24", "ST000021": "27", "ST000017": "29", "ST000011": "30",
-                    "ST000031": "33", "ST000039": "38", "ST000041": "96"
-                }
+            # ── D2: Pre-build party state code map (O(1) lookup per voucher) ─────
+            # Old code opened RKACCM01.DBF and scanned it linearly for EVERY voucher.
+            # New code reads it ONCE here into a dict, then uses O(1) dict lookup.
+            STATE_MIRACLE_TO_GST = {
+                "ST000014": "02", "ST000028": "03", "ST000013": "06", "ST000010": "07",
+                "ST000029": "08", "ST000033": "09", "ST000024": "15", "ST000004": "18",
+                "ST000035": "19", "ST000016": "20", "ST000007": "22", "ST000020": "23",
+                "ST000012": "24", "ST000021": "27", "ST000017": "29", "ST000011": "30",
+                "ST000031": "33", "ST000039": "38", "ST000041": "96"
+            }
+            _party_state_map = {}  # ledger_code.upper() -> GST state code string
+            try:
+                _t01_state = dbf.Table(m01_path)
+                _t01_state.open(mode=dbf.READ_ONLY)
                 try:
-                    # Try to find ST code from RKACCM01
-                    t01_lookup = dbf.Table(m01_path)
-                    t01_lookup.open(mode=dbf.READ_ONLY)
-                    for r in t01_lookup:
-                        if not dbf.is_deleted(r) and str(r['FIELD01']).strip().upper() == p_code.upper():
-                            st_val = str(r['FIELD51']).strip()
-                            t01_lookup.close()
-                            if st_val in STATE_MIRACLE_TO_GST:
-                                return STATE_MIRACLE_TO_GST[st_val]
-                            return ''
-                    t01_lookup.close()
-                except:
-                    pass
+                    for _r in _t01_state:
+                        if dbf.is_deleted(_r):
+                            continue
+                        _lc = str(_r['FIELD01']).strip().upper()
+                        _st_val = str(_r['FIELD51']).strip()
+                        if _lc:
+                            _party_state_map[_lc] = STATE_MIRACLE_TO_GST.get(_st_val, '')
+                finally:
+                    _t01_state.close()
+                print(f"[D2] Pre-built state code map for {len(_party_state_map)} ledgers (single DBF read).")
+            except Exception as _sc_err:
+                print(f"⚠️ [D2] Could not pre-build state map: {_sc_err}. Will fall back to GSTIN.")
+
+            def get_party_state_code(p_code, party_gstin=''):
+                # O(1) dict lookup — no DBF open at all!
+                if p_code:
+                    st = _party_state_map.get(p_code.strip().upper(), '')
+                    if st:
+                        return st
                 # Fallback to parsing from gstin if available
                 if party_gstin and len(party_gstin) >= 2 and party_gstin[:2].isdigit():
                     return party_gstin[:2]
                 return ''
 
+            # ── D6: Pre-build difflib key list once ───────────────────────────────
+            # Old code called list(name_to_code.keys()) inside the inner helper for
+            # every voucher, reconstructing the list each time (O(N) allocation).
+            # Pre-build it here and update it in-place only when a new party is created.
+            name_to_code_keys_list = list(name_to_code.keys())
+            alpha_num_to_code_keys_list = list(alpha_num_to_code.keys())
+
+            # ── D3: Per-voucher product lookup cache ─────────────────────────────
+            # get_or_create_product will be called per item per voucher. Cache results
+            # to avoid re-scanning RKACCM21.DBF for the same product name repeatedly.
+            # This dict maps search_name.upper() -> product_code.
+            _product_lookup_cache: dict = {}
+
             injected_count = 0
             guids_to_register = []  # BUG FIX: must be initialized before the voucher loop
+
             try:
                 for v in vouchers:
                     # Strict Bill Number Logic: Respect explicit numbers, auto-generate if missing.
@@ -3218,15 +3296,33 @@ class MiracleDBFHandler:
                     
                     if not is_existing_code:
                         party_code = self.create_party_ledger(party_id, module, gstin=gstin, address=address, city=city, pincode=pincode, year_folder=year_folder)
-                        # Re-load local lookup map so subsequent vouchers can find it
-                        ledgers = self.read_ledgers(year_folder)
-                        name_to_code = {led['name'].upper(): led['code'] for led in ledgers}
-                        name_to_code.update({led['print_name'].upper(): led['code'] for led in ledgers})
-                        existing_codes = {led['code'].upper() for led in ledgers}
-                        gstin_to_code = {led['gstin'].upper(): led['code'] for led in ledgers if led.get('gstin') and len(led['gstin']) >= 15}
+                        # ── D1: Patch in-memory dicts instead of full read_ledgers() reload ──
+                        # Old code called self.read_ledgers(year_folder) here — reloading 3 DBF
+                        # files every time a new party was created (O(N) reads for N new parties).
+                        # New code just inserts the single new entry into the live dicts.
+                        if party_code:
+                            party_code_up = party_code.upper()
+                            party_id_up = party_id.strip().upper()
+                            existing_codes.add(party_code_up)
+                            name_to_code[party_id_up] = party_code
+                            an_key = clean_alpha_num(party_id_up)
+                            if an_key and an_key not in alpha_num_to_code:
+                                alpha_num_to_code[an_key] = party_code
+                            if gstin and len(gstin) >= 15:
+                                gstin_to_code[gstin.upper()] = party_code
+                            # Update pre-built key lists used by difflib (D6)
+                            if party_id_up not in name_to_code_keys_list:
+                                name_to_code_keys_list.append(party_id_up)
+                            if an_key and an_key not in alpha_num_to_code_keys_list:
+                                alpha_num_to_code_keys_list.append(an_key)
                     elif is_existing_code:
-                        # Dynamically update address details if they changed or were missing
-                        self.update_party_ledger_details(party_code, gstin=gstin, address=address, city=city, pincode=pincode, year_folder=year_folder)
+                        # ── D7: Skip update if nothing changed ───────────────────────────
+                        # Old code always called update_party_ledger_details — opening 2 DBF
+                        # files and scanning them linearly, even for vouchers with no
+                        # address/GSTIN data (the common case).
+                        _has_update_data = bool(gstin.strip() or str(address).strip() or str(city).strip() or str(pincode).strip())
+                        if _has_update_data:
+                            self.update_party_ledger_details(party_code, gstin=gstin, address=address, city=city, pincode=pincode, year_folder=year_folder)
                     
                     # Prevent duplicate voucher insertion
                     bill_no_padded = pad_bill_no(bill_no).strip()
@@ -3392,7 +3488,17 @@ class MiracleDBFHandler:
                         if item_gst_pct <= 0.0 and header_tax > 0 and header_taxable > 0:
                             item_gst_pct = round((header_tax / header_taxable) * 100)
                         
-                        product_code = self.get_or_create_product(item_name, hsn=hsn_code, uom=uom_code, gst_pct=item_gst_pct, year_folder=year_folder)
+                        # ── D4: Product lookup cache ──────────────────────────────────────
+                        # get_or_create_product opens RKACCM21.DBF and scans it linearly for
+                        # every single item in every voucher. With 200 vouchers × 3 items each,
+                        # that is 600 table opens. Cache results by (name, gst_pct) so we only
+                        # open the table once per unique product name across the entire push.
+                        _prod_cache_key = (item_name.strip().upper(), int(item_gst_pct))
+                        if _prod_cache_key in _product_lookup_cache:
+                            product_code = _product_lookup_cache[_prod_cache_key]
+                        else:
+                            product_code = self.get_or_create_product(item_name, hsn=hsn_code, uom=uom_code, gst_pct=item_gst_pct, year_folder=year_folder)
+                            _product_lookup_cache[_prod_cache_key] = product_code
                         
                         qty = float(item.get('qty') or 1.0)
                         rate = float(item.get('rate') or 0.0)
@@ -4364,7 +4470,7 @@ class MiracleDBFHandler:
 
         return False
 
-    def _inject_bank_statements(self, vouchers: list, payload_bank_name: str = "Bank Account", year_folder: str = "", force_push: bool = False) -> int:
+    def _inject_bank_statements(self, vouchers: list, payload_bank_name: str = "Bank Account", year_folder: str = "", force_push: bool = False, payload_bank_code: str = "") -> int:
         if isinstance(payload_bank_name, str) and (payload_bank_name.upper().startswith("YR") or not year_folder):
             year_folder = payload_bank_name
             payload_bank_name = "Bank Account"
@@ -4385,52 +4491,33 @@ class MiracleDBFHandler:
         resolved_f83 = detected_cfg["f83"]
 
         # 1. Build CROSS-YEAR ledger lookup map.
-        # CRITICAL FIX (Bug #15): read_ledgers() only reads the current year's RKACCM01.DBF.
-        # When Miracle creates a new year, it copies the ledger master at that point in time.
-        # Any party created in YR25 is NOT in YR26's copy → push code thinks it's new → creates duplicate.
-        # Solution: merge ledgers from ALL year folders so we find any party added in any year.
         print(f"[bank push] Building cross-year ledger lookup for duplicate prevention...")
         all_ledgers = self.read_ledgers_all_years(active_year_folder=year_folder)
         
-        # 1a. Resolve Bank Ledger — SMART 4-LEVEL MATCHING (Bug #16 fix)
-        # Problem: bank statement says "HDFC Bank Ltd." but Miracle ledger is "HDFC BANK A/C"
-        # Exact and substring matches both FAIL because "LTD" ≠ "A/C" and "LIMITED" ≠ "A/C"
-        # Solution: extract the bank BRAND (HDFC, ICICI, SBI, AXIS...) and match on that
-        
         KNOWN_BANK_BRANDS = [
-            # Top Indian Private Banks
             'HDFC', 'ICICI', 'AXIS', 'KOTAK', 'INDUSIND', 'YES BANK', 'BANDHAN', 'FEDERAL', 
             'IDFC', 'IDFC FIRST', 'RBL', 'RATNAKAR', 'SOUTH INDIAN', 'KARNATAKA BANK', 
             'CITY UNION', 'CUB', 'KARUR VYSYA', 'KVB', 'TAMILNAD MERCANTILE', 'TMB', 
             'JAMMU & KASHMIR', 'J&K', 'CSB', 'CATHOLIC SYRIAN', 'DHANALAKSHMI',
-            
-            # Top Indian PSU / Public Sector Banks
             'SBI', 'STATE BANK', 'BANK OF BARODA', 'BOB', 'PNB', 'PUNJAB NATIONAL', 
             'CANARA', 'UNION BANK', 'UBI', 'INDIAN BANK', 'BANK OF INDIA', 'BOI', 
             'CENTRAL BANK', 'CBI', 'UCO', 'BANK OF MAHARASHTRA', 'BOM', 'IOB', 
             'INDIAN OVERSEAS', 'PUNJAB & SIND', 'PSB', 'IDBI', 'DENA', 'VIJAYA', 
             'SYNDICATE', 'OBC', 'ORIENTAL BANK', 'ALLAHABAD', 'ANDHRA BANK', 'CORPORATION BANK',
-            
-            # Small Finance & Payments Banks
             'AU SMALL', 'AU BANK', 'EQUITAS', 'UJJIVAN', 'SURYODAY', 'JANA', 'ESAF', 
             'UTKARSH', 'FINCARE', 'CAPITAL SMALL', 'PAYTM', 'PHONEPE', 'AIRTEL PAYMENTS', 
             'FINO', 'INDIA POST', 'IPPB',
-            
-            # Co-operative & Gujarat / Regional / Gramin Banks
             'SARASWAT', 'COSMOS', 'SVC', 'SHAMRAO VITHAL', 'BHARAT CO-OP', 'NKGSB', 
             'ABHYUDAYA', 'KALUPUR', 'GUJARAT STATE CO-OP', 'GSCB', 'NUTAN NAGARIK', 
             'SURAT NATIONAL', 'RAJKOT NAGARIK', 'REVENUE CO-OP', 'BARODA GUJARAT GRAMIN', 
             'SAURASHTRA GRAMIN', 'PRATHAMA', 'KERALA GRAMIN', 'MAHARASHTRA GRAMIN', 
             'KARNATAKA GRAMIN', 'COOPERATIVE', 'CO-OP', 'GRAMIN', 'NAGARIK', 'URBAN',
-            
-            # Foreign & International Banks
             'CITIBANK', 'CITI', 'STANDARD CHARTERED', 'STANCHAR', 'HSBC', 'DBS', 
             'BARCLAYS', 'DEUTSCHE', 'JP MORGAN', 'J P MORGAN', 'BANK OF AMERICA', 
             'BOLA', 'BNP PARIBAS', 'SOCIETE GENERALE', 'MUFG', 'SMBC', 'MIZUHO', 'SBERBANK'
         ]
         
         def extract_bank_brand(name: str) -> str:
-            """Extract the core bank brand keyword from a ledger/bank name."""
             name_up = name.strip().upper()
             for brand in KNOWN_BANK_BRANDS:
                 if brand in name_up:
@@ -4442,26 +4529,33 @@ class MiracleDBFHandler:
         bank_name_up = bank_name.strip().upper()
         input_brand = extract_bank_brand(bank_name)
         
-        # Strictly filter ONLY genuine Bank Account ledgers (Group G0000004 or classification 'Bank')
-        # Explicitly exclude non-bank system accounts like Profit & Loss (PROFLOSS), Trading, Capital, GST, etc.
-        NON_BANK_KEYWORDS = ['PROFIT', 'P&L', 'LOSS', 'TRADING', 'CAPITAL', 'DRAWINGS', 'TAX', 'DUTY', 'GST', 'IGST', 'CGST', 'SGST']
+        NON_BANK_KEYWORDS = ['EXPENSE', 'EXPENSES', 'PURCHASE', 'SALES', 'SUNDRY', 'DEBTOR', 'CREDITOR', 'PROFIT', 'P&L', 'LOSS', 'TRADING', 'CAPITAL', 'DRAWINGS', 'TAX', 'DUTY', 'GST', 'IGST', 'CGST', 'SGST']
         
         bank_classified_ledgers = [
             led for led in all_ledgers
-            if (led.get('classification') == 'Bank'
-                or led.get('group_code') == 'G0000004'
-                or 'BANK' in (led.get('name') or '').upper()
-                or 'BANK' in (led.get('group_name') or '').upper())
+            if (led.get('group_code') == 'G0000004'
+                or led.get('group_name') == 'BANK ACCOUNTS'
+                or (led.get('classification') == 'Bank' and led.get('group_code') not in ['G0000017', 'G0000024', 'G0000023']))
             and not any(bad in (led.get('name') or '').upper() for bad in NON_BANK_KEYWORDS)
             and led.get('code') != 'PROFLOSS'
         ]
 
+        # Level 0: Exact Ledger Code Match (highest priority when frontend passes target_bank_code)
+        if payload_bank_code:
+            target_code_up = payload_bank_code.strip().upper()
+            for led in all_ledgers:
+                if (led.get('code') or '').strip().upper() == target_code_up:
+                    bank_ledger_code = led['code']
+                    print(f"[bank resolve] ✅ Level 0 (exact target bank code): '{payload_bank_code}' → '{led['name']}' ({led['code']})")
+                    break
+
         # Level 1: Exact name match (only among bank-classified ledgers)
-        for led in bank_classified_ledgers:
-            if led['name'].strip().upper() == bank_name_up:
-                bank_ledger_code = led['code']
-                print(f"[bank resolve] ✅ Level 1 (exact bank): '{bank_name}' → '{led['name']}' ({led['code']})")
-                break
+        if not bank_ledger_code:
+            for led in bank_classified_ledgers:
+                if led['name'].strip().upper() == bank_name_up:
+                    bank_ledger_code = led['code']
+                    print(f"[bank resolve] ✅ Level 1 (exact bank): '{bank_name}' → '{led['name']}' ({led['code']})")
+                    break
         
         # Level 2: Substring partial match (only among bank-classified ledgers)
         if not bank_ledger_code:
@@ -4504,8 +4598,6 @@ class MiracleDBFHandler:
             else:
                 print(f"[bank resolve] ⚠️ No match found for '{bank_name}' — creating new ledger.")
                 bank_ledger_code = self.create_party_ledger(bank_name, 'Bank Statements', year_folder=year_folder)
-                # Sync to all other year folders so it's never "missing" next year
-                self._sync_party_to_other_years(bank_name, bank_ledger_code, year_folder)
 
 
         # 1b. Build name→code lookup from ALL years
@@ -4527,7 +4619,6 @@ class MiracleDBFHandler:
         if not suspense_code:
             suspense_code = self.create_party_ledger(suspense_name, 'Bank Statements', year_folder=year_folder)
             name_to_code[suspense_name.upper()] = suspense_code
-            self._sync_party_to_other_years(suspense_name, suspense_code, year_folder)
 
         def gen_id(pfx):
             num = ''.join(random.choices(string.ascii_uppercase + string.digits, k=10))
@@ -4537,7 +4628,12 @@ class MiracleDBFHandler:
         last_br = 0
         last_bp = 0
         last_cv = 0
-        existing_bank_entries = []  # Changed to list of dicts for robust fuzzy matching
+        # ── D5: Build bucketed duplicate index (O(1) key lookup) ─────────────────
+        # Old code appended all existing entries to a flat list and did 4 linear scans
+        # (O(N) per voucher = O(N²) total). New code groups entries by
+        # (v_dt, amt_rounded, b_code, v_type) so each pass only searches a tiny
+        # bucket of candidates. The 'used' flag logic is fully preserved.
+        existing_bank_entries_index: dict = {}  # key -> list of entry dicts
         if os.path.exists(t41_path):
             with self.safe_cdx_context(t41_path):
                 t41_lookup = dbf.Table(t41_path)
@@ -4561,34 +4657,30 @@ class MiracleDBFHandler:
                     elif v_type in ('CV', 'BC'):
                         last_cv = max(last_cv, v_num)
                         
-                    # CRITICAL FIX: r.get() does NOT work on DBF records (always returns None).
-                    # Must access fields directly in try/except.
                     try:
                         v_dt = str(r['FIELD02']).strip()
                         p_code = str(r['FIELD04']).strip()
                         b_code = str(r['FIELD05']).strip()
-                        amt = float(str(r['FIELD06']).strip() or 0)
+                        amt = round(float(str(r['FIELD06']).strip() or 0), 2)
                         try:
                             ref_num = str(r['FIELD10']).strip().lower()
                         except:
                             ref_num = ''
                         try:
-                            # Narration stored as first 50 chars in T41 FIELD82
                             narr = str(r['FIELD82']).strip().lower()[:50]
                         except:
                             narr = ''
                         
-                        existing_bank_entries.append({
-                            'v_dt': v_dt,
-                            'amt': round(amt, 2),
-                            'p_code': p_code,
-                            'b_code': b_code,
-                            'v_type': v_type,
-                            'ref_num': ref_num,
-                            'narr': narr,
-                            'used': False
-                        })
-                    except Exception as e:
+                        entry = {
+                            'v_dt': v_dt, 'amt': amt, 'p_code': p_code,
+                            'b_code': b_code, 'v_type': v_type,
+                            'ref_num': ref_num, 'narr': narr, 'used': False
+                        }
+                        bucket_key = (v_dt, amt, b_code, v_type)
+                        if bucket_key not in existing_bank_entries_index:
+                            existing_bank_entries_index[bucket_key] = []
+                        existing_bank_entries_index[bucket_key].append(entry)
+                    except Exception:
                         pass
                         
                 t41_lookup.close()
@@ -4668,7 +4760,6 @@ class MiracleDBFHandler:
                             else:
                                 party_code = self.create_party_ledger(party_name, 'Bank Statements', year_folder=year_folder, transaction_type=tx_type, group_hint=v.get('group_hint', ''))
                                 name_to_code[party_up] = party_code
-                                self._sync_party_to_other_years(party_name, party_code, year_folder)
                                 
                         # CRITICAL CROSS-YEAR SYNC FIX (Bug #28):
                         # If the resolved party code exists in another year but is missing in the current year,
@@ -4692,7 +4783,7 @@ class MiracleDBFHandler:
                                 
                                 if not exists_in_current:
                                     print(f"Syncing existing ledger {party_name} ({party_code}) from {src_year} to current year {year_folder}...")
-                                    self._sync_party_to_other_years(party_name, party_code, src_year)
+                                    self._sync_party_to_other_years(party_name, party_code, src_year, target_year_folder=year_folder)
 
                         # USER GROUP OVERRIDE SYNC:
                         # If the user changed the group in the UI grid, ensure the group code in RKACCM01.DBF
@@ -4703,7 +4794,6 @@ class MiracleDBFHandler:
                             if target_grp:
                                 try:
                                     self.update_party_ledger(party_name, party_name, group_code=target_grp, year_folder=year_folder)
-                                    self._sync_party_to_other_years(party_name, party_code, year_folder)
                                 except Exception as grp_err:
                                     print(f"⚠️ Warning: Could not update group code for {party_name} ({party_code}): {grp_err}")
                     
@@ -4757,9 +4847,13 @@ class MiracleDBFHandler:
                     v_date_str = str(v_date)
                     amount_rnd = round(amount, 2)
                     
-                    # Pass 1: Exact Match
-                    for ex in existing_bank_entries:
-                        if not ex['used'] and ex['v_dt'] == v_date_str and ex['amt'] == amount_rnd and ex['b_code'] == bank_ledger_code and ex['v_type'] == f98 and ex['p_code'] == party_code and ex['ref_num'] == ref_no_clean and ex['narr'] == narration_clean:
+                    # ── D5: Use bucketed index for O(1) primary key lookup ───────────
+                    _bk = (v_date_str, amount_rnd, bank_ledger_code, f98)
+                    _bucket = existing_bank_entries_index.get(_bk, [])
+                    
+                    # Pass 1: Exact Match (within bucket)
+                    for ex in _bucket:
+                        if not ex['used'] and ex['p_code'] == party_code and ex['ref_num'] == ref_no_clean and ex['narr'] == narration_clean:
                             is_dup = True
                             ex['used'] = True
                             dup_reason_str = f"Already in Miracle (Exact Match)"
@@ -4767,20 +4861,20 @@ class MiracleDBFHandler:
                             
                     # Pass 2: Cheque No Match (Highly reliable)
                     if not is_dup and ref_no_clean:
-                        for ex in existing_bank_entries:
-                            if not ex['used'] and ex['v_dt'] == v_date_str and ex['amt'] == amount_rnd and ex['b_code'] == bank_ledger_code and ex['v_type'] == f98 and ex['ref_num'] == ref_no_clean:
+                        for ex in _bucket:
+                            if not ex['used'] and ex['ref_num'] == ref_no_clean:
                                 is_dup = True
                                 ex['used'] = True
                                 dup_reason_str = f"Already in Miracle (Matched Cheque No)"
                                 break
                                 
-                    # Pass 3: Party Match
+                    # Pass 3: Party Match (within bucket)
                     if not is_dup:
-                        for ex in existing_bank_entries:
-                            # UTR/Cheque number mismatch guard: if both have different reference numbers, they are NOT duplicates!
+                        for ex in _bucket:
+                            # UTR/Cheque number mismatch guard
                             if ex['ref_num'] and ref_no_clean and ex['ref_num'] != ref_no_clean:
                                 continue
-                            if not ex['used'] and ex['v_dt'] == v_date_str and ex['amt'] == amount_rnd and ex['b_code'] == bank_ledger_code and ex['v_type'] == f98 and ex['p_code'] == party_code:
+                            if not ex['used'] and ex['p_code'] == party_code:
                                 is_dup = True
                                 ex['used'] = True
                                 dup_reason_str = f"Already in Miracle (Matched Party & Amount)"
@@ -4788,11 +4882,11 @@ class MiracleDBFHandler:
                                 
                     # Pass 4: Amount Match (Safe because of the 'used' flag!)
                     if not is_dup:
-                        for ex in existing_bank_entries:
-                            # UTR/Cheque number mismatch guard: if both have different reference numbers, they are NOT duplicates!
+                        for ex in _bucket:
+                            # UTR/Cheque number mismatch guard
                             if ex['ref_num'] and ref_no_clean and ex['ref_num'] != ref_no_clean:
                                 continue
-                            if not ex['used'] and ex['v_dt'] == v_date_str and ex['amt'] == amount_rnd and ex['b_code'] == bank_ledger_code and ex['v_type'] == f98:
+                            if not ex['used']:
                                 # ONLY match by amount if the party matches OR if at least one is Suspense
                                 if ex['p_code'] == party_code or ex['p_code'] == suspense_code or party_code == suspense_code:
                                     is_dup = True
@@ -4909,7 +5003,9 @@ class MiracleDBFHandler:
                     # Native Miracle uses 'PR' (Party) for Party, 'PT' (Payment/Receipt) for Expenses/Others
                     party_dr_cr = 'C' if tx_type == 'Receipt' else 'D'
                     other_class = code_to_classification.get(party_code, 'Other')
-                    if not self.is_true_contra_entry(party_name, party_code, code_to_classification, party_group_code=v.get('group_hint', '')) and (other_class in ('Expense', 'Indirect Expenses', 'Direct Expenses') or any(kw in party_name.upper() for kw in self.BANK_EXPENSE_KEYWORDS)):
+                    if is_contra:
+                        resolved_f21 = 'BK' if other_class == 'Bank' else 'CS'
+                    elif not self.is_true_contra_entry(party_name, party_code, code_to_classification, party_group_code=v.get('group_hint', '')) and (other_class in ('Expense', 'Indirect Expenses', 'Direct Expenses') or any(kw in party_name.upper() for kw in self.BANK_EXPENSE_KEYWORDS)):
                         resolved_f21 = 'PT'
                     elif other_class == 'Bank':
                         resolved_f21 = 'BK'
@@ -4920,7 +5016,7 @@ class MiracleDBFHandler:
                     else:
                         resolved_f21 = 'PT'
                         
-                    party_f16_val = None if is_contra else v_date
+                    party_f16_val = v_date
                     party_f22_val = None if is_contra else v_date
                     
                     t01_rec_party = {
@@ -4979,10 +5075,10 @@ class MiracleDBFHandler:
         self.reindex_tables(year_folder)
 
         if injected_count > 0:
-            try:
-                self.sync_closing_balances_to_next_year(year_folder)
-            except Exception as sy_err:
-                print(f"[carry-forward] Non-critical sync notice: {sy_err}")
+            # try:
+            #     self.sync_closing_balances_to_next_year(year_folder)
+            # except Exception as sy_err:
+            #     print(f"[carry-forward] Non-critical sync notice: {sy_err}")
             
             y_label = year_folder
             if "YR25" in year_folder.upper(): y_label = "2025–2026 (YR25)"
@@ -5521,12 +5617,12 @@ class MiracleDBFHandler:
                             needs_type_fix = (is_cv_line or is_cash_contra_line)
                             needs_flag_fix = False
                             
-                            # Standardize Contra flags vs Regular flags (Native Miracle requires T01F96='N' and FIELD20='C' for all bank/cash lines)
+                            # Standardize Contra flags vs Regular flags (Native Miracle requires T01F96='N' and FIELD20='N' for all bank/cash lines)
                             target_f96 = 'N'
-                            target_f20 = 'C'
+                            target_f20 = 'N'
                             
                             # Standardize FIELD16 (Date field) and FIELD22 (Reconciliation Date)
-                            if target_type in ('BR', 'BP'):
+                            if target_type in ('BR', 'BP', 'BC'):
                                 target_f16 = f02
                                 target_f22 = None if is_contra else f02
                             elif target_type in ('CR', 'CP'):
@@ -5536,6 +5632,12 @@ class MiracleDBFHandler:
                                 target_f16 = f02 if f21 == 'BK' else None
                                 target_f22 = None
                             
+                            # Ensure Line 1 has a valid FIELD21 classification (BK for Bank, CS for Cash)
+                            l_num = str(record['FIELD09']).strip()
+                            target_f21 = f21
+                            if l_num == '1' and not f21:
+                                target_f21 = 'BK' if (m_code in ('AKU0MATH', 'AG27JBCY', 'ALBRML5Y') or 'BANK' in m_code) else ('CS' if 'CASH' in m_code else 'BK')
+
                             # Force numeric columns to 0.0 if None
                             try:
                                 target_f08 = float(f08) if f08 is not None else 0.0
@@ -5552,7 +5654,7 @@ class MiracleDBFHandler:
                                 
                             if (f20 != target_f20 or f96 != target_f96 or f16 != target_f16 or 
                                 f22 != target_f22 or f08 != target_f08 or f26 != target_f26 or 
-                                f29 != target_f29 or needs_type_fix):
+                                f29 != target_f29 or f21 != target_f21 or needs_type_fix):
                                 needs_flag_fix = True
                                 
                             if needs_flag_fix:
@@ -5565,6 +5667,7 @@ class MiracleDBFHandler:
                                         record['T01F96'] = target_f96
                                         record['FIELD16'] = target_f16
                                         record['FIELD22'] = target_f22
+                                        record['FIELD21'] = target_f21
                                         record['FIELD08'] = target_f08
                                         record['FIELD26'] = target_f26
                                         record['FIELD29'] = target_f29
@@ -6235,7 +6338,7 @@ ENDPROC
                                 
                                 if not exists_in_current:
                                     print(f"Syncing existing ledger {party_name} ({party_code}) from {src_year} to current year {year_folder}...")
-                                    self._sync_party_to_other_years(party_name, party_code, src_year)
+                                    self._sync_party_to_other_years(party_name, party_code, src_year, target_year_folder=year_folder)
 
                         # USER GROUP OVERRIDE SYNC:
                         # If the user changed the group in the UI grid, ensure the group code in RKACCM01.DBF
@@ -6246,7 +6349,6 @@ ENDPROC
                             if target_grp:
                                 try:
                                     self.update_party_ledger(party_name, party_name, group_code=target_grp, year_folder=year_folder)
-                                    self._sync_party_to_other_years(party_name, party_code, year_folder)
                                 except Exception as grp_err:
                                     print(f"⚠️ Warning: Could not update group code for {party_name} ({party_code}): {grp_err}")
                     
@@ -6394,7 +6496,9 @@ ENDPROC
                     # Native Miracle uses 'PR' (Party) for Party, 'PT' (Payment/Receipt) for Expenses/Others
                     party_dr_cr = 'C' if tx_type == 'Receipt' else 'D'
                     other_class = code_to_classification.get(party_code, 'Other')
-                    if not self.is_true_contra_entry(party_name, party_code, code_to_classification, party_group_code=v.get('group_hint', '')) and (other_class in ('Expense', 'Indirect Expenses', 'Direct Expenses') or any(kw in party_name.upper() for kw in self.BANK_EXPENSE_KEYWORDS)):
+                    if is_contra:
+                        resolved_f21 = 'CS' if other_class == 'Cash' else 'BK'
+                    elif not self.is_true_contra_entry(party_name, party_code, code_to_classification, party_group_code=v.get('group_hint', '')) and (other_class in ('Expense', 'Indirect Expenses', 'Direct Expenses') or any(kw in party_name.upper() for kw in self.BANK_EXPENSE_KEYWORDS)):
                         resolved_f21 = 'PT'
                     elif other_class == 'Bank':
                         resolved_f21 = 'BK'

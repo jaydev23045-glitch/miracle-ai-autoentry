@@ -424,18 +424,17 @@ def get_local_years(base_path: str = "C:\\Miracle", client_id: str = "CMP0001"):
             f_start = b_info.get("fy_start", "")
             f_end = b_info.get("fy_end", "")
             
-            if f_start and f_end and len(f_start) >= 4 and len(f_end) >= 4:
-                fy_s_yr = f_start[:4]
-                fy_e_yr = f_end[:4]
-                label = f"{fy_s_yr}-{str(fy_e_yr)[-2:]} ({y})"
-            else:
+            if f_start and f_end and len(f_start) >= 10 and len(f_end) >= 10:
                 try:
-                    num = int(y[2:])
-                    fy_end = 2000 + num
-                    fy_start = fy_end - 1
-                    label = f"{fy_start}-{str(fy_end)[-2:]} ({y})"
+                    dt_start = datetime.datetime.strptime(f_start, "%Y-%m-%d")
+                    dt_end = datetime.datetime.strptime(f_end, "%Y-%m-%d")
+                    label = f"{dt_start.strftime('%d-%b-%Y')} To {dt_end.strftime('%d-%b-%Y')}"
                 except Exception:
-                    label = y
+                    fy_s_yr = f_start[:4]
+                    fy_e_yr = f_end[:4]
+                    label = f"{fy_s_yr}-{str(fy_e_yr)[-2:]}"
+            else:
+                label = y
             
             mapped_years.append({
                 "folder": y,

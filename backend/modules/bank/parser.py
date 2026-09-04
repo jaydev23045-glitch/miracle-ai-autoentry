@@ -3,6 +3,95 @@ import os
 from typing import List, Dict, Any, Optional
 from core.models import BankTransactionSchema
 
+class BankEntityRecognizer:
+    """
+    DETERMINISTIC NAMED ENTITY RECOGNIZER (NER) FOR BANK STATEMENTS.
+    Uses Entity Subtraction Grammar to isolate human vendor/party entities
+    by scrubbing structured IFSC codes, UTR numbers, VPA handles, dates,
+    locations, and gateway noise.
+    """
+    IFSC_PATTERN = re.compile(r'\b[A-Z]{4}0[A-Z0-9]{6}\b', re.IGNORECASE)
+    UTR_PATTERN = re.compile(r'\b[NRS]\d{6,14}\b|\b\d{6,18}\b', re.IGNORECASE)
+    VPA_HANDLE_PATTERN = re.compile(
+        r'@[A-Za-z0-9_\-\.]+|\b(OKAXIS|OKICICI|OKSBI|KHDFCBANK|YBL|KOTAK|PAYTM|PHONEPE|GPAY|BHIM|PTYES|YESCRED|NAVIAXIS|PTAXIS|WAAXIS|AXL|IPL|IBL)\b',
+        re.IGNORECASE
+    )
+    MODE_PATTERN = re.compile(
+        r'^(ACH\s*[CD]?\s*[-_]?\s*|NEFT\s*[DR|CR]*\s*[-_]?\s*|RTGS\s*[DR|CR]*\s*[-_]?\s*|IMPS\s*[-_]?\s*|TPT\s*[-_]?\s*|ATM\s*WDL\s*[-_]?\s*|POS\s*[-_]?\s*|UPI\s*[-_]?\s*|DEBIT\s*[-_]?\s*|CREDIT\s*[-_]?\s*)',
+        re.IGNORECASE
+    )
+    LOCATION_PATTERN = re.compile(
+        r'\b(RAJKOT|AHMEDABAD|MUMBAI|DELHI|NEW DELHI|SURAT|VADODARA|BARODA|PUNE|BANGALORE|BENGALURU|HYDERABAD|CHENNAI|KOLKATA|JAIPUR|INDORE|NAGPUR|GANDHINAGAR|ANAND|NADIAD|BHAVNAGAR|JUNAGADH|MORBI|AMRELI|BHARUCH|NAVSARI|VAPI|VALSAD|MEHSANA|PATAN|SURENDRANAGAR|JAMNAGAR|PORBANDAR)\b',
+        re.IGNORECASE
+    )
+    DATE_PATTERN = re.compile(
+        r'\b\d{1,2}[/\.-]\d{1,2}[/\.-]\d{2,4}\b|\b(JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)\b|\b20[0-9]{2}\b',
+        re.IGNORECASE
+    )
+    NOISE_WORDS = re.compile(
+        r'\b(DEBIT|CREDIT|SENT|USING|TRANSFER|PAYMENT|RECEIVED|CR|DR|REF|NO|TXN|BY|TO|FROM|INB|MB|OB|TPT|VIA|THRU|FOR|AND|THE|OF|IN|ON|AT|OR|PVT|LTD|LIMITED|PRIVATE|CO|CORP|INC|REMARK|REMARKS|INSTAALERTCHG|SMS|CDT|BBN|SELF|NEHRU|NAGAR|KURLA|EAST|WEST|SOUTH|NORTH|BRANCH)\b',
+        re.IGNORECASE
+    )
+
+    @classmethod
+    def extract_vendor_entity(cls, narration: str) -> tuple[str, dict]:
+        """
+        Extracts clean human vendor entity string and dictionary of structured metadata entities.
+        """
+        if not narration or not isinstance(narration, str):
+            return ("", {})
+
+        text = " ".join(narration.split()).strip()
+        metadata = {}
+
+        # 1. Extract Mode
+        m_mode = cls.MODE_PATTERN.search(text)
+        if m_mode:
+            metadata['mode'] = m_mode.group(1).upper().strip('-_ ')
+            text = cls.MODE_PATTERN.sub('', text).strip()
+
+        # 2. Extract IFSC Code & Truncate Technical VPA Metadata After IFSC
+        m_ifsc = cls.IFSC_PATTERN.search(text)
+        if m_ifsc:
+            metadata['ifsc'] = m_ifsc.group(0).upper()
+            # Everything before IFSC code is the true Human/Vendor Name!
+            text_before_ifsc = text[:m_ifsc.start()].strip()
+            if len(text_before_ifsc) >= 3:
+                text = text_before_ifsc
+            else:
+                text = cls.IFSC_PATTERN.sub('', text)
+
+        # 3. Extract UTR / Ref No
+        m_utr = cls.UTR_PATTERN.search(text)
+        if m_utr:
+            metadata['utr'] = m_utr.group(0)
+            text = cls.UTR_PATTERN.sub('', text)
+
+        # 4. Scrub VPA Handles, Dates, Locations
+        text = cls.VPA_HANDLE_PATTERN.sub('', text)
+        text = cls.DATE_PATTERN.sub('', text)
+        text = cls.LOCATION_PATTERN.sub('', text)
+        text = cls.NOISE_WORDS.sub(' ', text)
+
+        # 5. Scrub non-alphanumeric and single/digit noise tokens or alphanumeric handles (e.g. bharatvideo003)
+        clean_text = re.sub(r'[^A-Za-z0-9\s]', ' ', text)
+        tokens = []
+        for w in clean_text.split():
+            if len(w) < 3 or w.isdigit():
+                continue
+            # Skip alphanumeric VPA user handles with mixed letters and numbers (e.g. ketan464, jatin0707)
+            if re.search(r'[A-Za-z]', w) and re.search(r'\d', w):
+                continue
+            tokens.append(w)
+        
+        # Single Short Word Specificity Guard: Reject generic single words < 5 chars (e.g. 'RAM', 'JAY', 'ROY')
+        if len(tokens) == 1 and len(tokens[0]) < 5 and tokens[0].upper() not in ('CRED', 'PGCL'):
+            clean_vendor = ""
+        else:
+            clean_vendor = " ".join(tokens).title()
+
+        return (clean_vendor, metadata)
+
 class BankParser:
     def __init__(self):
         pass
@@ -288,9 +377,13 @@ class BankParser:
                 
                 tokens = temp_narr.split()
                 ref_no = ""
-                if tokens:
+                if tokens and len(tokens) >= 2:
                     last_token = tokens[-1].strip()
-                    if re.match(r'^\d{6,18}$', last_token) or (len(last_token) >= 5 and re.match(r'^[A-Za-z0-9\-]{5,20}$', last_token, re.IGNORECASE) and re.search(r'\d', last_token)):
+                    # Vendor Name Preservation Guard: Strip ref_no ONLY if last token is a long numeric ID (>=6 digits)
+                    # or a distinct alphanumeric transaction code (e.g. N103250239). Preserve short numbers like 24 in 'STUDIO 24'.
+                    is_long_num = bool(re.match(r'^\d{6,18}$', last_token))
+                    is_alpha_code = bool(len(last_token) >= 6 and re.match(r'^[A-Za-z0-9\-]{6,20}$', last_token, re.IGNORECASE) and re.search(r'\d', last_token) and re.search(r'[A-Za-z]', last_token))
+                    if is_long_num or is_alpha_code:
                         ref_no = last_token
                         temp_narr = " ".join(tokens[:-1]).strip()
                         narration_full = temp_narr
@@ -345,7 +438,7 @@ class BankParser:
                     withdrawal=w_val,
                     balance=printed_bal,
                     mapped_ledger="",
-                    confidence_score=100,
+                    confidence_score=80,
                     flags=[]
                 ).dict())
                 

@@ -142,21 +142,20 @@ class AIMemoryVault:
     def clean_mapping_key(narration: str) -> str:
         """
         Strips ALL transient noise from a bank narration to produce a stable
-        core keyword that matches the SAME vendor/expense across any month.
-
-        Strips:
-          - Transaction type prefixes (UPI, NEFT DR, RTGS, IMPS, EFT DR ...)
-          - Bank IFSC routing codes (ICICR, KKBK, BKIDR, UTIBR, HDFC0, ...)
-          - UPI handle suffixes (@ybl, @okicici, @paytm ...)
-          - Reference / UTR numbers (5+ digit standalone numbers)
-          - Date tokens (DDMMYYYY patterns, month names, year numbers)
-          - Common city/state names that appear in narrations
-          - Short filler words (CR, DR, BY, TO, NO, REF, TXN, INB, MB, OB ...)
-          - Short tokens (< 3 chars) that carry no meaning
+        core keyword using BankEntityRecognizer entity subtraction NER.
         """
         import re
         if not narration or not isinstance(narration, str):
             return ""
+
+        # Delegate to BankEntityRecognizer Named Entity Recognizer
+        try:
+            from modules.bank.parser import BankEntityRecognizer
+            clean_entity, _ = BankEntityRecognizer.extract_vendor_entity(narration)
+            if clean_entity and len(clean_entity) >= 3 and not clean_entity.isdigit():
+                return clean_entity.upper()
+        except Exception:
+            pass
 
         txt = " ".join(narration.split()).upper()
 
@@ -168,9 +167,11 @@ class AIMemoryVault:
             r'^(ACH\s*[CD]?-|ACH\s*[CD]\s+|ACH\s*DR-|ACH\s*CR-|UPI|IMPS|NEFT DR|NEFT CR|RTGS DR|RTGS CR|RTGS|NEFT|EFT DR|EFT CR|EFT|'
             r'CASH DEPOSIT BY|CASH DEPOSIT|CASH WITHDRAWAL|TRANSFER TO|TRANSFER FROM|'
             r'TPT|INB|MB|OB|CHQ|CHEQUE|CHQS|ATM WDL|ATM|POS|ACH DR|ACH CR|ACH|'
-            r'SI DEF|NACH DR|NACH CR|NACH)[-/_\s]*',
+            r'SI DEF|NACH DR|NACH CR|NACH|DEBIT|CREDIT)[-/_\s]*',
             '', txt, flags=re.IGNORECASE
         )
+        # Strip standalone DEBIT / CREDIT / DR / CR tokens anywhere in the string
+        txt = re.sub(r'\b(DEBIT|CREDIT|DR|CR)\b', ' ', txt, flags=re.IGNORECASE)
 
         # 2. Strip leading numbers or sequence IDs (e.g. 5838 FOOT WEAR -> FOOT WEAR)
         txt = re.sub(r'^\d{3,6}\s+', '', txt)
@@ -179,11 +180,12 @@ class AIMemoryVault:
         txt = re.sub(r'@[A-Za-z0-9_\-\.]+', '', txt)
         txt = re.sub(r'[\.\-](?:SBI|OKSBI|OKICICI|OKAXIS|KHDFCBANK|YBL|KOTAK|PAYTM|PHONEPE|GPAY|BHIM|PTYES|AXIS|ICICI|HDFC)\b', '', txt, flags=re.IGNORECASE)
 
-        # 4. Strip bank IFSC routing codes and truncated fragments
-        txt = re.sub(r'\b[A-Z]{4}[0-9][A-Z0-9]{4,6}\b', '', txt)   # full IFSC
-        txt = re.sub(r'\b[A-Z]{4}[R0-9][0-9]{0,2}\b', '', txt)      # truncated IFSC fragment
+        # 4. Strip bank IFSC routing codes and truncated fragments (e.g. UTIB0000215, SBIN0001234, ICIC0000102)
+        txt = re.sub(r'\b[A-Z]{4}0[A-Z0-9]{6}\b', '', txt, flags=re.IGNORECASE)   # Standard 11-char IFSC code (5th char is '0')
+        txt = re.sub(r'\b[A-Z]{4}[0-9A-Z]{5,7}\b', lambda m: '' if re.search(r'\d', m.group(0)) and any(b in m.group(0).upper() for b in ('ICIC', 'UTIB', 'SBIN', 'HDFC', 'KKBK', 'BKID', 'BARB', 'PUNB', 'INDB', 'YESB', 'FDRL', 'MAHB', 'UCBA', 'CNRB', 'IOBA', 'UBIN')) else m.group(0), txt, flags=re.IGNORECASE)
 
-        # 5. Strip long standalone numbers (5+ digits: UTRs, ref IDs, phone numbers, account numbers)
+        # 5. Strip long standalone numbers and UTR/Ref patterns (e.g. N103250239, R90215820, 402910391)
+        txt = re.sub(r'\b[NRS]\d{6,14}\b', '', txt, flags=re.IGNORECASE)
         txt = re.sub(r'\b\d{5,}\b', '', txt)
 
         # 6. Strip numbers attached to letters (e.g. HETALBHIMANI26215 → HETALBHIMANI)
@@ -198,6 +200,7 @@ class AIMemoryVault:
         txt = re.sub(rf'\b({MONTH_NAMES})\b', '', txt)
         txt = re.sub(r'\b20[0-9][0-9]\b', '', txt)   # year like 2024, 2025
         txt = re.sub(r'\b[0-9]{1,2}/[0-9]{1,2}/[0-9]{2,4}\b', '', txt)  # date like 31/03/25
+        txt = re.sub(r'\b[0-9]{1,2}-[0-9]{1,2}-[0-9]{2,4}\b', '', txt)  # date like 31-03-25
 
         # 8. Strip common city/state names that appear in narrations
         CITIES = (
@@ -225,7 +228,7 @@ class AIMemoryVault:
         txt = re.sub(r'[^A-Z0-9\s]', ' ', txt)
 
         # 11. Remove single/double character tokens (noise like 'Q', 'L', 'I', '1')
-        txt = ' '.join(w for w in txt.split() if len(w) >= 3)
+        txt = ' '.join(w for w in txt.split() if len(w) >= 3 and not w.isdigit())
         txt = txt.strip()
 
         # 12. Syllable reconciliation & word deduplication (e.g., CRED CRED CLUB CRED -> CRED CLUB)
@@ -244,7 +247,7 @@ class AIMemoryVault:
         # Deduplicate consecutive/repeated words (e.g. CRED CRED CLUB CRED -> CRED CLUB)
         dedup_words = []
         for w in merged_words:
-            if len(w) >= 3 and (not dedup_words or w != dedup_words[-1]):
+            if len(w) >= 3 and not w.isdigit() and (not dedup_words or w != dedup_words[-1]):
                 dedup_words.append(w)
         txt = ' '.join(dedup_words).strip()
 
@@ -256,6 +259,11 @@ class AIMemoryVault:
             txt = ' '.join(words).strip()
             if not txt or len(txt) < 3 or re.match(r'^\d+$', txt):
                 return ""
+
+        # 14. Single Short Word Specificity Guard: Reject generic single words < 5 chars (e.g. 'RAM', 'JAY', 'ROY')
+        words = txt.split()
+        if len(words) == 1 and len(words[0]) < 5 and words[0].upper() not in ('CRED', 'PGCL'):
+            return ""
 
         return txt
 
@@ -721,7 +729,7 @@ class AIMemoryVault:
         self.save_memory(client_id, memory)
 
     def train_from_history(self, client_id: str, client_path: str):
-        """Scans historical DBFs across all year folders and auto-trains clean expense mappings."""
+        """Scans historical DBFs across all year folders (RKACCT41, RKACCT40, RKACCT01) and auto-trains clean expense mappings."""
         from collections import defaultdict
         import dbfread
         import traceback
@@ -736,61 +744,100 @@ class AIMemoryVault:
                 return 0
                 
             narration_map = defaultdict(lambda: defaultdict(int))
+            generic_ignore = {"SUSPENSE ACCOUNT", "SUSPENSE A/C", "UPI DEBTORS", "UPI CREDITORS", "CASH ACCOUNT", "CASH A/C", "CASH-IN-HAND", "BANK ACCOUNT", "BANK A/C"}
             
             for folder in folders:
                 try:
                     year_path = os.path.join(client_path, folder)
                     t41_path = os.path.join(year_path, "RKACCT41.DBF")
                     t40_path = os.path.join(year_path, "RKACCT40.DBF")
+                    t01_path = os.path.join(year_path, "RKACCT01.DBF")
                     m01_path = os.path.join(year_path, "RKACCM01.DBF")
                     
                     if not os.path.exists(t41_path): t41_path = os.path.join(year_path, "rkacct41.dbf")
                     if not os.path.exists(t40_path): t40_path = os.path.join(year_path, "rkacct40.dbf")
+                    if not os.path.exists(t01_path): t01_path = os.path.join(year_path, "rkacct01.dbf")
                     if not os.path.exists(m01_path): m01_path = os.path.join(year_path, "rkaccm01.dbf")
                     
                     if not os.path.exists(t41_path) or not os.path.exists(m01_path):
                         continue
                         
-                    # Build Ledger Code -> Name map
+                    # Build Ledger Code -> Name map & identify non-bank/non-cash ledgers
                     ledger_names = {}
-                    for r in dbfread.DBF(m01_path, load=True, encoding='cp1252'):
-                        if hasattr(dbfread.DBF, 'is_deleted') and getattr(dbfread.DBF, 'is_deleted')(r): continue
-                        code = str(r.get('FIELD01', '')).strip()
-                        name = str(r.get('FIELD02', '')).strip()
-                        if code and name:
-                            ledger_names[code] = name
+                    non_bank_ledgers = set()
+                    try:
+                        m01_table = dbfread.DBF(m01_path, load=True, encoding='cp1252', char_decode_errors='replace')
+                        for r in m01_table:
+                            code = str(r.get('FIELD01', '')).strip()
+                            name = str(r.get('FIELD02', '')).strip()
+                            if code and name:
+                                ledger_names[code] = name
+                                name_up = name.upper()
+                                if name_up not in generic_ignore and "SUSPENSE" not in name_up and "BANK" not in name_up and "CASH" not in name_up:
+                                    non_bank_ledgers.add(code)
+                    except Exception as m_ex:
+                        print(f"⚠️ Warning: Could not read ledger master RKACCM01 in {folder}: {m_ex}")
+                        continue
                             
-                    # 1. Extract from RKACCT41.DBF (FIELD82 is native 50-char narration)
-                    for r in dbfread.DBF(t41_path, load=True, encoding='cp1252'):
-                        party_code = str(r.get('FIELD04', '')).strip()
-                        narr82 = str(r.get('FIELD82', '')).strip()
-                        if party_code and narr82 and len(narr82) >= 3:
-                            clean_k = self.clean_mapping_key(narr82)
-                            if clean_k and len(clean_k) >= 3:
-                                narration_map[clean_k][party_code] += 1
-                                
-                    # 2. Extract from RKACCT40.DBF if present
-                    if os.path.exists(t40_path):
-                        t41_map = {}
-                        for r in dbfread.DBF(t41_path, load=True, encoding='cp1252'):
+                    # Build Voucher ID -> Narration map (from RKACCT41 and RKACCT40)
+                    voucher_narrations = {}
+                    voucher_headers = {}
+                    try:
+                        t41_table = dbfread.DBF(t41_path, load=True, encoding='cp1252', char_decode_errors='replace')
+                        for r in t41_table:
                             vid = str(r.get('FIELD01', '')).strip()
                             party_code = str(r.get('FIELD04', '')).strip()
-                            if vid and party_code:
-                                t41_map[vid] = party_code
-                        for r in dbfread.DBF(t40_path, load=True, encoding='cp1252'):
-                            vid = str(r.get('T40F01', '')).strip()
-                            narr40 = str(r.get('T40F02', '')).strip()
-                            party_code = t41_map.get(vid)
-                            if party_code and narr40 and len(narr40) >= 3:
-                                clean_k = self.clean_mapping_key(narr40)
-                                if clean_k and len(clean_k) >= 3:
-                                    narration_map[clean_k][party_code] += 1
+                            acct_code = str(r.get('FIELD05', '')).strip()
+                            narr82 = str(r.get('FIELD82', '')).strip()
+                            if vid:
+                                voucher_headers[vid] = (party_code, acct_code)
+                            if vid and narr82 and len(narr82) >= 3:
+                                voucher_narrations[vid] = narr82
+                    except Exception as t41_ex:
+                        print(f"⚠️ Warning: Could not read RKACCT41 headers in {folder}: {t41_ex}")
+
+                    if os.path.exists(t40_path):
+                        try:
+                            t40_table = dbfread.DBF(t40_path, load=True, encoding='cp1252', char_decode_errors='replace')
+                            for r in t40_table:
+                                vid = str(r.get('T40F01', '')).strip()
+                                narr40 = str(r.get('T40F02', '')).strip()
+                                if vid and narr40 and len(narr40) >= 3:
+                                    voucher_narrations[vid] = narr40
+                        except Exception as t40_ex:
+                            pass
+
+                    # 1. Primary Extraction: Scan RKACCT01.DBF (Double-Entry General Ledger Lines)
+                    if os.path.exists(t01_path):
+                        try:
+                            t01_table = dbfread.DBF(t01_path, load=True, encoding='cp1252', char_decode_errors='replace')
+                            for r in t01_table:
+                                vid = str(r.get('FIELD01', '')).strip()
+                                l_code = str(r.get('FIELD03', '')).strip()
+                                narr = voucher_narrations.get(vid, '')
+                                
+                                if l_code in non_bank_ledgers and narr and len(narr) >= 3:
+                                    clean_k = self.clean_mapping_key(narr)
+                                    if clean_k and len(clean_k) >= 3:
+                                        narration_map[clean_k][l_code] += 1
+                        except Exception as t01_ex:
+                            print(f"⚠️ Warning: Could not read RKACCT01 in {folder}: {t01_ex}")
+
+                    # 2. Secondary Extraction: Check RKACCT41 header party/account codes
+                    for vid, narr in voucher_narrations.items():
+                        clean_k = self.clean_mapping_key(narr)
+                        if clean_k and len(clean_k) >= 3:
+                            p_code, a_code = voucher_headers.get(vid, ('', ''))
+                            if p_code in non_bank_ledgers:
+                                narration_map[clean_k][p_code] += 1
+                            if a_code in non_bank_ledgers:
+                                narration_map[clean_k][a_code] += 1
+
                 except Exception as folder_ex:
                     print(f"⚠️ Warning: Skipped training folder {folder} due to DBF read error: {folder_ex}")
                     continue
 
             # Resolve best matches
-            generic_ignore = {"SUSPENSE ACCOUNT", "SUSPENSE A/C", "UPI DEBTORS", "UPI CREDITORS", "CASH ACCOUNT", "CASH A/C"}
             raw_learned = {}
             for clean_k, counts in narration_map.items():
                 best_code = max(counts.items(), key=lambda x: x[1])[0]

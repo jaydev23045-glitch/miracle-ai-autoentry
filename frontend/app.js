@@ -15,7 +15,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const toast = document.createElement('div');
         toast.className = `toast-card flex items-center gap-3 px-4 py-3.5 rounded-2xl border shadow-2xl text-sm font-bold max-w-sm ui-transition`;
-        
+
         let icon = '<i class="fa-solid fa-circle-info"></i>';
         let classes = '';
         if (type === 'success') {
@@ -55,7 +55,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         }, 5000);
     }
-    
+
     // --- STATE & SERVER URL CONFIGURATION ---
     let API_URL = window.location.origin;
     if (!API_URL || API_URL === 'null' || API_URL.startsWith('file://')) {
@@ -102,10 +102,21 @@ document.addEventListener('DOMContentLoaded', () => {
             if (text) text.textContent = "Standalone Mode (Bridge Off)";
         }
     }
-    
-    // Check local bridge on startup and poll every 10 seconds
+
+    // Check local bridge on startup (polling removed to avoid console error spam)
     checkLocalBridge();
-    setInterval(checkLocalBridge, 10000);
+
+    // Allow manual retry by clicking the badge
+    const badgeEl = document.getElementById('bridgeStatusBadge');
+    if (badgeEl) {
+        badgeEl.addEventListener('click', () => {
+            if (!isLocalBridgeOnline) {
+                const text = document.getElementById('bridgeStatusText');
+                if (text) text.textContent = "Checking Bridge...";
+                checkLocalBridge();
+            }
+        });
+    }
 
     let currentModule = 'Sales';
     let clientLedgers = [];
@@ -116,7 +127,7 @@ document.addEventListener('DOMContentLoaded', () => {
     let discoveredClients = [];
     let activeYearFolder = "";
     let activeClientId = "CMP0005";
-    
+
     function getActiveClientId() {
         if (clientSelect && clientSelect.value) return clientSelect.value;
         if (typeof activeClientId !== 'undefined' && activeClientId) return activeClientId;
@@ -134,14 +145,14 @@ document.addEventListener('DOMContentLoaded', () => {
     const clientSelect = document.getElementById('clientSelect');
     const yearSelect = document.getElementById('yearSelect');
     const memoryStatusText = document.getElementById('memoryStatusText');
-    
+
     const settingsBtn = document.getElementById('settingsBtn');
     const settingsModal = document.getElementById('settingsModal');
     const closeSettingsBtn = document.getElementById('closeSettingsBtn');
     const cancelSettingsBtn = document.getElementById('cancelSettingsBtn');
     const saveSettingsBtn = document.getElementById('saveSettingsBtn');
     const repairBalancesBtn = document.getElementById('repairBalancesBtn');
-    
+
     const geminiApiKeyInput = document.getElementById('geminiApiKey');
     const geminiModelInput = document.getElementById('geminiModel');
     const toggleApiKeyBtn = document.getElementById('toggleApiKey');
@@ -153,8 +164,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const backupPathInput = document.getElementById('backupPath');
 
     // ── Inline Backup Path Box (visible next to Push button) ──────────────
-    const inlineBackupPath  = document.getElementById('inlineBackupPath');
-    const backupPathStatus  = document.getElementById('backupPathStatus');
+    const inlineBackupPath = document.getElementById('inlineBackupPath');
+    const backupPathStatus = document.getElementById('backupPathStatus');
 
     // ── Instant Pre-Fill Settings from Chrome localStorage (0ms Load) ─────
     function prefillSettingsFromLocalStorage() {
@@ -206,10 +217,10 @@ document.addEventListener('DOMContentLoaded', () => {
     const trainBrainBtn = document.getElementById('trainBrainBtn');
     const businessProfileInput = document.getElementById('businessProfileInput');
     const defaultProductSelect = document.getElementById('defaultProductSelect');
-    
+
     const aiInstructionInput = document.getElementById('aiInstructionInput');
     const uploadBtn = document.getElementById('uploadBtn');
-    
+
     let isServerConnected = false;
 
     function updateMonitoringStatus(clientId) {
@@ -225,8 +236,8 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         const headerYearBadge = document.getElementById('headerYearBadge');
-        if (headerYearBadge && activeYearFolder) {
-            headerYearBadge.textContent = activeYearFolder;
+        if (headerYearBadge) {
+            updateHeaderBadges();
         }
     }
 
@@ -235,7 +246,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const res = await fetch(`${API_URL}/api/settings`);
             if (!res.ok) throw new Error("Failed to fetch settings from backend.");
             const data = await res.json();
-            
+
             isServerConnected = true;
             const settings = data.settings;
             discoveredClients = data.clients || [];
@@ -288,7 +299,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 syncInlineBackupBadge();
             }
             if (savedBackupPath) localStorage.setItem('backupPath', savedBackupPath);
-            
+
             const salesSetupIdInput = document.getElementById('salesSetupId');
             const purchaseSetupIdInput = document.getElementById('purchaseSetupId');
             if (salesSetupIdInput) salesSetupIdInput.value = settings.sales_setup_id || 5;
@@ -313,32 +324,32 @@ document.addEventListener('DOMContentLoaded', () => {
 
             // Update client dropdowns
             populateClientDropdowns(discoveredClients, settings.active_client_id);
-            
+
             if (activeClientId) {
                 fetchAutoSetupIds(activeClientId);
                 await fetchClientYears(activeClientId, activeYearFolder);
             }
-            
+
             // Update UI status
             updateMonitoringStatus(activeClientId);
-            
+
             // Display business profile if it exists
             if (data.business_profile) {
                 businessProfileInput.value = data.business_profile;
             } else {
                 businessProfileInput.value = '';
             }
-            
+
             // Check for saved product selection
             if (defaultProductSelect) {
                 const savedProduct = localStorage.getItem('defaultProductSelection') || '';
                 defaultProductSelect.value = savedProduct;
             }
-            
+
             // Ensure they are always visible so user can type manually
             businessProfileInput.classList.remove('hidden');
             saveProfileBtn.classList.remove('hidden');
-            
+
             // Load ledgers for active client
             await fetchLedgers();
             await fetchProducts();
@@ -366,19 +377,19 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!clients || !Array.isArray(clients)) return;
         if (clientSelect) clientSelect.innerHTML = '';
         if (settingsActiveClient) settingsActiveClient.innerHTML = '';
-        
+
         if (selectedClientId) {
             activeClientId = selectedClientId;
         } else if (!activeClientId && clients.length > 0) {
             const first = clients[0];
             activeClientId = typeof first === 'object' ? first.id : first;
         }
-        
+
         clients.forEach(client => {
             const cId = typeof client === 'object' ? client.id : client;
             const cName = typeof client === 'object' ? client.name : client;
             const displayName = (cName && cName !== cId && cName !== 'Unknown Company') ? `${cId} — ${cName}` : cId;
-            
+
             if (clientSelect) {
                 const opt1 = document.createElement('option');
                 opt1.value = cId;
@@ -414,19 +425,24 @@ document.addEventListener('DOMContentLoaded', () => {
             clientLedgers = data.data || data.ledgers || [];
             window.clientLedgers = clientLedgers; // Expose globally for Bank Statement module
             console.log(`Loaded ${clientLedgers.length} classified ledgers for financial year ${data.year || activeYearFolder}`);
-            
+
             // Populate Target Cash Account dropdown
             const targetCashSelect = document.getElementById('targetCashAccount');
             if (targetCashSelect) {
                 targetCashSelect.innerHTML = '';
                 const cashLedgers = clientLedgers.filter(led => (led.group_name && led.group_name.toUpperCase().includes('CASH')) || (led.name && led.name.toUpperCase().includes('CASH')) || (led.print_name && led.print_name.toUpperCase().includes('CASH')));
+                const seenCashKeys = new Set();
                 cashLedgers.forEach((led) => {
-                    const opt = document.createElement('option');
-                    opt.value = led.code;
-                    opt.innerText = `${led.print_name} (${led.code})`;
-                    targetCashSelect.appendChild(opt);
+                    const uniqueKey = `${led.code}_${(led.print_name || led.name || '').toUpperCase().trim()}`;
+                    if (!seenCashKeys.has(uniqueKey)) {
+                        seenCashKeys.add(uniqueKey);
+                        const opt = document.createElement('option');
+                        opt.value = led.code;
+                        opt.innerText = `${led.print_name || led.name} (${led.code})`;
+                        targetCashSelect.appendChild(opt);
+                    }
                 });
-                
+
                 if (cashLedgers.length > 0) {
                     targetCashSelect.selectedIndex = 0;
                 }
@@ -439,38 +455,45 @@ document.addEventListener('DOMContentLoaded', () => {
             const targetBankSelect = document.getElementById('targetBankAccount');
             if (targetBankSelect) {
                 targetBankSelect.innerHTML = '';
-                const NON_BANK_TERMS = ['PROFIT', 'P&L', 'LOSS', 'TRADING', 'CAPITAL', 'DRAWINGS', 'TAX', 'DUTY', 'GST', 'IGST', 'CGST', 'SGST'];
+                const NON_BANK_TERMS = ['EXPENSE', 'EXPENSES', 'PURCHASE', 'SALES', 'SUNDRY', 'DEBTOR', 'CREDITOR', 'PROFIT', 'P&L', 'LOSS', 'TRADING', 'CAPITAL', 'DRAWINGS', 'TAX', 'DUTY', 'GST', 'IGST', 'CGST', 'SGST', 'CHARGES', 'CHARGE', 'INTREST', 'INTEREST', 'COMMISSION', 'FD', 'FIXED DEPOSIT'];
                 const bankLedgers = clientLedgers.filter(led => {
                     const cat = (led.classification || '').toUpperCase();
                     const grp = (led.group_code || '').toUpperCase();
                     const grpName = (led.group_name || '').toUpperCase();
                     const name = (led.name || '').toUpperCase();
                     const printName = (led.print_name || '').toUpperCase();
-                    
+
                     const isBad = NON_BANK_TERMS.some(term => name.includes(term) || printName.includes(term)) || led.code === 'PROFLOSS';
                     if (isBad) return false;
 
-                    return cat === 'BANK' || grp === 'G0000004' || 
-                           grpName.includes('BANK') || name.includes('BANK') || printName.includes('BANK');
+                    // Strictly include Bank Accounts under G0000004 or true Bank classification
+                    return grp === 'G0000004' || grpName === 'BANK ACCOUNTS' || grpName === 'BANK ACCOUNTS (BANKS)' || (cat === 'BANK' && grp !== 'G0000017' && grp !== 'G0000024' && grp !== 'G0000023');
                 });
 
+                const seenBankKeys = new Set();
+                const uniqueBankLedgers = [];
                 bankLedgers.forEach((led) => {
-                    const opt = document.createElement('option');
-                    opt.value = led.code;
-                    opt.innerText = `🏦 ${led.print_name || led.name} (${led.code})`;
-                    targetBankSelect.appendChild(opt);
+                    const uniqueKey = (led.code || '').toUpperCase().trim();
+                    if (uniqueKey && !seenBankKeys.has(uniqueKey)) {
+                        seenBankKeys.add(uniqueKey);
+                        uniqueBankLedgers.push(led);
+                        const opt = document.createElement('option');
+                        opt.value = led.code;
+                        opt.innerText = `🏦 ${led.print_name || led.name} (${led.code})`;
+                        targetBankSelect.appendChild(opt);
+                    }
                 });
-                
+
                 // Always add custom bank account option for write-in
                 const customOpt = document.createElement('option');
                 customOpt.value = "__CUSTOM__";
                 customOpt.innerText = "✍️ Enter Custom Bank Ledger Name...";
                 targetBankSelect.appendChild(customOpt);
 
-                if (bankLedgers.length > 0) {
+                if (uniqueBankLedgers.length > 0) {
                     targetBankSelect.selectedIndex = 0;
-                    window.currentBankName = bankLedgers[0].print_name || bankLedgers[0].name;
-                    window.currentBankCode = bankLedgers[0].code;
+                    window.currentBankName = uniqueBankLedgers[0].print_name || uniqueBankLedgers[0].name;
+                    window.currentBankCode = uniqueBankLedgers[0].code;
                 } else {
                     window.currentBankName = "Bank Account";
                 }
@@ -523,7 +546,7 @@ document.addEventListener('DOMContentLoaded', () => {
     async function saveSettings(silent = false) {
         const salesSetupIdInput = document.getElementById('salesSetupId');
         const purchaseSetupIdInput = document.getElementById('purchaseSetupId');
-        
+
         const autoCreateB2bCheck = document.getElementById('autoCreateB2bCheck');
         if (autoCreateB2bCheck) {
             autoCreateB2b = autoCreateB2bCheck.checked;
@@ -573,20 +596,20 @@ document.addEventListener('DOMContentLoaded', () => {
             });
             if (!res.ok) throw new Error("Failed to save settings on backend.");
             const data = await res.json();
-            
+
             // Sync nav dropdown
             clientSelect.value = payload.active_client_id;
             updateMonitoringStatus(payload.active_client_id);
-            
+
             // Save local copy just in case
             localStorage.setItem('geminiApiKey', payload.gemini_api_key);
             localStorage.setItem('miracleBasePath', payload.miracle_base_path);
             localStorage.setItem('memoryPath', payload.memory_path);
             localStorage.setItem('backupPath', payload.backup_path);
-            
+
             // Re-fetch client settings, profile, mappings, ledgers and products for newly selected client
             await loadSettingsFromServer();
-            
+
             if (!silent) {
                 saveSettingsBtn.innerText = "Saved!";
                 saveSettingsBtn.classList.add('bg-green-500');
@@ -618,21 +641,21 @@ document.addEventListener('DOMContentLoaded', () => {
             const purchaseSetupIdStatus = document.getElementById('purchaseSetupIdStatus');
             const salesSetupIdInput = document.getElementById('salesSetupId');
             const purchaseSetupIdInput = document.getElementById('purchaseSetupId');
-            
+
             if (salesSetupIdStatus) salesSetupIdStatus.innerHTML = '<span class="text-yellow-500"><i class="fa-solid fa-spinner fa-spin mr-1"></i> AI Scanning history...</span>';
             if (purchaseSetupIdStatus) purchaseSetupIdStatus.innerHTML = '<span class="text-yellow-500"><i class="fa-solid fa-spinner fa-spin mr-1"></i> AI Scanning history...</span>';
-            
+
             const res = await fetch(`${API_URL}/api/client-setup-ids?client_id=${clientId}`);
             if (!res.ok) throw new Error("Failed to fetch setup IDs");
             const data = await res.json();
-            
+
             if (salesSetupIdInput) {
                 salesSetupIdInput.value = data.sales_setup_id;
             }
             if (purchaseSetupIdInput) {
                 purchaseSetupIdInput.value = data.purchase_setup_id;
             }
-            
+
             if (salesSetupIdStatus) salesSetupIdStatus.innerHTML = `<span class="text-green-400 font-semibold"><i class="fa-solid fa-check mr-1"></i> AI Auto-Detected: ${data.sales_setup_id}</span>`;
             if (purchaseSetupIdStatus) purchaseSetupIdStatus.innerHTML = `<span class="text-green-400 font-semibold"><i class="fa-solid fa-check mr-1"></i> AI Auto-Detected: ${data.purchase_setup_id}</span>`;
         } catch (err) {
@@ -641,16 +664,8 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function formatYearFolderLabel(folder) {
-        if (!folder) return '2026-27 (YR26)';
-        const match = folder.trim().match(/^YR(\d{2})$/i);
-        if (match) {
-            const yy = parseInt(match[1], 10);
-            const startYY = yy - 1;
-            const startFull = startYY < 50 ? 2000 + startYY : 1900 + startYY;
-            const endYYStr = yy.toString().padStart(2, '0');
-            return `${startFull}-${endYYStr} (${folder.toUpperCase()})`;
-        }
-        return folder;
+        if (!folder) return '';
+        return folder.toUpperCase();
     }
 
     async function fetchClientYears(clientId, selectedYear = "") {
@@ -665,65 +680,38 @@ document.addEventListener('DOMContentLoaded', () => {
             if (!res.ok) throw new Error("Failed to fetch client years");
             const data = await res.json();
             let years = data.years || [];
-            if (!years || years.length === 0) {
-                years = [
-                    { folder: 'YR27', label: '2027-28 (YR27)', is_valid: true },
-                    { folder: 'YR26', label: '2026-27 (YR26)', is_valid: true, recommended: true },
-                    { folder: 'YR25', label: '2025-26 (YR25)', is_valid: true }
-                ];
-            }
 
             // Determine target year (selectedYear > activeYearFolder > recommended > first)
             let targetYear = (selectedYear || activeYearFolder || "").trim().toUpperCase();
             if (!targetYear) {
                 const rec = years.find(y => y.recommended);
-                targetYear = rec ? rec.folder : (years[0] ? years[0].folder : "YR26");
+                targetYear = rec ? rec.folder : (years[0] ? years[0].folder : "");
             }
-            
-            // Ensure targetYear exists in the options so previous/historical years like YR25, YR24 are NEVER discarded
-            const existsInClient = years.some(y => (y.folder || "").toUpperCase() === targetYear);
-            if (!existsInClient && targetYear) {
-                years.unshift({
-                    folder: targetYear,
-                    label: formatYearFolderLabel(targetYear),
-                    is_valid: true
+
+            yearSelect.innerHTML = '';
+            if (!years || years.length === 0) {
+                const opt = document.createElement('option');
+                opt.value = targetYear || 'YR31';
+                opt.innerText = targetYear || 'YR31';
+                opt.className = 'bg-slate-800';
+                yearSelect.appendChild(opt);
+            } else {
+                years.forEach(y => {
+                    const fld = (y.folder || '').toUpperCase();
+                    const opt = document.createElement('option');
+                    opt.value = fld;
+                    opt.innerText = y.label || fld;
+                    opt.className = 'bg-slate-800';
+                    if (fld === targetYear) opt.selected = true;
+                    yearSelect.appendChild(opt);
                 });
             }
-            
-            yearSelect.innerHTML = '';
-            years.forEach(y => {
-                const fld = (y.folder || 'YR26').toUpperCase();
-                const opt = document.createElement('option');
-                opt.value = fld;
-                opt.innerText = y.label || formatYearFolderLabel(fld);
-                opt.className = 'bg-slate-800';
-                if (fld === targetYear) opt.selected = true;
-                yearSelect.appendChild(opt);
-            });
-            
-            yearSelect.value = targetYear;
-            activeYearFolder = yearSelect.value || targetYear;
+
+            yearSelect.value = targetYear || (years[0] ? years[0].folder : '');
+            activeYearFolder = yearSelect.value;
             updateHeaderBadges();
         } catch (err) {
             console.error("Error fetching client years:", err);
-            if (yearSelect) {
-                let targetYear = (selectedYear || activeYearFolder || "YR26").toUpperCase();
-                const defaultYears = ['YR27', 'YR26', 'YR25', 'YR24'];
-                if (!defaultYears.includes(targetYear)) defaultYears.unshift(targetYear);
-                
-                yearSelect.innerHTML = '';
-                defaultYears.forEach(yr => {
-                    const opt = document.createElement('option');
-                    opt.value = yr;
-                    opt.innerText = formatYearFolderLabel(yr);
-                    opt.className = 'bg-slate-800';
-                    if (yr === targetYear) opt.selected = true;
-                    yearSelect.appendChild(opt);
-                });
-                yearSelect.value = targetYear;
-                activeYearFolder = targetYear;
-                updateHeaderBadges();
-            }
         }
     }
 
@@ -735,8 +723,8 @@ document.addEventListener('DOMContentLoaded', () => {
             clientBadge.innerText = txt || clientSelect.value;
         }
         if (yearBadge) {
-            let periodText = yearSelect && yearSelect.value ? yearSelect.value : (activeYearFolder || '2026-27 (YR26)');
-            
+            let periodText = yearSelect && yearSelect.options && yearSelect.selectedIndex >= 0 ? yearSelect.options[yearSelect.selectedIndex].text : (activeYearFolder || 'YR31');
+
             if (currentExtractedData && Array.isArray(currentExtractedData) && currentExtractedData.length > 0) {
                 const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
                 const fullMonthNames = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
@@ -777,7 +765,7 @@ document.addEventListener('DOMContentLoaded', () => {
         settingsActiveClient.value = clientSelect.value;
         updateMonitoringStatus(clientSelect.value);
         fetchAutoSetupIds(clientSelect.value);
-        await fetchClientYears(clientSelect.value);
+        await fetchClientYears(clientSelect.value, activeYearFolder);
         updateHeaderBadges();
         saveSettings(true); // Save silently in background
         await fetchLedgers();
@@ -789,7 +777,7 @@ document.addEventListener('DOMContentLoaded', () => {
         clientSelect.value = settingsActiveClient.value;
         updateMonitoringStatus(settingsActiveClient.value);
         fetchAutoSetupIds(settingsActiveClient.value);
-        await fetchClientYears(settingsActiveClient.value);
+        await fetchClientYears(settingsActiveClient.value, activeYearFolder);
         updateHeaderBadges();
     });
 
@@ -805,6 +793,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function selectModule(modName) {
         currentModule = modName || 'Sales';
+        currentGridGroupFilter = 'all';
+        currentGridAccountFilter = 'all';
+        currentGridFilter = 'all';
         moduleNavs.forEach(n => {
             if (n.dataset.module === currentModule) {
                 n.classList.remove('text-slate-400', 'border-transparent');
@@ -814,10 +805,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 n.classList.add('text-slate-400', 'border-transparent');
             }
         });
-        
+
         if (moduleTitle) moduleTitle.innerText = currentModule;
         updateHeaderBadges();
-        
+
         const grandTotals = document.getElementById('grandTotalsContainer');
         const targetCashSelect = document.getElementById('targetCashAccount');
         const opBalContainer = document.getElementById('openingBalanceContainer');
@@ -832,7 +823,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if (globalProductBulkBar) globalProductBulkBar.classList.remove('hidden');
             if (bankBulkBar) bankBulkBar.classList.add('hidden');
         }
-        
+
         if (currentModule === 'Opening Balances') {
             if (grandTotals) grandTotals.classList.add('hidden');
         } else {
@@ -887,7 +878,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if (recalcBtn) recalcBtn.classList.add('hidden');
             if (autoResolveBtn) autoResolveBtn.classList.add('hidden');
         }
-        
+
         const docPanel = document.getElementById('docViewerPanel');
         const resizer = document.getElementById('panelResizer');
         if (docPanel && !window.isDocViewerExplicitlyOpened && (!currentExtractedData || currentExtractedData.length === 0)) {
@@ -947,13 +938,13 @@ document.addEventListener('DOMContentLoaded', () => {
     // Expose to window for bulletproof inline onclick execution
     window.openSettings = openSettings;
     window.closeSettings = closeSettings;
-    window.saveSettings = function(silent) { saveSettings(silent); };
-    
+    window.saveSettings = function (silent) { saveSettings(silent); };
+
     if (settingsBtn) settingsBtn.addEventListener('click', (e) => { e.preventDefault(); openSettings(); });
     if (closeSettingsBtn) closeSettingsBtn.addEventListener('click', (e) => { e.preventDefault(); closeSettings(); });
     if (cancelSettingsBtn) cancelSettingsBtn.addEventListener('click', (e) => { e.preventDefault(); closeSettings(); });
     if (saveSettingsBtn) saveSettingsBtn.addEventListener('click', (e) => { e.preventDefault(); saveSettings(false); });
-    
+
     if (repairBalancesBtn) {
         repairBalancesBtn.addEventListener('click', async () => {
             const clientVal = clientSelect ? clientSelect.value : "";
@@ -963,15 +954,15 @@ document.addEventListener('DOMContentLoaded', () => {
             }
             const activeYear = yearSelect ? yearSelect.value : "";
             const yearStr = activeYear ? `for year ${activeYear}` : "for all years";
-            
+
             if (!confirm(`Are you sure you want to repair the closing balance flags for all pushed bank and cash entries ${yearStr}? This will update existing records in-place and trigger table reindexing.`)) {
                 return;
             }
-            
+
             repairBalancesBtn.disabled = true;
             const originalText = repairBalancesBtn.innerHTML;
             repairBalancesBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin mr-1"></i> Repairing...';
-            
+
             try {
                 const currentMiraclePath = (typeof miracleBasePathInput !== 'undefined' && miracleBasePathInput && miracleBasePathInput.value)
                     ? miracleBasePathInput.value.trim() : 'C:\\Miracle';
@@ -994,7 +985,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     narrUrl += `&year_folder=${encodeURIComponent(activeYear)}`;
                 }
                 await fetch(narrUrl, { method: 'POST' });
-                
+
                 if (res.ok && data.status === 'success') {
                     showToast(`Repair Successful!\n\n${data.message}\nNarrations & DBF tables updated successfully!\n\nNote: Please restart or reload your Miracle software to see the updated balances & narrations.`, "success");
                 } else {
@@ -1010,7 +1001,7 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    
+
     if (geminiApiKeyInput) {
         geminiApiKeyInput.addEventListener('input', () => {
             localStorage.setItem('geminiApiKey', geminiApiKeyInput.value.trim());
@@ -1052,15 +1043,15 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
                 return;
             }
-            
+
             refreshClientsBtn.disabled = true;
             const originalText = refreshClientsBtn.innerHTML;
             refreshClientsBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Refreshing...';
-            
+
             if (refreshClientsStatus) {
                 refreshClientsStatus.innerHTML = `<span class="text-slate-400"><i class="fa-solid fa-spinner fa-spin"></i> Scanning path...</span>`;
             }
-            
+
             try {
                 let res;
                 if (isLocalBridgeOnline) {
@@ -1072,15 +1063,15 @@ document.addEventListener('DOMContentLoaded', () => {
                         body: JSON.stringify({ path: path })
                     });
                 }
-                
+
                 if (!res.ok) {
                     const errorData = await res.json().catch(() => ({}));
                     throw new Error(errorData.detail || errorData.error || "Failed to scan directory. Make sure the path exists.");
                 }
-                
+
                 const data = await res.json();
                 const clients = (data.clients || []).map(c => typeof c === 'string' ? { id: c, name: c } : c);
-                
+
                 if (clients.length === 0) {
                     if (refreshClientsStatus) {
                         refreshClientsStatus.innerHTML = `<span class="text-amber-400 font-semibold"><i class="fa-solid fa-triangle-exclamation"></i> No client folders starting with "CMP" found</span>`;
@@ -1089,7 +1080,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     discoveredClients = clients;
                     const currentSelected = settingsActiveClient.value;
                     populateClientDropdowns(clients, currentSelected);
-                    
+
                     if (refreshClientsStatus) {
                         refreshClientsStatus.innerHTML = `<span class="text-emerald-400 font-semibold"><i class="fa-solid fa-circle-check"></i> Found ${clients.length} client folders (CMPxxxx)</span>`;
                     }
@@ -1105,7 +1096,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         });
     }
-    
+
     toggleApiKeyBtn.addEventListener('click', () => {
         if (geminiApiKeyInput.type === 'password') {
             geminiApiKeyInput.type = 'text';
@@ -1115,7 +1106,7 @@ document.addEventListener('DOMContentLoaded', () => {
             toggleApiKeyBtn.innerHTML = '<i class="fa-solid fa-eye"></i>';
         }
     });
-    
+
     autoDetectBtn.addEventListener('click', async () => {
         autoDetectBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Discovering...';
         autoDetectBtn.disabled = true;
@@ -1124,16 +1115,16 @@ document.addEventListener('DOMContentLoaded', () => {
             const res = await fetch(`${API_URL}/api/auto_discover`, { method: 'POST' });
             if (!res.ok) throw new Error("Failed to auto-discover");
             const data = await res.json();
-            
+
             const sp = data.discovered.sales_prefix || 'SS,SS';
             const pp = data.discovered.purchase_prefix || 'PP,PP';
-            
+
             // Safety check: warn if prefixes look wrong
             const purchasePattern = /^(PP|PB|PU|PI|PO|PA)/i;
             const salesPattern = /^(SS|SL|SR|SA|SB|SC|SD)/i;
             const salesLooksWrong = purchasePattern.test(sp.trim()) && !salesPattern.test(sp.trim());
             const purchaseLooksWrong = salesPattern.test(pp.trim()) && !purchasePattern.test(pp.trim());
-            
+
             let warningHtml = '';
             if (salesLooksWrong) {
                 warningHtml += `
@@ -1152,7 +1143,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     The system will auto-correct to <code>PP,PP</code> when you push Purchase entries.
                 </div>`;
             }
-            
+
             detectedRulesDisplay.classList.remove('hidden');
             detectedRulesDisplay.innerHTML = `
                 <div class="text-emerald-400 font-semibold mb-1"><i class="fa-solid fa-check-circle"></i> Successfully Discovered Rules</div>
@@ -1170,7 +1161,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 </div>
                 ${warningHtml}
             `;
-        } catch(err) {
+        } catch (err) {
             console.error(err);
             detectedRulesDisplay.classList.remove('hidden');
             detectedRulesDisplay.innerHTML = `<div class="text-red-400"><i class="fa-solid fa-circle-exclamation"></i> Error auto-detecting rules. Make sure DBF exists.</div>`;
@@ -1185,23 +1176,23 @@ document.addEventListener('DOMContentLoaded', () => {
     const salesPrefixInput = document.getElementById('salesPrefixInput');
     const purchasePrefixInput = document.getElementById('purchasePrefixInput');
     const prefixSaveStatus = document.getElementById('prefixSaveStatus');
-    
+
     if (savePrefixBtn) {
         savePrefixBtn.addEventListener('click', async () => {
             const sp = (salesPrefixInput.value || 'SS,SS').trim();
             const pp = (purchasePrefixInput.value || 'PP,PP').trim();
-            
+
             if (!sp || !pp) {
                 prefixSaveStatus.className = 'text-sm text-red-400';
                 prefixSaveStatus.textContent = '⚠️ Please enter both prefixes.';
                 prefixSaveStatus.classList.remove('hidden');
                 return;
             }
-            
+
             savePrefixBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Saving...';
             savePrefixBtn.disabled = true;
             prefixSaveStatus.classList.add('hidden');
-            
+
             try {
                 const res = await fetch(`${API_URL}/api/set-prefix`, {
                     method: 'POST',
@@ -1210,15 +1201,15 @@ document.addEventListener('DOMContentLoaded', () => {
                 });
                 if (!res.ok) throw new Error('Failed to save prefix');
                 const data = await res.json();
-                
+
                 prefixSaveStatus.className = 'text-sm text-emerald-400';
                 prefixSaveStatus.textContent = `✅ Saved! Sales: ${sp}, Purchase: ${pp} for ${data.client_id}`;
                 prefixSaveStatus.classList.remove('hidden');
-                
+
                 // Clear inputs
                 salesPrefixInput.value = '';
                 purchasePrefixInput.value = '';
-            } catch(err) {
+            } catch (err) {
                 prefixSaveStatus.className = 'text-sm text-red-400';
                 prefixSaveStatus.textContent = `❌ Error: ${err.message}`;
                 prefixSaveStatus.classList.remove('hidden');
@@ -1231,7 +1222,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
 
     const trainMappingsBtn = document.getElementById('trainMappingsBtn');
-    
+
     // Batch Date Setter logic
     const btnApplyBatchDate = document.getElementById('btnApplyBatchDate');
     const batchDateInput = document.getElementById('batchDateInput');
@@ -1287,18 +1278,18 @@ document.addEventListener('DOMContentLoaded', () => {
             if (!res.ok) throw new Error("Failed to load memory vault");
             const payload = await res.json();
             currentMemoryVaultData = payload.memory || {};
-            
+
             const clientBadge = document.getElementById('mvClientIdBadge');
             if (clientBadge) clientBadge.textContent = payload.client_id || clientSelect.value;
-            
+
             const expCount = Object.keys(currentMemoryVaultData.expense_mappings || {}).length;
             const prodCount = Object.keys(currentMemoryVaultData.product_catalog || {}).length;
             const supCount = Object.keys(currentMemoryVaultData.supplier_catalog || {}).length;
-            
+
             document.getElementById('mvExpenseCount').textContent = expCount;
             document.getElementById('mvProductCount').textContent = prodCount;
             document.getElementById('mvSupplierCount').textContent = supCount;
-            
+
             renderMemoryVaultTable(currentMemoryTab);
         } catch (err) {
             console.error("Error loading Memory Vault:", err);
@@ -1313,10 +1304,10 @@ document.addEventListener('DOMContentLoaded', () => {
         const tbody = document.getElementById('mvTableBody');
         const searchInput = document.getElementById('mvSearchInput');
         const searchVal = (searchInput ? searchInput.value : "").trim().toLowerCase();
-        
+
         const aiSection = document.getElementById('mvAiAssistantSection');
         const simSection = document.getElementById('mvSimulatorSection');
-        
+
         if (aiSection) {
             if (category === 'ai_assistant') aiSection.classList.remove('hidden');
             else aiSection.classList.add('hidden');
@@ -1325,15 +1316,15 @@ document.addEventListener('DOMContentLoaded', () => {
             if (category === 'simulator') simSection.classList.remove('hidden');
             else simSection.classList.add('hidden');
         }
-        
+
         if (!tbody || !currentMemoryVaultData) return;
-        
+
         // Reset selections
         selectedMemoryItems.clear();
         updateBulkDeleteButton();
         const selectAllCheck = document.getElementById('mvSelectAllCheck');
         if (selectAllCheck) selectAllCheck.checked = false;
-        
+
         // Update active tab buttons
         document.querySelectorAll('.mv-tab-btn').forEach(btn => {
             if (btn.dataset.tab === category) {
@@ -1344,19 +1335,19 @@ document.addEventListener('DOMContentLoaded', () => {
         });
 
         let rowsHtml = '';
-        
+
         if (category === 'expense_mappings' || category === 'ai_assistant') {
             const mappings = currentMemoryVaultData.expense_mappings || {};
             const keys = Object.keys(mappings).sort();
             const filteredKeys = keys.filter(k => k.toLowerCase().includes(searchVal) || String(mappings[k]).toLowerCase().includes(searchVal));
-            
+
             if (filteredKeys.length === 0) {
                 rowsHtml = `<tr><td colspan="5" class="px-4 py-8 text-center text-slate-500 italic">No expense mappings found. Type a prompt in the AI Assistant above or click "Auto-Train Memory" to learn from DBF history!</td></tr>`;
             } else {
                 filteredKeys.forEach(k => {
                     const targetLedger = mappings[k];
                     const sourceTag = k.includes(' ') ? '<span class="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-500/10 text-amber-300 border border-amber-500/20">🤖 AI Rule</span>' : '<span class="px-2 py-0.5 rounded text-[10px] font-bold bg-purple-500/10 text-purple-300 border border-purple-500/20">📦 DBF Learned</span>';
-                    
+
                     rowsHtml += `
                         <tr class="hover:bg-slate-900/60 transition group" data-cat="expense_mapping" data-key="${k}">
                             <td class="px-3 py-2.5 text-center">
@@ -1378,7 +1369,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const catalog = currentMemoryVaultData.product_catalog || {};
             const keys = Object.keys(catalog).sort();
             const filteredKeys = keys.filter(k => k.includes(searchVal) || String(catalog[k].display_name || '').toLowerCase().includes(searchVal));
-            
+
             if (filteredKeys.length === 0) {
                 rowsHtml = `<tr><td colspan="5" class="px-4 py-8 text-center text-slate-500 italic">No learned product catalog entries yet. Products are learned automatically when pushing Sales/Purchases!</td></tr>`;
             } else {
@@ -1390,7 +1381,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     const uom = entry.uom || 'PCS';
                     const rate = entry.last_rate ? `₹${entry.last_rate}` : '-';
                     const count = entry.seen_count || 1;
-                    
+
                     rowsHtml += `
                         <tr class="hover:bg-slate-900/60 transition group" data-cat="product_catalog" data-key="${k}">
                             <td class="px-3 py-2.5 text-center">
@@ -1412,7 +1403,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const catalog = currentMemoryVaultData.supplier_catalog || {};
             const keys = Object.keys(catalog).sort();
             const filteredKeys = keys.filter(k => k.includes(searchVal) || String(catalog[k].display_name || '').toLowerCase().includes(searchVal));
-            
+
             if (filteredKeys.length === 0) {
                 rowsHtml = `<tr><td colspan="5" class="px-4 py-8 text-center text-slate-500 italic">No supplier entries learned yet. Vendors are learned automatically from Purchase invoices!</td></tr>`;
             } else {
@@ -1422,7 +1413,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     const gstin = entry.gstin || '-';
                     const city = entry.city || '-';
                     const stateCode = entry.state_code ? `State: ${entry.state_code}` : '';
-                    
+
                     rowsHtml += `
                         <tr class="hover:bg-slate-900/60 transition group" data-cat="supplier_catalog" data-key="${k}">
                             <td class="px-3 py-2.5 text-center">
@@ -1460,7 +1451,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 const cat = btn.dataset.cat;
                 const key = btn.dataset.key;
                 if (!confirm(`Are you sure you want to delete '${key}' from AI Memory?`)) return;
-                
+
                 try {
                     const res = await fetch(`${API_URL}/api/memory-vault/item?category=${encodeURIComponent(cat)}&key=${encodeURIComponent(key)}`, { method: 'DELETE' });
                     if (res.ok) {
@@ -1478,7 +1469,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const bulkBtn = document.getElementById('mvBulkDeleteBtn');
         const countSpan = document.getElementById('mvSelectedCount');
         if (!bulkBtn || !countSpan) return;
-        
+
         const count = selectedMemoryItems.size;
         countSpan.textContent = count;
         if (count > 0) bulkBtn.classList.remove('hidden');
@@ -1500,11 +1491,11 @@ document.addEventListener('DOMContentLoaded', () => {
     const mvAiRuleResultCard = document.getElementById('mvAiRuleResultCard');
     const mvAiResultBody = document.getElementById('mvAiResultBody');
     const mvAiResultSummary = document.getElementById('mvAiResultSummary');
-    
+
     const mvSimulateBtn = document.getElementById('mvSimulateBtn');
     const mvSimulateInput = document.getElementById('mvSimulateInput');
     const mvSimulateResult = document.getElementById('mvSimulateResult');
-    
+
     const mvSelectAllCheck = document.getElementById('mvSelectAllCheck');
     const mvBulkDeleteBtn = document.getElementById('mvBulkDeleteBtn');
     const mvExportBtn = document.getElementById('mvExportBtn');
@@ -1542,8 +1533,13 @@ document.addEventListener('DOMContentLoaded', () => {
             memoryVaultModal.style.display = 'none';
         }
     });
-    if (modalAutoTrainMemoryBtn) modalAutoTrainMemoryBtn.addEventListener('click', () => triggerMemoryAutoTrain(modalAutoTrainMemoryBtn));
-    if (trainMappingsBtn) trainMappingsBtn.addEventListener('click', () => triggerMemoryAutoTrain(trainMappingsBtn));
+    const autoTrainTriggers = document.querySelectorAll('.trigger-auto-train-memory, #modalAutoTrainMemoryBtn, #vaultAutoTrainMemoryBtn, #trainMappingsBtn');
+    autoTrainTriggers.forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            if (e) e.preventDefault();
+            triggerMemoryAutoTrain(btn);
+        });
+    });
 
     if (mvSearchInput) {
         mvSearchInput.addEventListener('input', () => renderMemoryVaultTable(currentMemoryTab));
@@ -1589,7 +1585,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
 
                 showToast(`✨ ${data.message}`, "success");
-                
+
                 // Render Generated Rule Details & Concrete Examples Card
                 if (mvAiRuleResultCard && mvAiResultBody) {
                     mvAiRuleResultCard.classList.remove('hidden');
@@ -1857,7 +1853,7 @@ document.addEventListener('DOMContentLoaded', () => {
     trainBrainBtn.addEventListener('click', async () => {
         trainBrainBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Analyzing...';
         trainBrainBtn.disabled = true;
-        
+
         try {
             const res = await fetch(`${API_URL}/api/train_brain`, { method: 'POST' });
             if (!res.ok) {
@@ -1865,11 +1861,11 @@ document.addEventListener('DOMContentLoaded', () => {
                 throw new Error(errData.detail || "Failed to train brain");
             }
             const data = await res.json();
-            
+
             businessProfileInput.classList.remove('hidden');
             saveProfileBtn.classList.remove('hidden');
             businessProfileInput.value = data.profile;
-        } catch(err) {
+        } catch (err) {
             console.error(err);
             alert(`Error training brain: ${err.message}`);
         } finally {
@@ -1882,7 +1878,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const originalHtml = saveProfileBtn.innerHTML;
         saveProfileBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Saving...';
         saveProfileBtn.disabled = true;
-        
+
         try {
             const payload = { profile: businessProfileInput.value };
             const res = await fetch(`${API_URL}/api/save_profile`, {
@@ -1891,7 +1887,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 body: JSON.stringify(payload)
             });
             if (!res.ok) throw new Error("Failed to save profile");
-            
+
             saveProfileBtn.innerHTML = '<i class="fa-solid fa-check"></i> Saved!';
             setTimeout(() => {
                 saveProfileBtn.innerHTML = originalHtml;
@@ -1910,7 +1906,7 @@ document.addEventListener('DOMContentLoaded', () => {
     function populateDefaultProductSelect() {
         if (!defaultProductSelect) return;
         const savedProduct = localStorage.getItem('defaultProductSelection') || '';
-        
+
         let html = '<option value="">-- Auto-Detect (AI) --</option>';
         if (clientProducts && clientProducts.length > 0) {
             clientProducts.forEach(prod => {
@@ -2347,6 +2343,11 @@ document.addEventListener('DOMContentLoaded', () => {
             }
 
             populateGlobalLedgersDatalist();
+            currentGridGroupFilter = 'all';
+            currentGridAccountFilter = 'all';
+            if (typeof populateGridDropdownFilters === 'function') {
+                populateGridDropdownFilters();
+            }
             renderGrid(currentExtractedData);
             recalcGrandTotals();
 
@@ -2384,40 +2385,40 @@ document.addEventListener('DOMContentLoaded', () => {
     uploadBtn.addEventListener('click', () => {
         fileInput.click();
     });
-    
+
     const trainSpecBtn = document.getElementById('trainSpecBtn');
     const trainSpecInput = document.getElementById('trainSpecInput');
-    
-    if(trainSpecBtn) {
+
+    if (trainSpecBtn) {
         trainSpecBtn.addEventListener('click', () => {
             trainSpecInput.click();
         });
-        
+
         trainSpecInput.addEventListener('change', async (e) => {
             const files = e.target.files;
             if (files.length === 0) return;
-            
+
             const specFile = files[0];
             const loadingMsg = loadingState.querySelector('h3');
             const loadingSub = loadingState.querySelector('p');
             loadingMsg.innerText = `Training AI...`;
             loadingSub.innerText = `Memorizing specifications from ${specFile.name}`;
             loadingState.classList.remove('hidden');
-            
+
             const formData = new FormData();
             formData.append("file", specFile);
-            
+
             try {
                 const res = await fetch(`${API_URL}/api/train_specifications`, {
                     method: "POST",
                     body: formData
                 });
-                
+
                 if (!res.ok) {
                     const errorData = await res.json().catch(() => ({}));
                     throw new Error(errorData.detail || "Failed to train specifications");
                 }
-                
+
                 const data = await res.json();
                 alert(`✨ Successfully trained AI Memory JSON from ${specFile.name}!\n\nLearned ${data.learned_rules_count || 0} direct ledger/product rules and updated client guidelines.`);
             } catch (err) {
@@ -2432,23 +2433,23 @@ document.addEventListener('DOMContentLoaded', () => {
     fileInput.addEventListener('change', async (e) => {
         const files = e.target.files;
         if (files.length === 0) return;
-        
+
         const loadingMsg = loadingState.querySelector('h3');
         const loadingSub = loadingState.querySelector('p');
-        
+
         let allFormattedData = [];
         let globalIndexCounter = 0;
-        
+
         try {
             for (let i = 0; i < files.length; i++) {
                 const currentFile = files[i];
                 loadingMsg.innerText = `Gemini AI is Extracting Data (${i + 1} of ${files.length})...`;
                 loadingSub.innerText = `Reading ${currentFile.name} and applying client memory rules.`;
                 loadingState.classList.remove('hidden');
-                
+
                 docViewerTitle.innerHTML = `<i class="fa-regular fa-file"></i> ${files.length > 1 ? 'Multiple Files' : currentFile.name}`;
                 docViewerTitle.nextElementSibling.innerText = `${i + 1} of ${files.length}`;
-                
+
                 docPlaceholder.innerHTML = `
                     <i class="fa-solid fa-file-pdf text-5xl text-red-400 mb-3 block"></i>
                     <p class="text-base text-slate-400">Previewing: ${currentFile.name}</p>
@@ -2458,7 +2459,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 formData.append("file", currentFile);
                 formData.append("module", currentModule);
                 formData.append("instruction", aiInstructionInput.value.trim());
-                
+
                 if ((currentModule === 'Bank Statements' || currentModule === 'Cash Entries') && clientLedgers.length > 0) {
                     const ledgerNames = clientLedgers.map(l => l.name).join(", ");
                     formData.append("ledgers_list", ledgerNames);
@@ -2519,15 +2520,15 @@ document.addEventListener('DOMContentLoaded', () => {
                 const resData = await res.json();
                 const data = resData.data || resData; // Extract inner payload from /api/upload
                 window.currentBankName = data.bank_name || "Bank Account";
-                
+
                 // --- Smart Year Auto-Detection ---
                 let yearSwitched = false;
-                if (resData.detected_year && resData.detected_year !== activeYearFolder) {
+                if (resData.detected_year && resData.detected_year !== activeYearFolder && !window.userOverrodeYear) {
                     const originalYear = activeYearFolder;
                     activeYearFolder = resData.detected_year;
-                    
+
                     await fetchClientYears(clientSelect.value, activeYearFolder);
-                    
+
                     await fetchLedgers();
                     await fetchProducts();
                     yearSwitched = true;
@@ -2539,20 +2540,20 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (resData.detected_client && resData.detected_client !== clientSelect.value) {
                     const originalClient = clientSelect.value;
                     const newClient = resData.detected_client;
-                    
+
                     clientSelect.value = newClient;
                     settingsActiveClient.value = newClient;
                     fetchAutoSetupIds(newClient);
-                    
-                    await fetchClientYears(newClient, activeYearFolder); 
+
+                    await fetchClientYears(newClient, activeYearFolder);
                     saveSettings(true); // Save silently in background
-                    
+
                     await fetchLedgers();
                     await fetchProducts();
                     clientSwitched = true;
                     console.log(`Auto-switched client from ${originalClient} to ${newClient}`);
                 }
-                
+
                 if (clientSwitched || yearSwitched) {
                     let msg = "🤖 Smart Auto-Detection Triggered:\n";
                     if (clientSwitched) {
@@ -2574,286 +2575,286 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
 
                 window.lastProcessedData = data;
-            
-            // Find the array of invoices in whatever object Gemini returned
-            let extractedArray = null;
-            if (Array.isArray(data)) {
-                extractedArray = data;
-            } else if (data && typeof data === 'object') {
-                if (Array.isArray(data.extracted_data)) extractedArray = data.extracted_data;
-                else if (Array.isArray(data.data)) extractedArray = data.data;
-                else if (Array.isArray(data.invoices)) extractedArray = data.invoices;
-                else if (Array.isArray(data.results)) extractedArray = data.results;
-                else {
-                    // Try to find ANY array value in the object
-                    const anyArray = Object.values(data).find(val => Array.isArray(val));
-                    if (anyArray && anyArray.length > 0 && typeof anyArray[0] === 'object') {
-                        extractedArray = anyArray;
-                    } else if ((data.date || data.Date) && (data.party_name || data.party || data.PartyName)) {
-                        extractedArray = [data]; // Fix: Fallback for single object payloads
+
+                // Find the array of invoices in whatever object Gemini returned
+                let extractedArray = null;
+                if (Array.isArray(data)) {
+                    extractedArray = data;
+                } else if (data && typeof data === 'object') {
+                    if (Array.isArray(data.extracted_data)) extractedArray = data.extracted_data;
+                    else if (Array.isArray(data.data)) extractedArray = data.data;
+                    else if (Array.isArray(data.invoices)) extractedArray = data.invoices;
+                    else if (Array.isArray(data.results)) extractedArray = data.results;
+                    else {
+                        // Try to find ANY array value in the object
+                        const anyArray = Object.values(data).find(val => Array.isArray(val));
+                        if (anyArray && anyArray.length > 0 && typeof anyArray[0] === 'object') {
+                            extractedArray = anyArray;
+                        } else if ((data.date || data.Date) && (data.party_name || data.party || data.PartyName)) {
+                            extractedArray = [data]; // Fix: Fallback for single object payloads
+                        }
                     }
                 }
-            }
-                 // Consolidate duplicate invoice entries or Excel rows with matching Bill No, Date, and Party
-            if (extractedArray && Array.isArray(extractedArray)) {
-                if (currentModule !== 'Bank Statements' && currentModule !== 'Cash Entries' && currentModule !== 'Opening Balances') {
-                    const grouped = {};
-                    extractedArray.forEach(inv => {
-                        if (!inv) return;
-                        const rawBillNo = String(inv.bill_no || inv.billNo || inv.invoice_no || inv.Bill_No || "").trim();
-                        const date = String(inv.date || inv.Date || "").trim();
-                        const party = String(inv.party_name || inv.party || inv.PartyName || inv.Party_Name || "").trim();
-                        const total = Number(inv.total || inv.total_amount || inv.Total || inv.taxable_amount || 0);
-                        
-                        // Normalize billNo key by stripping common prefixes (e.g. CR/, SS/, PP/, INV/) so CR/2026-27/395 and 2026-27/395 merge cleanly
-                        const normBillNo = rawBillNo.replace(/^(CR\/|SS\/|PP\/|INV\/|BILL\/)/i, '').trim();
-                        
-                        // Generate key: if normBillNo is empty, do NOT merge (give it a unique random suffix so they stay separate)
-                        const key = normBillNo ? `${normBillNo.toUpperCase()}|${date}|${party.toUpperCase()}` : `EMPTY_INV_${Math.random()}`;
-                        
-                        let invItems = inv.items;
-                        if (!invItems || !Array.isArray(invItems) || invItems.length === 0) {
-                            invItems = [{
-                                name: inv.product_name || inv.item_name || inv.product || "General Items",
-                                qty: Number(inv.qty || inv.quantity || 1),
-                                rate: Number(inv.rate || inv.price || inv.taxable_amount || inv.taxable || 0),
-                                amount: Number(inv.amount || inv.taxable_amount || inv.taxable || 0),
-                                gst_pct: Number(inv.gst_pct || inv.rate_pct || 18.0),
-                                hsn_code: String(inv.hsn_code || inv.hsn || ""),
-                                uom: String(inv.uom || inv.unit || "NOS")
-                            }];
-                        }
-                        
-                        if (!grouped[key]) {
-                            grouped[key] = {
-                                ...inv,
-                                items: [...invItems]
-                            };
-                        } else {
-                            // If it's a duplicate check: same bill_no, same party, AND same total amount
-                            const existingTotal = Number(grouped[key].total || grouped[key].total_amount || grouped[key].Total || grouped[key].taxable_amount || 0);
-                            if (Math.abs(existingTotal - total) < 0.01) {
-                                // EXACT DUPLICATE invoice (same bill_no, party, and amount). Skip to prevent doubling voucher.
-                                console.log("🛡️ Dropped exact duplicate AI invoice:", inv);
-                                return;
+                // Consolidate duplicate invoice entries or Excel rows with matching Bill No, Date, and Party
+                if (extractedArray && Array.isArray(extractedArray)) {
+                    if (currentModule !== 'Bank Statements' && currentModule !== 'Cash Entries' && currentModule !== 'Opening Balances') {
+                        const grouped = {};
+                        extractedArray.forEach(inv => {
+                            if (!inv) return;
+                            const rawBillNo = String(inv.bill_no || inv.billNo || inv.invoice_no || inv.Bill_No || "").trim();
+                            const date = String(inv.date || inv.Date || "").trim();
+                            const party = String(inv.party_name || inv.party || inv.PartyName || inv.Party_Name || "").trim();
+                            const total = Number(inv.total || inv.total_amount || inv.Total || inv.taxable_amount || 0);
+
+                            // Normalize billNo key by stripping common prefixes (e.g. CR/, SS/, PP/, INV/) so CR/2026-27/395 and 2026-27/395 merge cleanly
+                            const normBillNo = rawBillNo.replace(/^(CR\/|SS\/|PP\/|INV\/|BILL\/)/i, '').trim();
+
+                            // Generate key: if normBillNo is empty, do NOT merge (give it a unique random suffix so they stay separate)
+                            const key = normBillNo ? `${normBillNo.toUpperCase()}|${date}|${party.toUpperCase()}` : `EMPTY_INV_${Math.random()}`;
+
+                            let invItems = inv.items;
+                            if (!invItems || !Array.isArray(invItems) || invItems.length === 0) {
+                                invItems = [{
+                                    name: inv.product_name || inv.item_name || inv.product || "General Items",
+                                    qty: Number(inv.qty || inv.quantity || 1),
+                                    rate: Number(inv.rate || inv.price || inv.taxable_amount || inv.taxable || 0),
+                                    amount: Number(inv.amount || inv.taxable_amount || inv.taxable || 0),
+                                    gst_pct: Number(inv.gst_pct || inv.rate_pct || 18.0),
+                                    hsn_code: String(inv.hsn_code || inv.hsn || ""),
+                                    uom: String(inv.uom || inv.unit || "NOS")
+                                }];
                             }
-                            
-                            // Otherwise, it's a multi-item invoice. Sum the taxable amounts and CGST/SGST/IGST and push the items.
-                            const taxable1 = Number(grouped[key].taxable_amount || grouped[key].taxable || grouped[key].Taxable || 0);
-                            const taxable2 = Number(inv.taxable_amount || inv.taxable || inv.Taxable || 0);
-                            grouped[key].taxable_amount = taxable1 + taxable2;
-                            
-                            const cgst1 = Number(grouped[key].cgst || 0);
-                            const cgst2 = Number(inv.cgst || 0);
-                            grouped[key].cgst = cgst1 + cgst2;
-                            
-                            const sgst1 = Number(grouped[key].sgst || 0);
-                            const sgst2 = Number(inv.sgst || 0);
-                            grouped[key].sgst = sgst1 + sgst2;
-                            
-                            const igst1 = Number(grouped[key].igst || 0);
-                            const igst2 = Number(inv.igst || 0);
-                            grouped[key].igst = igst1 + igst2;
-                            
-                            const discount1 = Number(grouped[key].discount || 0);
-                            const discount2 = Number(inv.discount || 0);
-                            grouped[key].discount = discount1 + discount2;
- 
-                            const freight1 = Number(grouped[key].freight || 0);
-                            const freight2 = Number(inv.freight || 0);
-                            grouped[key].freight = freight1 + freight2;
- 
-                            const tcs1 = Number(grouped[key].tcs || 0);
-                            const tcs2 = Number(inv.tcs || 0);
-                            grouped[key].tcs = tcs1 + tcs2;
- 
-                            const tds1 = Number(grouped[key].tds || 0);
-                            const tds2 = Number(inv.tds || 0);
-                            grouped[key].tds = tds1 + tds2;
- 
-                            grouped[key].total = existingTotal + total;
-                            
-                            grouped[key].items.push(...invItems);
-                        }
-                    });
-                    extractedArray = Object.values(grouped);
-                } else if (currentModule === 'Bank Statements' || currentModule === 'Cash Entries') {
-                    // AI Page-Overlap Deduplication (Only run for PDF statements to prevent dropping genuine same-day identical transactions from Excel)
-                    const isPdf = typeof currentFile !== 'undefined' && currentFile && currentFile.name && currentFile.name.toLowerCase().endsWith('.pdf');
-                    if (isPdf) {
-                        const uniqueTransactions = [];
-                        const seenHashes = new Set();
-                        extractedArray.forEach(row => {
-                            if (!row) return;
-                            // Normalize fields for strict exact matching
-                            const date = String(row.date || row.Date || "").trim();
-                            const amount = Number(row.amount || row.Amount || 0).toFixed(2);
-                            const narration = String(row.narration || "").trim().toLowerCase();
-                            const type = String(row.transaction_type || "").trim().toLowerCase();
-                            const ref = String(row.reference_no || row.reference || "").trim().toLowerCase();
-                            const mapped = String(row.mapped_ledger || "").trim().toLowerCase();
-                            
-                            const hash = `${date}|${amount}|${type}|${ref}|${narration}|${mapped}`;
-                            
-                            if (!seenHashes.has(hash)) {
-                                seenHashes.add(hash);
-                                uniqueTransactions.push(row);
+
+                            if (!grouped[key]) {
+                                grouped[key] = {
+                                    ...inv,
+                                    items: [...invItems]
+                                };
                             } else {
-                                console.log("Dropped AI duplicate bank transaction:", row);
+                                // If it's a duplicate check: same bill_no, same party, AND same total amount
+                                const existingTotal = Number(grouped[key].total || grouped[key].total_amount || grouped[key].Total || grouped[key].taxable_amount || 0);
+                                if (Math.abs(existingTotal - total) < 0.01) {
+                                    // EXACT DUPLICATE invoice (same bill_no, party, and amount). Skip to prevent doubling voucher.
+                                    console.log("🛡️ Dropped exact duplicate AI invoice:", inv);
+                                    return;
+                                }
+
+                                // Otherwise, it's a multi-item invoice. Sum the taxable amounts and CGST/SGST/IGST and push the items.
+                                const taxable1 = Number(grouped[key].taxable_amount || grouped[key].taxable || grouped[key].Taxable || 0);
+                                const taxable2 = Number(inv.taxable_amount || inv.taxable || inv.Taxable || 0);
+                                grouped[key].taxable_amount = taxable1 + taxable2;
+
+                                const cgst1 = Number(grouped[key].cgst || 0);
+                                const cgst2 = Number(inv.cgst || 0);
+                                grouped[key].cgst = cgst1 + cgst2;
+
+                                const sgst1 = Number(grouped[key].sgst || 0);
+                                const sgst2 = Number(inv.sgst || 0);
+                                grouped[key].sgst = sgst1 + sgst2;
+
+                                const igst1 = Number(grouped[key].igst || 0);
+                                const igst2 = Number(inv.igst || 0);
+                                grouped[key].igst = igst1 + igst2;
+
+                                const discount1 = Number(grouped[key].discount || 0);
+                                const discount2 = Number(inv.discount || 0);
+                                grouped[key].discount = discount1 + discount2;
+
+                                const freight1 = Number(grouped[key].freight || 0);
+                                const freight2 = Number(inv.freight || 0);
+                                grouped[key].freight = freight1 + freight2;
+
+                                const tcs1 = Number(grouped[key].tcs || 0);
+                                const tcs2 = Number(inv.tcs || 0);
+                                grouped[key].tcs = tcs1 + tcs2;
+
+                                const tds1 = Number(grouped[key].tds || 0);
+                                const tds2 = Number(inv.tds || 0);
+                                grouped[key].tds = tds1 + tds2;
+
+                                grouped[key].total = existingTotal + total;
+
+                                grouped[key].items.push(...invItems);
                             }
                         });
-                        extractedArray = uniqueTransactions;
+                        extractedArray = Object.values(grouped);
+                    } else if (currentModule === 'Bank Statements' || currentModule === 'Cash Entries') {
+                        // AI Page-Overlap Deduplication (Only run for PDF statements to prevent dropping genuine same-day identical transactions from Excel)
+                        const isPdf = typeof currentFile !== 'undefined' && currentFile && currentFile.name && currentFile.name.toLowerCase().endsWith('.pdf');
+                        if (isPdf) {
+                            const uniqueTransactions = [];
+                            const seenHashes = new Set();
+                            extractedArray.forEach(row => {
+                                if (!row) return;
+                                // Normalize fields for strict exact matching
+                                const date = String(row.date || row.Date || "").trim();
+                                const amount = Number(row.amount || row.Amount || 0).toFixed(2);
+                                const narration = String(row.narration || "").trim().toLowerCase();
+                                const type = String(row.transaction_type || "").trim().toLowerCase();
+                                const ref = String(row.reference_no || row.reference || "").trim().toLowerCase();
+                                const mapped = String(row.mapped_ledger || "").trim().toLowerCase();
+
+                                const hash = `${date}|${amount}|${type}|${ref}|${narration}|${mapped}`;
+
+                                if (!seenHashes.has(hash)) {
+                                    seenHashes.add(hash);
+                                    uniqueTransactions.push(row);
+                                } else {
+                                    console.log("Dropped AI duplicate bank transaction:", row);
+                                }
+                            });
+                            extractedArray = uniqueTransactions;
+                        }
                     }
                 }
-            }
-            
-            let formattedData = [];
-            if (extractedArray && Array.isArray(extractedArray)) {
-                formattedData = extractedArray.map((row) => {
-                    if (currentModule === 'Bank Statements' || currentModule === 'Cash Entries') {
-                        const resolvedLedger = row.mapped_ledger || "Suspense Account";
-                        const cleanLedger = resolvedLedger.trim().toUpperCase();
-                        
-                        let status = 'Review';
+
+                let formattedData = [];
+                if (extractedArray && Array.isArray(extractedArray)) {
+                    formattedData = extractedArray.map((row) => {
+                        if (currentModule === 'Bank Statements' || currentModule === 'Cash Entries') {
+                            const resolvedLedger = row.mapped_ledger || "Suspense Account";
+                            const cleanLedger = resolvedLedger.trim().toUpperCase();
+
+                            let status = 'Review';
+                            let isB2C = false;
+                            let autoCreateB2B = false;
+
+                            if (cleanLedger === "SUSPENSE ACCOUNT") {
+                                status = 'Review';
+                            } else {
+                                const match = clientLedgers.find(led =>
+                                    led.name.trim().toUpperCase() === cleanLedger ||
+                                    led.print_name.trim().toUpperCase() === cleanLedger ||
+                                    led.code.trim().toUpperCase() === cleanLedger
+                                );
+                                if (match) {
+                                    status = 'Ready'; // Mapped
+                                } else {
+                                    status = 'Ready';
+                                    isB2C = false; // B2C is only for invoice modules, not Bank/Cash
+                                }
+                            }
+
+                            return {
+                                id: ++globalIndexCounter,
+                                date: row.date || row.Date || "",
+                                reference_no: row.reference_no || row.reference || "",
+                                narration: row.narration || "",
+                                party_name: resolvedLedger,
+                                mapped_ledger: resolvedLedger,
+                                party: resolvedLedger,
+                                transaction_type: row.transaction_type || "Receipt",
+                                amount: Number(row.amount || row.Amount || 0),
+                                status: status,
+                                isB2C: isB2C,
+                                autoCreateB2B: autoCreateB2B,
+                                group_hint: row.group_hint || ""
+                            };
+                        } else if (currentModule === 'Opening Balances') {
+                            return {
+                                id: ++globalIndexCounter,
+                                ledger_name: row.ledger_name || "",
+                                matched_code: row.matched_code || "",
+                                balance: Number(row.balance || 0),
+                                dr_cr: row.dr_cr || "D",
+                                group_hint: row.group_hint || "",
+                                status: row.matched_code ? 'Ready' : 'Review'
+                            };
+                        }
+
+                        const party = row.party_name || row.party || row.PartyName || row.Party_Name || "UNKNOWN_PARTY: Missing";
+                        const billNo = row.bill_no || row.billNo || row.invoice_no || row.Bill_No || "";
+                        const taxable = row.taxable_amount || row.taxable || row.Taxable || 0;
+                        const cgst = row.cgst || 0;
+                        const sgst = row.sgst || 0;
+                        const igst = row.igst || 0;
+                        const gst = cgst + sgst + igst || row.gst || row.GST || 0;
+                        const discount = row.discount || row.Discount || 0;
+                        const freight = row.freight || row.Freight || 0;
+                        const tcs = row.tcs || row.Tcs || row.TCS || 0;
+                        const tds = row.tds || row.Tds || row.TDS || 0;
+                        const total = row.total || row.total_amount || row.Total || 0;
+
+                        const partyGstin = String(row.party_gstin || row.gstin || "").trim();
+                        const isUnregistered = !partyGstin || /^(urd|unregistered|b2c|consumer|none|na|-)$/i.test(partyGstin);
+
+                        const partyStr = String(party).trim();
+                        let finalParty = partyStr;
+                        let status = 'Ready';
                         let isB2C = false;
                         let autoCreateB2B = false;
-                        
-                        if (cleanLedger === "SUSPENSE ACCOUNT") {
+
+                        if (partyStr.startsWith('UNKNOWN_PARTY:') || partyStr.startsWith('UNKNOWN_NARRATION:') || partyStr.includes('Missing') || partyStr === "") {
                             status = 'Review';
                         } else {
-                            const match = clientLedgers.find(led => 
-                                led.name.trim().toUpperCase() === cleanLedger || 
-                                led.print_name.trim().toUpperCase() === cleanLedger ||
-                                led.code.trim().toUpperCase() === cleanLedger
+                            const cleanParty = partyStr.toUpperCase();
+                            const match = clientLedgers.find(led =>
+                                led.name.trim().toUpperCase() === cleanParty ||
+                                led.print_name.trim().toUpperCase() === cleanParty ||
+                                led.code.trim().toUpperCase() === cleanParty
                             );
+
                             if (match) {
-                                status = 'Ready'; // Mapped
+                                finalParty = match.name;
                             } else {
-                                status = 'Ready';
-                                isB2C = false; // B2C is only for invoice modules, not Bank/Cash
+                                if (isUnregistered) {
+                                    // B2C logic
+                                    if (autoCreateB2c) {
+                                        finalParty = partyStr;
+                                        status = 'Ready';
+                                        isB2C = true;
+                                    } else {
+                                        finalParty = `UNKNOWN_PARTY: ${partyStr}`;
+                                        status = 'Review';
+                                        isB2C = true;
+                                    }
+                                } else {
+                                    if (autoCreateB2b) {
+                                        finalParty = partyStr;
+                                        status = 'Ready';
+                                        isB2C = false;
+                                        autoCreateB2B = true;
+                                    } else {
+                                        // Unmapped registered party needs review
+                                        finalParty = `UNKNOWN_PARTY: ${partyStr}`;
+                                        status = 'Review';
+                                        isB2C = false;
+                                    }
+                                }
                             }
                         }
 
                         return {
                             id: ++globalIndexCounter,
                             date: row.date || row.Date || "",
-                            reference_no: row.reference_no || row.reference || "",
-                            narration: row.narration || "",
-                            party_name: resolvedLedger,
-                            mapped_ledger: resolvedLedger,
-                            party: resolvedLedger,
-                            transaction_type: row.transaction_type || "Receipt",
-                            amount: Number(row.amount || row.Amount || 0),
+                            billNo: String(billNo),
+                            party: finalParty,
+                            party_gstin: isUnregistered ? "" : partyGstin,
+                            party_address: row.party_address || "",
+                            party_city: row.party_city || "",
+                            party_pincode: row.party_pincode || "",
+                            taxable: Number(taxable),
+                            cgst: Number(cgst),
+                            sgst: Number(sgst),
+                            igst: Number(igst),
+                            gst: Number(gst),
+                            discount: Number(discount),
+                            freight: Number(freight),
+                            tcs: Number(tcs),
+                            tds: Number(tds),
+                            total: Number(total),
                             status: status,
                             isB2C: isB2C,
                             autoCreateB2B: autoCreateB2B,
-                            group_hint: row.group_hint || ""
+                            items: row.items || []
                         };
-                    } else if (currentModule === 'Opening Balances') {
-                        return {
-                            id: ++globalIndexCounter,
-                            ledger_name: row.ledger_name || "",
-                            matched_code: row.matched_code || "",
-                            balance: Number(row.balance || 0),
-                            dr_cr: row.dr_cr || "D",
-                            group_hint: row.group_hint || "",
-                            status: row.matched_code ? 'Ready' : 'Review'
-                        };
-                    }
+                    });
+                    allFormattedData.push(...formattedData);
+                } else {
+                    console.error("Unexpected AI response format:", data);
+                    throw new Error(`Invalid response from AI for file. Looked like: ` + JSON.stringify(data).substring(0, 80));
+                }
 
-                    const party = row.party_name || row.party || row.PartyName || row.Party_Name || "UNKNOWN_PARTY: Missing";
-                    const billNo = row.bill_no || row.billNo || row.invoice_no || row.Bill_No || "";
-                    const taxable = row.taxable_amount || row.taxable || row.Taxable || 0;
-                    const cgst = row.cgst || 0;
-                    const sgst = row.sgst || 0;
-                    const igst = row.igst || 0;
-                    const gst = cgst + sgst + igst || row.gst || row.GST || 0;
-                    const discount = row.discount || row.Discount || 0;
-                    const freight = row.freight || row.Freight || 0;
-                    const tcs = row.tcs || row.Tcs || row.TCS || 0;
-                    const tds = row.tds || row.Tds || row.TDS || 0;
-                    const total = row.total || row.total_amount || row.Total || 0;
-                    
-                    const partyGstin = String(row.party_gstin || row.gstin || "").trim();
-                    const isUnregistered = !partyGstin || /^(urd|unregistered|b2c|consumer|none|na|-)$/i.test(partyGstin);
-                    
-                    const partyStr = String(party).trim();
-                    let finalParty = partyStr;
-                    let status = 'Ready';
-                    let isB2C = false;
-                    let autoCreateB2B = false;
-                    
-                    if (partyStr.startsWith('UNKNOWN_PARTY:') || partyStr.startsWith('UNKNOWN_NARRATION:') || partyStr.includes('Missing') || partyStr === "") {
-                        status = 'Review';
-                    } else {
-                        const cleanParty = partyStr.toUpperCase();
-                        const match = clientLedgers.find(led => 
-                            led.name.trim().toUpperCase() === cleanParty || 
-                            led.print_name.trim().toUpperCase() === cleanParty ||
-                            led.code.trim().toUpperCase() === cleanParty
-                        );
-                        
-                        if (match) {
-                            finalParty = match.name;
-                        } else {
-                            if (isUnregistered) {
-                                // B2C logic
-                                if (autoCreateB2c) {
-                                    finalParty = partyStr;
-                                    status = 'Ready';
-                                    isB2C = true;
-                                } else {
-                                    finalParty = `UNKNOWN_PARTY: ${partyStr}`;
-                                    status = 'Review';
-                                    isB2C = true;
-                                }
-                            } else {
-                                if (autoCreateB2b) {
-                                    finalParty = partyStr;
-                                    status = 'Ready';
-                                    isB2C = false;
-                                    autoCreateB2B = true;
-                                } else {
-                                    // Unmapped registered party needs review
-                                    finalParty = `UNKNOWN_PARTY: ${partyStr}`;
-                                    status = 'Review';
-                                    isB2C = false;
-                                }
-                            }
-                        }
-                    }
-                    
-                    return {
-                        id: ++globalIndexCounter,
-                        date: row.date || row.Date || "",
-                        billNo: String(billNo),
-                        party: finalParty,
-                        party_gstin: isUnregistered ? "" : partyGstin,
-                        party_address: row.party_address || "",
-                        party_city: row.party_city || "",
-                        party_pincode: row.party_pincode || "",
-                        taxable: Number(taxable),
-                        cgst: Number(cgst),
-                        sgst: Number(sgst),
-                        igst: Number(igst),
-                        gst: Number(gst),
-                        discount: Number(discount),
-                        freight: Number(freight),
-                        tcs: Number(tcs),
-                        tds: Number(tds),
-                        total: Number(total),
-                        status: status,
-                        isB2C: isB2C,
-                        autoCreateB2B: autoCreateB2B,
-                        items: row.items || []
-                    };
-                });
-                allFormattedData.push(...formattedData);
-            } else {
-                console.error("Unexpected AI response format:", data);
-                throw new Error(`Invalid response from AI for file. Looked like: ` + JSON.stringify(data).substring(0, 80));
-            }
-            
             } // End of for-loop over files
 
             // Display Warning Banner if backend returned extraction warnings
@@ -2913,10 +2914,10 @@ document.addEventListener('DOMContentLoaded', () => {
         // Classify and sort ledgers
         let suggested = [];
         let others = [];
-        
+
         let targetClassification = "";
         let groupLabel = "Suggested Accounts";
-        
+
         if (currentModule === 'Purchases') {
             targetClassification = "Creditor";
             groupLabel = "Sundry Creditors (Suppliers)";
@@ -2927,7 +2928,7 @@ document.addEventListener('DOMContentLoaded', () => {
             targetClassification = "Expense";
             groupLabel = "Expense Ledgers";
         }
-        
+
         clientLedgers.forEach(led => {
             const optHtml = `<option value="${led.name}" ${led.name === selectedCode || led.code === selectedCode ? 'selected' : ''}>${led.print_name} (${led.code})</option>`;
             if (targetClassification && led.classification === targetClassification) {
@@ -2936,7 +2937,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 others.push(optHtml);
             }
         });
-        
+
         let html = '<option value="">-- Select Miracle Ledger --</option>';
         if (item && item.party_gstin) {
             html += `<option value="AUTO_CREATE_B2B" ${selectedCode === 'AUTO_CREATE_B2B' ? 'selected' : ''} class="text-blue-400 font-semibold">[Auto-Create B2B Ledger with GST]</option>`;
@@ -2951,13 +2952,13 @@ document.addEventListener('DOMContentLoaded', () => {
                 ${suggested.join('')}
             </optgroup>`;
         }
-        
+
         if (others.length > 0) {
             html += `<optgroup label="Other Accounts">
                 ${others.join('')}
             </optgroup>`;
         }
-        
+
         return html;
     }
 
@@ -2995,14 +2996,14 @@ document.addEventListener('DOMContentLoaded', () => {
             const rawLabel = item.party.replace('UNKNOWN_PARTY: ', '').replace('UNKNOWN_NARRATION: ', '');
             const selectId = `select-${item.id}`;
             const optionsHtml = generateLedgerOptions("", item);
-            
+
             let gstDisplay = '';
             if (item.party_gstin) {
                 gstDisplay = `<span class="text-blue-400"><i class="fa-solid fa-building mr-1"></i> GSTIN: ${item.party_gstin} (B2B)</span>`;
             } else {
                 gstDisplay = `<span class="text-amber-500"><i class="fa-solid fa-user mr-1"></i> GSTIN: None (B2C / URD)</span>`;
             }
-            
+
             mappingList.innerHTML += `
                 <div class="bg-slate-950/40 border border-slate-850 rounded-xl p-4 flex justify-between items-center mb-3">
                     <div>
@@ -3031,23 +3032,23 @@ document.addEventListener('DOMContentLoaded', () => {
             btn.addEventListener('click', async (e) => {
                 const icon = e.currentTarget.querySelector('i');
                 icon.classList.add('fa-spin', 'text-brand-500');
-                
+
                 const selectId = e.currentTarget.getAttribute('data-select-id');
                 const selectEl = document.getElementById(selectId);
                 const currentValue = selectEl.value;
-                
+
                 try {
                     // Pull fresh data from Miracle DBF files
                     const res = await fetch(`${API_URL}/api/refresh-ledgers`, { method: 'POST' });
                     if (!res.ok) throw new Error("Refresh failed.");
                     const data = await res.json();
-                    
+
                     clientLedgers = data.data || [];
                     console.log(`Refreshed: ${clientLedgers.length} ledgers found.`);
-                    
+
                     // Re-populate options while keeping current selection
                     selectEl.innerHTML = generateLedgerOptions(currentValue);
-                    
+
                     // Success animation
                     icon.classList.remove('fa-spin', 'text-brand-500');
                     icon.classList.add('text-emerald-500');
@@ -3389,29 +3390,32 @@ document.addEventListener('DOMContentLoaded', () => {
                     }
 
                     if (currentExtractedData && Array.isArray(currentExtractedData)) {
-                        // Map groupCode to human-readable group name
+                        // Map groupCode to official Miracle DBF schema group name
                         const groupCodeToName = {
-                            'G0000024': 'Indirect Expenses',
-                            'G0000023': 'Direct Expenses',
-                            'G0000017': 'Indirect Income',
-                            'G0000016': 'Direct Income',
+                            'G0000001': 'Capital Account',
+                            'G0000002': 'Loans (Liability)',
+                            'G0000003': 'Current Assets',
+                            'G0000004': 'Bank Accounts',
+                            'G0000005': 'Cash in Hand',
+                            'G0000006': 'Fixed Assets',
+                            'G0000007': 'Investments',
+                            'G0000008': 'Duties & Taxes',
                             'G0000009': 'Sundry Debtors',
+                            'G0000010': 'Current Liabilities',
+                            'G0000011': 'Loans & Advances (Asset)',
+                            'G0000012': 'Stock in Hand',
                             'G0000013': 'Sundry Creditors',
-                            'G0000008': 'Investments',
-                            'G0000001': 'Capital Account / Drawings',
-                            'G0000002': 'Capital Account',
-                            'G0000003': 'Secured Loans',
-                            'G0000004': 'Unsecured Loans',
-                            'G0000005': 'Cash-in-hand',
-                            'G0000006': 'Duties & Taxes',
-                            'G0000007': 'Fixed Assets',
-                            'G0000010': 'Current Assets',
-                            'G0000011': 'Bank Accounts',
-                            'G0000012': 'Bank OD A/c',
-                            'G0000014': 'Sales Accounts',
-                            'G0000015': 'Purchase Accounts',
+                            'G0000014': 'Duties & Taxes',
+                            'G0000015': 'Provisions',
+                            'G0000016': 'Bank OD/CC Account',
+                            'G0000017': 'Secured Loans',
+                            'G0000018': 'Deposits (Asset)',
+                            'G0000020': 'Unsecured Loans',
+                            'G0000021': 'Sales Accounts',
+                            'G0000022': 'Indirect Income',
+                            'G0000023': 'Purchase Accounts / Direct Expenses',
                             'G0000024': 'Indirect Expenses',
-                            'G0000025': 'Suspense Account',
+                            'G0000028': 'Suspense Account'
                         };
                         const newGroupHint = groupCodeToName[groupCode] || inferExpenseGroupHint(newName, '', null);
 
@@ -3424,6 +3428,13 @@ document.addEventListener('DOMContentLoaded', () => {
                                 r.status = r.status === 'Suspense' ? 'Mapped' : r.status;
                             }
                         });
+
+                        // Reset grid filters so transactions are never hidden after updating a ledger
+                        currentGridGroupFilter = 'all';
+                        currentGridAccountFilter = 'all';
+                        if (typeof populateGridDropdownFilters === 'function') {
+                            populateGridDropdownFilters();
+                        }
                         if (typeof renderGrid === 'function') {
                             renderGrid(currentExtractedData);
                             recalcGrandTotals();
@@ -3447,7 +3458,7 @@ document.addEventListener('DOMContentLoaded', () => {
     saveMappingBtn.addEventListener('click', () => {
         const selects = document.querySelectorAll('.mapping-select');
         let allMapped = true;
-        
+
         selects.forEach(select => {
             if (select.value === "") {
                 allMapped = false;
@@ -3506,7 +3517,7 @@ document.addEventListener('DOMContentLoaded', () => {
             showMappingModal(unknownParties);
             return;
         }
-        
+
         // Step 2: Check Products (Line Items)
         // Apply default product if selected
         const defaultProductSelect = document.getElementById('defaultProductSelect');
@@ -3531,12 +3542,12 @@ document.addEventListener('DOMContentLoaded', () => {
                 invoice.items.forEach((item, idx) => {
                     const itemName = (item.name || '').trim();
                     if (!itemName) return;
-                    
-                    const match = clientProducts.find(p => 
+
+                    const match = clientProducts.find(p =>
                         p.name.trim().toUpperCase() === itemName.toUpperCase() ||
                         p.code.trim().toUpperCase() === itemName.toUpperCase()
                     );
-                    
+
                     if (match) {
                         item.name = match.name;
                         item.mapped_code = match.code;
@@ -3558,20 +3569,20 @@ document.addEventListener('DOMContentLoaded', () => {
                 });
             }
         });
-        
+
         if (unknownProducts.length > 0) {
             pendingMockData = data;
             showProductMappingModal(unknownProducts);
             return;
         }
-        
+
         finalizeExtraction(data);
     }
 
     function generateProductOptions(selectedCode = "", rowGstPct = null) {
         let html = '<option value="">-- Select Miracle Product --</option>';
         html += `<option value="AUTO_CREATE_PRODUCT" ${selectedCode === 'AUTO_CREATE_PRODUCT' ? 'selected' : ''} class="text-purple-400 font-semibold">[Auto-Create ${rowGstPct !== null && rowGstPct !== undefined ? rowGstPct + '% ' : ''}Product]</option>`;
-        
+
         if (clientProducts && clientProducts.length > 0) {
             // Group products by category / commodity
             const categories = {};
@@ -3626,7 +3637,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const productMappingModal = document.getElementById('productMappingModal');
         const productMappingList = document.getElementById('productMappingList');
         productMappingList.innerHTML = '';
-        
+
         // Populate global product dropdown
         // Removed as it is now handled dynamically per GST group
 
@@ -3635,18 +3646,18 @@ document.addEventListener('DOMContentLoaded', () => {
             if (b.gst_pct !== a.gst_pct) return b.gst_pct - a.gst_pct;
             return a.name.localeCompare(b.name);
         });
-        
+
         let currentGst = null;
-        
+
         unknownProducts.forEach((item, idx) => {
             const selectId = `prod-select-${idx}`;
             const optionsHtml = generateProductOptions("");
-            
+
             // Inject GST Group Header if GST changed
             if (currentGst !== item.gst_pct) {
                 currentGst = item.gst_pct;
                 const groupClass = `gst-group-${currentGst.toString().replace('.', '-')}`;
-                
+
                 productMappingList.innerHTML += `
                     <div class="bg-brand-600/5 border border-brand-500/20 rounded-xl p-4 mt-4 mb-3 flex flex-col gap-2.5 shadow-sm">
                         <div class="flex justify-between items-center">
@@ -3663,9 +3674,9 @@ document.addEventListener('DOMContentLoaded', () => {
                     </div>
                 `;
             }
-            
+
             const groupClass = `gst-group-${currentGst.toString().replace('.', '-')}`;
-            
+
             productMappingList.innerHTML += `
                 <div class="bg-slate-950/40 border border-slate-850 rounded-xl p-4 flex justify-between items-center mb-3 ml-4 border-l-2 border-l-brand-500/50 hover:bg-slate-900/60 transition">
                     <div>
@@ -3708,21 +3719,21 @@ document.addEventListener('DOMContentLoaded', () => {
             btn.addEventListener('click', async (e) => {
                 const icon = e.currentTarget.querySelector('i');
                 icon.classList.add('fa-spin', 'text-brand-500');
-                
+
                 const selectId = e.currentTarget.getAttribute('data-select-id');
                 const selectEl = document.getElementById(selectId);
                 const currentValue = selectEl.value;
-                
+
                 try {
                     const res = await fetch(`${API_URL}/api/refresh-products`, { method: 'POST' });
                     if (!res.ok) throw new Error("Refresh failed.");
                     const data = await res.json();
-                    
+
                     clientProducts = data.data || [];
                     console.log(`Refreshed: ${clientProducts.length} products found.`);
-                    
+
                     selectEl.innerHTML = generateProductOptions(currentValue);
-                    
+
                     icon.classList.remove('fa-spin', 'text-brand-500');
                     icon.classList.add('text-emerald-500');
                     setTimeout(() => icon.classList.remove('text-emerald-500'), 1500);
@@ -3741,7 +3752,7 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('saveProductMappingBtn').addEventListener('click', () => {
         const selects = document.querySelectorAll('.product-mapping-select');
         let allMapped = true;
-        
+
         selects.forEach(select => {
             if (select.value === "") {
                 allMapped = false;
@@ -3750,7 +3761,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 select.classList.remove('border-red-500', 'error-shake');
                 const rawName = (select.getAttribute('data-name') || '').trim();
                 const selectedVal = select.value;
-                
+
                 // Update all matching items in pendingMockData
                 pendingMockData.forEach(invoice => {
                     if (Array.isArray(invoice.items)) {
@@ -3780,12 +3791,12 @@ document.addEventListener('DOMContentLoaded', () => {
                             mapped_product: selectedVal
                         })
                     }).then(res => res.json())
-                      .then(d => console.log(`Persisted product mapping rule: ${rawName} -> ${selectedVal}`))
-                      .catch(err => console.error("Error saving product mapping rule:", err));
+                        .then(d => console.log(`Persisted product mapping rule: ${rawName} -> ${selectedVal}`))
+                        .catch(err => console.error("Error saving product mapping rule:", err));
                 }
             }
         });
-        
+
         if (allMapped) {
             document.getElementById('productMappingModal').classList.add('hidden');
             finalizeExtraction(pendingMockData);
@@ -3868,7 +3879,7 @@ document.addEventListener('DOMContentLoaded', () => {
     function finalizeExtraction(data) {
         // Normalize all field names before storing or rendering
         currentExtractedData = (data || []).map((r, i) => normalizeRowFields(r, i));
-        
+
         // Auto-sort by Date ascending (earliest to latest) upon extraction
         currentExtractedData.sort((a, b) => parseDateForSort(a.date || a.Date) - parseDateForSort(b.date || b.Date));
         currentSortField = 'date';
@@ -3902,7 +3913,7 @@ document.addEventListener('DOMContentLoaded', () => {
         gridBody.innerHTML = `
             <tr>
                 <td colspan="100" class="text-center py-0">
-                    <div class="flex flex-col items-center justify-center py-10 md:py-14 px-6 space-y-4 max-w-sm mx-auto">
+                    <div class="flex flex-col items-center justify-center py-16 md:py-20 px-6 space-y-4 max-w-sm mx-auto">
                         <div class="relative">
                             <div class="absolute inset-0 bg-brand-500/10 blur-2xl rounded-full scale-150"></div>
                             <div class="relative h-16 w-16 bg-gradient-to-br from-slate-800 to-slate-900 border border-slate-700/80 rounded-2xl flex items-center justify-center shadow-2xl">
@@ -3921,7 +3932,7 @@ document.addEventListener('DOMContentLoaded', () => {
                                 <i class="fa-solid fa-folder-open"></i> Browse Files
                             </button>
                             <button onclick="document.getElementById('addEntryBtn').click()" class="bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-xs px-3.5 py-2 rounded-xl transition border border-slate-700 flex items-center gap-1.5 cursor-pointer">
-                                <i class="fa-solid fa-plus"></i> Add Manually
+                                <i class="fa-solid fa-plus"></i> Add Row
                             </button>
                         </div>
                     </div>
@@ -3947,8 +3958,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function getSortIcon(field) {
         if (currentSortField !== field) return `<i class="fa-solid fa-sort ml-1 text-xs opacity-40 hover:opacity-100"></i>`;
-        return currentSortOrder === 'asc' 
-            ? `<i class="fa-solid fa-sort-up ml-1 text-xs text-brand-500"></i>` 
+        return currentSortOrder === 'asc'
+            ? `<i class="fa-solid fa-sort-up ml-1 text-xs text-brand-500"></i>`
             : `<i class="fa-solid fa-sort-down ml-1 text-xs text-brand-500"></i>`;
     }
 
@@ -3959,18 +3970,18 @@ document.addEventListener('DOMContentLoaded', () => {
     function handleSort(field) {
         if (!currentExtractedData || !Array.isArray(currentExtractedData) || currentExtractedData.length === 0) return;
         saveGridToExtractedData();
-        
+
         if (currentSortField === field) {
             currentSortOrder = currentSortOrder === 'asc' ? 'desc' : 'asc';
         } else {
             currentSortField = field;
             currentSortOrder = 'asc';
         }
-        
+
         currentExtractedData.sort((a, b) => {
             let valA = a[field];
             let valB = b[field];
-            
+
             if (field === 'date') {
                 const tA = parseDateForSort(valA || a.Date);
                 const tB = parseDateForSort(valB || b.Date);
@@ -3996,14 +4007,14 @@ document.addEventListener('DOMContentLoaded', () => {
                 const nB = b.transaction_type === 'Receipt' ? (parseFloat(b.amount) || 0) : 0;
                 return currentSortOrder === 'asc' ? nA - nB : nB - nA;
             }
-            
+
             const sA = String(valA || '').toLowerCase();
             const sB = String(valB || '').toLowerCase();
             if (sA < sB) return currentSortOrder === 'asc' ? -1 : 1;
             if (sA > sB) return currentSortOrder === 'asc' ? 1 : -1;
             return 0;
         });
-        
+
         renderGrid(currentExtractedData);
         recalcGrandTotals();
     }
@@ -4031,7 +4042,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         if (currentModule === 'Bank Statements' || currentModule === 'Cash Entries') {
             const opBalContainer = document.getElementById('openingBalanceContainer');
-            if(opBalContainer) opBalContainer.classList.remove('hidden');
+            if (opBalContainer) opBalContainer.classList.remove('hidden');
             headerRow.innerHTML = `
                 <th class="px-2 py-3 text-xs font-bold text-slate-500 uppercase tracking-wider text-center" style="width:40px;min-width:40px"><input type="checkbox" id="selectAllGridRows" class="cursor-pointer" title="Select All Rows"></th>
                 <th class="px-3 py-3 text-xs font-bold text-slate-400 uppercase tracking-wider cursor-pointer hover:text-white transition select-none sortable-header" style="width:145px;min-width:145px" data-sort="date">Date ${getSortIcon('date')}</th>
@@ -4046,7 +4057,7 @@ document.addEventListener('DOMContentLoaded', () => {
             `;
         } else if (currentModule === 'Opening Balances') {
             const opBalContainer = document.getElementById('openingBalanceContainer');
-            if(opBalContainer) opBalContainer.classList.add('hidden');
+            if (opBalContainer) opBalContainer.classList.add('hidden');
             headerRow.innerHTML = `
                 <th class="px-3 py-3 text-xs font-bold text-slate-400 uppercase tracking-wider cursor-pointer hover:text-white transition select-none sortable-header" style="min-width:200px" data-sort="ledger_name">Ledger Name ${getSortIcon('ledger_name')}</th>
                 <th class="px-3 py-3 text-xs font-bold text-slate-400 uppercase tracking-wider" style="width:160px;min-width:160px">Match Status</th>
@@ -4056,7 +4067,7 @@ document.addEventListener('DOMContentLoaded', () => {
             `;
         } else {
             const opBalContainer = document.getElementById('openingBalanceContainer');
-            if(opBalContainer) opBalContainer.classList.add('hidden');
+            if (opBalContainer) opBalContainer.classList.add('hidden');
             headerRow.innerHTML = `
                 <th class="px-2 py-3 text-xs font-bold text-slate-500 uppercase tracking-wider text-center" style="width:40px;min-width:40px"><input type="checkbox" id="selectAllGridRows" class="cursor-pointer" title="Select All Rows"></th>
                 <th class="px-3 py-3 text-xs font-bold text-slate-400 uppercase tracking-wider cursor-pointer hover:text-white transition select-none sortable-header" style="width:140px;min-width:140px" data-sort="date">Date ${getSortIcon('date')}</th>
@@ -4099,6 +4110,83 @@ document.addEventListener('DOMContentLoaded', () => {
 
     let currentGridFilter = 'all';
     let currentGridSearch = '';
+    let currentGridGroupFilter = 'all';
+    let currentGridAccountFilter = 'all';
+
+    function getRowGroupAndAccount(r) {
+        const m_ledger = (r.mapped_ledger || "").trim();
+        const isSuspense = !m_ledger || m_ledger.toUpperCase() === 'SUSPENSE ACCOUNT' || m_ledger.toUpperCase() === 'SUSPENSE';
+        let rawGrp = (r.group_hint || "").trim();
+        if (!rawGrp) {
+            if (!isSuspense) {
+                rawGrp = inferExpenseGroupHint(r.mapped_ledger, r.transaction_type, r.group_hint);
+            } else {
+                rawGrp = 'Suspense Account';
+            }
+        }
+        const rawAcc = isSuspense ? 'Suspense Account' : m_ledger;
+        return { group: rawGrp, account: rawAcc, isSuspense: isSuspense };
+    }
+
+    function populateGridDropdownFilters() {
+        const grpSelect = document.getElementById('gridGroupFilterSelect');
+        const accSelect = document.getElementById('gridAccountFilterSelect');
+
+        if (!currentExtractedData || !Array.isArray(currentExtractedData) || currentExtractedData.length === 0) {
+            if (grpSelect) grpSelect.innerHTML = `<option value="all">📂 All Groups (0)</option>`;
+            if (accSelect) accSelect.innerHTML = `<option value="all">👤 All Accounts (0)</option>`;
+            return;
+        }
+
+        const groupCounts = {};
+        const accountCounts = {};
+
+        currentExtractedData.forEach(r => {
+            const info = getRowGroupAndAccount(r);
+            groupCounts[info.group] = (groupCounts[info.group] || 0) + 1;
+            accountCounts[info.account] = (accountCounts[info.account] || 0) + 1;
+        });
+
+        if (grpSelect) {
+            let prevVal = currentGridGroupFilter || 'all';
+            if (prevVal !== 'all') {
+                const hasMatchingGrp = Object.keys(groupCounts).some(g => g.toUpperCase() === prevVal.toUpperCase());
+                if (!hasMatchingGrp) {
+                    currentGridGroupFilter = 'all';
+                    prevVal = 'all';
+                }
+            }
+
+            let grpHtml = `<option value="all" ${prevVal === 'all' ? 'selected' : ''}>📂 All Groups (${currentExtractedData.length})</option>`;
+            const sortedGroups = Object.keys(groupCounts).sort((a, b) => a.localeCompare(b));
+            sortedGroups.forEach(g => {
+                const count = groupCounts[g];
+                const sel = (g.toUpperCase() === prevVal.toUpperCase()) ? 'selected' : '';
+                grpHtml += `<option value="${g}" ${sel}>📂 ${g} (${count})</option>`;
+            });
+            grpSelect.innerHTML = grpHtml;
+        }
+
+        if (accSelect) {
+            let prevVal = currentGridAccountFilter || 'all';
+            if (prevVal !== 'all') {
+                const hasMatchingAcc = Object.keys(accountCounts).some(a => a.toUpperCase() === prevVal.toUpperCase());
+                if (!hasMatchingAcc) {
+                    currentGridAccountFilter = 'all';
+                    prevVal = 'all';
+                }
+            }
+
+            let accHtml = `<option value="all" ${prevVal === 'all' ? 'selected' : ''}>👤 All Accounts (${currentExtractedData.length})</option>`;
+            const sortedAccounts = Object.keys(accountCounts).sort((a, b) => a.localeCompare(b));
+            sortedAccounts.forEach(a => {
+                const count = accountCounts[a];
+                const sel = (a.toUpperCase() === prevVal.toUpperCase()) ? 'selected' : '';
+                accHtml += `<option value="${a}" ${sel}>👤 ${a} (${count})</option>`;
+            });
+            accSelect.innerHTML = accHtml;
+        }
+    }
 
     function renderFilterBadgesForModule() {
         const group = document.getElementById('filterBadgesGroup');
@@ -4197,6 +4285,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 btn.classList.add('active', 'bg-brand-600/20', 'text-brand-400', 'border-brand-500/30');
                 btn.classList.remove('border-slate-800', 'text-slate-400');
                 currentGridFilter = btn.getAttribute('data-filter') || 'all';
+                if (gridBody) gridBody.dataset.needsFullRender = 'true';
                 recalcGrandTotals();
                 renderVirtualGridRows();
             });
@@ -4206,11 +4295,20 @@ document.addEventListener('DOMContentLoaded', () => {
     function getFilteredData() {
         if (!currentExtractedData || !Array.isArray(currentExtractedData)) return [];
         return currentExtractedData.filter(row => {
+            const info = getRowGroupAndAccount(row);
             const gstin = (row.party_gstin || row.gstin || row.GSTIN || row.Party_GSTIN || "").trim();
             const hasGstin = gstin.length >= 10;
             const mappedLedgerStr = (row.mapped_ledger || row.party_name || row.party || "").trim().toUpperCase();
-            const isSuspense = !mappedLedgerStr || mappedLedgerStr === "SUSPENSE ACCOUNT" || mappedLedgerStr.indexOf("UNKNOWN_PARTY:") === 0;
+            const isSuspense = info.isSuspense;
             const txType = (row.transaction_type || row.Transaction_Type || 'Receipt').toLowerCase();
+
+            if (currentGridGroupFilter && currentGridGroupFilter !== 'all') {
+                if (info.group.toUpperCase() !== currentGridGroupFilter.trim().toUpperCase()) return false;
+            }
+
+            if (currentGridAccountFilter && currentGridAccountFilter !== 'all') {
+                if (info.account.toUpperCase() !== currentGridAccountFilter.trim().toUpperCase()) return false;
+            }
 
             if (currentGridFilter !== 'all') {
                 if (currentModule === 'Sales') {
@@ -4241,8 +4339,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
                     let exists = false;
                     if (clientLedgers && clientLedgers.length > 0 && !isSuspense) {
-                        exists = !!findMatchingClientLedger(mappedLedgerStr, clientLedgers) || clientLedgers.some(led => 
-                            led.name.trim().toUpperCase() === mappedLedgerStr || 
+                        exists = !!findMatchingClientLedger(mappedLedgerStr, clientLedgers) || clientLedgers.some(led =>
+                            led.name.trim().toUpperCase() === mappedLedgerStr ||
                             led.print_name.trim().toUpperCase() === mappedLedgerStr ||
                             led.code.trim().toUpperCase() === mappedLedgerStr
                         );
@@ -4257,8 +4355,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 const q = currentGridSearch.toLowerCase().trim();
                 let exists = false;
                 if (clientLedgers && clientLedgers.length > 0 && !isSuspense) {
-                    exists = !!findMatchingClientLedger(mappedLedgerStr, clientLedgers) || clientLedgers.some(led => 
-                        led.name.trim().toUpperCase() === mappedLedgerStr || 
+                    exists = !!findMatchingClientLedger(mappedLedgerStr, clientLedgers) || clientLedgers.some(led =>
+                        led.name.trim().toUpperCase() === mappedLedgerStr ||
                         led.print_name.trim().toUpperCase() === mappedLedgerStr ||
                         led.code.trim().toUpperCase() === mappedLedgerStr
                     );
@@ -4270,7 +4368,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
                 const itemNames = (row.items || []).map(i => `${i.name || ''} ${i.hsn_code || i.hsn || ''}`).join(' ');
                 const textStr = `${row.date || ''} ${row.billNo || row.bill_no || ''} ${row.reference_no || ''} ${row.party || row.party_name || ''} ${row.mapped_ledger || ''} ${row.narration || ''} ${gstin} ${itemNames} ${row.total || row.amount || ''} ${formattedNum} ${txType} ${groupTag} ${statusTag}`.toLowerCase();
-                
+
                 if (!textStr.includes(q)) return false;
             }
             return true;
@@ -4280,18 +4378,35 @@ document.addEventListener('DOMContentLoaded', () => {
     function updateFilterCounts() {
         if (!currentExtractedData || !Array.isArray(currentExtractedData)) return;
 
-        let cntAll = currentExtractedData.length;
+        populateGridDropdownFilters();
+
+        let baseData = currentExtractedData;
+        if ((currentGridGroupFilter && currentGridGroupFilter !== 'all') || (currentGridAccountFilter && currentGridAccountFilter !== 'all')) {
+            baseData = currentExtractedData.filter(row => {
+                const info = getRowGroupAndAccount(row);
+                if (currentGridGroupFilter && currentGridGroupFilter !== 'all') {
+                    if (info.group.toUpperCase() !== currentGridGroupFilter.trim().toUpperCase()) return false;
+                }
+                if (currentGridAccountFilter && currentGridAccountFilter !== 'all') {
+                    if (info.account.toUpperCase() !== currentGridAccountFilter.trim().toUpperCase()) return false;
+                }
+                return true;
+            });
+        }
+
+        let cntAll = baseData.length;
         let cntMapped = 0, cntAutoCreate = 0, cntReview = 0;
         let cntReceipts = 0, cntPayments = 0;
         let cntB2B = 0, cntB2C = 0, cntIGST = 0, cntFreight = 0, cntDiscount = 0, cntGst5 = 0, cntGst0 = 0;
         let cntGstMismatch = 0, cntAutoItem = 0;
 
         let sumDr = 0, sumCr = 0;
-        currentExtractedData.forEach(r => {
+        baseData.forEach(r => {
+            const info = getRowGroupAndAccount(r);
             const gstin = (r.party_gstin || r.gstin || r.GSTIN || r.Party_GSTIN || "").trim();
             const hasGstin = gstin.length >= 10;
             const mappedLedgerStr = (r.mapped_ledger || r.party_name || r.party || "").trim().toUpperCase();
-            const isSuspense = !mappedLedgerStr || mappedLedgerStr === "SUSPENSE ACCOUNT" || mappedLedgerStr.indexOf("UNKNOWN_PARTY:") === 0;
+            const isSuspense = info.isSuspense;
             const txType = (r.transaction_type || r.Transaction_Type || 'Receipt').toLowerCase();
             const amtVal = parseCurrency(r.amount || r.total || 0);
 
@@ -4301,7 +4416,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if (parseCurrency(r.igst || r.IGST || 0) > 0) cntIGST++;
             if ((parseCurrency(r.freight || r.Freight || 0)) > 0) cntFreight++;
             if (parseCurrency(r.discount || r.Discount || 0) > 0) cntDiscount++;
-            
+
             const gPct = parseFloat(r.gst_pct) || 0;
             if (Math.abs(gPct - 5.0) <= 0.5) cntGst5++;
             if (gPct <= 0.5) cntGst0++;
@@ -4326,8 +4441,8 @@ document.addEventListener('DOMContentLoaded', () => {
             } else {
                 let exists = false;
                 if (clientLedgers && clientLedgers.length > 0) {
-                    exists = !!findMatchingClientLedger(mappedLedgerStr, clientLedgers) || clientLedgers.some(led => 
-                        led.name.trim().toUpperCase() === mappedLedgerStr || 
+                    exists = !!findMatchingClientLedger(mappedLedgerStr, clientLedgers) || clientLedgers.some(led =>
+                        led.name.trim().toUpperCase() === mappedLedgerStr ||
                         led.print_name.trim().toUpperCase() === mappedLedgerStr ||
                         led.code.trim().toUpperCase() === mappedLedgerStr
                     );
@@ -4421,17 +4536,17 @@ document.addEventListener('DOMContentLoaded', () => {
     function renderVirtualGridRows() {
         if (!currentExtractedData || !Array.isArray(currentExtractedData)) return;
         populateGlobalLedgersDatalist();
-        
+
         const container = document.getElementById('gridTableContainer');
         if (!container) return;
 
         if (currentModule === 'Bank Statements' || currentModule === 'Cash Entries') {
             calculateRollingBalances();
         }
-        
+
         const displayData = getFilteredData();
         const totalRows = displayData.length;
-        
+
         if (totalRows === 0) {
             let colSpan = 12;
             if (currentModule === 'Opening Balances') colSpan = 6;
@@ -4467,7 +4582,7 @@ document.addEventListener('DOMContentLoaded', () => {
             `;
             return;
         }
-        
+
         // For datasets under 150 rows (e.g. Purchases/Sales), render natively for 100% smooth jitter-free scrolling
         if (totalRows <= 150) {
             if (gridBody.children.length === totalRows && !gridBody.dataset.needsFullRender) {
@@ -4475,7 +4590,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }
             gridBody.dataset.needsFullRender = '';
             gridBody.innerHTML = '';
-            
+
             let globalAutoCreateLedgers = [];
             let autoCreateLedgerHints = {};
             if (currentModule === 'Bank Statements' || currentModule === 'Cash Entries') {
@@ -4492,8 +4607,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 uniqueLedgers.forEach(ul => {
                     let exists = false;
                     if (clientLedgers && clientLedgers.length > 0) {
-                        exists = clientLedgers.some(led => 
-                            led.name.trim().toUpperCase() === ul.toUpperCase() || 
+                        exists = clientLedgers.some(led =>
+                            led.name.trim().toUpperCase() === ul.toUpperCase() ||
                             led.print_name.trim().toUpperCase() === ul.toUpperCase() ||
                             led.code.trim().toUpperCase() === ul.toUpperCase()
                         );
@@ -4505,7 +4620,9 @@ document.addEventListener('DOMContentLoaded', () => {
             }
 
             displayData.forEach((row, idx) => {
-                const tr = createRowElement(row, idx, globalAutoCreateLedgers, autoCreateLedgerHints);
+                const realIdx = currentExtractedData.indexOf(row);
+                const indexToPass = realIdx !== -1 ? realIdx : idx;
+                const tr = createRowElement(row, indexToPass, globalAutoCreateLedgers, autoCreateLedgerHints);
                 gridBody.appendChild(tr);
             });
             return;
@@ -4516,15 +4633,15 @@ document.addEventListener('DOMContentLoaded', () => {
         const viewportHeight = container.clientHeight;
         const buffer = 20;
         const rowHeight = 72;
-        
+
         const startIndex = Math.max(0, Math.floor(scrollTop / rowHeight) - buffer);
         const endIndex = Math.min(totalRows, Math.floor((scrollTop + viewportHeight) / rowHeight) + buffer);
-        
+
         const topPadding = startIndex * rowHeight;
         const bottomPadding = Math.max(0, (totalRows - endIndex) * rowHeight);
-        
+
         gridBody.innerHTML = '';
-        
+
         if (topPadding > 0) {
             const topSpacer = document.createElement('tr');
             topSpacer.style.height = `${topPadding}px`;
@@ -4534,9 +4651,9 @@ document.addEventListener('DOMContentLoaded', () => {
             topSpacer.innerHTML = `<td colspan="${colSpan}" style="padding: 0; border: none; height: ${topPadding}px"></td>`;
             gridBody.appendChild(topSpacer);
         }
-        
+
         const visibleSlice = displayData.slice(startIndex, endIndex);
-        
+
         let globalAutoCreateLedgers = [];
         let autoCreateLedgerHints = {};
         if (currentModule === 'Bank Statements' || currentModule === 'Cash Entries') {
@@ -4553,8 +4670,8 @@ document.addEventListener('DOMContentLoaded', () => {
             uniqueLedgers.forEach(ul => {
                 let exists = false;
                 if (clientLedgers && clientLedgers.length > 0) {
-                    exists = clientLedgers.some(led => 
-                        led.name.trim().toUpperCase() === ul.toUpperCase() || 
+                    exists = clientLedgers.some(led =>
+                        led.name.trim().toUpperCase() === ul.toUpperCase() ||
                         led.print_name.trim().toUpperCase() === ul.toUpperCase() ||
                         led.code.trim().toUpperCase() === ul.toUpperCase()
                     );
@@ -4566,11 +4683,12 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         visibleSlice.forEach((row, sliceIndex) => {
-            const globalIndex = startIndex + sliceIndex;
-            const tr = createRowElement(row, globalIndex, globalAutoCreateLedgers, autoCreateLedgerHints);
+            const realIdx = currentExtractedData.indexOf(row);
+            const indexToPass = realIdx !== -1 ? realIdx : (startIndex + sliceIndex);
+            const tr = createRowElement(row, indexToPass, globalAutoCreateLedgers, autoCreateLedgerHints);
             gridBody.appendChild(tr);
         });
-        
+
         if (bottomPadding > 0) {
             const bottomSpacer = document.createElement('tr');
             bottomSpacer.style.height = `${bottomPadding}px`;
@@ -4825,34 +4943,34 @@ document.addEventListener('DOMContentLoaded', () => {
         // Expenses
         if (gUp.includes('BANK CHARG')) return 'Bank Charges';
         if (gUp.includes('DIRECT EXPENSE') || gUp.includes('EXPENSES (DIRECT)')) return 'Direct Expenses';
-        if (gUp.includes('INDIRECT EXPENSE') || gUp.includes('EXPENSES (INDIRECT)') || gUp.includes('EXPENSE ACCOUNT') || gUp.includes('EXPENSE')) return 'Indirect Expenses';
+        if (gUp.includes('INDIRECT EXPENSE') || gUp.includes('EXPENSES (INDIRECT)') || gUp.includes('EXPENSE ACCOUNT') || gUp.includes('EXPENSE') || gUp === 'G0000009') return 'Indirect Expenses';
 
         // Incomes
         if (gUp.includes('DIRECT INCOME') || gUp.includes('INCOME (TRADING)')) return 'Direct Income';
-        if (gUp.includes('INDIRECT INCOME') || gUp.includes('INCOME (OTHER THEN SALES)') || gUp.includes('INCOME')) return 'Indirect Income';
+        if (gUp.includes('INDIRECT INCOME') || gUp.includes('INCOME (OTHER THEN SALES)') || gUp.includes('INCOME') || gUp === 'G0000010') return 'Indirect Income';
 
         // Debtors & Creditors
-        if (gUp.includes('CREDITOR') || gUp.includes('SUPPLIER') || gUp === 'G0000013') return 'Sundry Creditors';
-        if (gUp.includes('DEBTOR') || gUp.includes('CUSTOMER') || gUp === 'G0000009') return 'Sundry Debtors';
+        if (gUp.includes('CREDITOR') || gUp.includes('SUPPLIER') || gUp === 'G0000007') return 'Sundry Creditors';
+        if (gUp.includes('DEBTOR') || gUp.includes('CUSTOMER') || gUp === 'G0000006') return 'Sundry Debtors';
 
         // Statutory & Taxes
-        if (gUp.includes('DUTIES') || gUp.includes('TAX') || gUp.includes('GST') || gUp === 'G0000014') return 'Duties & Taxes';
+        if (gUp.includes('DUTIES') || gUp.includes('TAX') || gUp.includes('GST') || gUp === 'G0000008') return 'Duties & Taxes';
 
         // Banks & Cash
-        if (gUp.includes('CASH') || gUp === 'G0000005') return 'Cash-in-Hand';
+        if (gUp.includes('CASH') || gUp === 'G0000005') return 'Cash in Hand';
         if (gUp.includes('BANK') || gUp === 'G0000004') return 'Bank Accounts';
 
         // Assets & Investments
-        if (gUp.includes('FIXED ASSET') || gUp === 'G0000006') return 'Fixed Assets';
-        if (gUp.includes('INVEST') || gUp === 'G0000007') return 'Investments';
+        if (gUp.includes('FIXED ASSET')) return 'Fixed Assets';
+        if (gUp.includes('INVEST') || gUp === 'G0000011') return 'Investments';
         if (gUp.includes('DEPOSIT') || gUp.includes('CURRENT ASSET')) return 'Current Assets';
         if (gUp.includes('LOAN') && gUp.includes('ASSET')) return 'Loans & Advances (Asset)';
 
         // Liabilities & Capital
         if (gUp.includes('DRAWING')) return 'Capital Account / Drawings';
         if (gUp.includes('CAPITAL') || gUp === 'G0000001') return 'Capital Account';
-        if (gUp.includes('UNSECURED') || gUp === 'G0000019') return 'Unsecured Loans';
-        if (gUp.includes('SECURED') || gUp === 'G0000008') return 'Secured Loans';
+        if (gUp.includes('UNSECURED')) return 'Unsecured Loans';
+        if (gUp.includes('SECURED')) return 'Secured Loans';
         if (gUp.includes('CURRENT LIABIL') || gUp.includes('PROVISION')) return 'Current Liabilities';
         if (gUp.includes('BRANCH')) return 'Branch / Divisions';
 
@@ -4875,8 +4993,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
         // 1. TOP PRIORITY: Check master Miracle ledgers (clientLedgers) loaded from RKACCM01 DBF
         if (typeof clientLedgers !== 'undefined' && clientLedgers && clientLedgers.length > 0 && legUp && legUp !== 'SUSPENSE ACCOUNT') {
-            const masterMatch = clientLedgers.find(l => 
-                (l.name || '').trim().toUpperCase() === legUp || 
+            const masterMatch = clientLedgers.find(l =>
+                (l.name || '').trim().toUpperCase() === legUp ||
                 (l.print_name || '').trim().toUpperCase() === legUp
             );
             if (masterMatch && masterMatch.group_name && masterMatch.group_name.toUpperCase() !== 'UNKNOWN' && masterMatch.group_name.toUpperCase() !== 'MIRACLE MASTER') {
@@ -4904,8 +5022,8 @@ document.addEventListener('DOMContentLoaded', () => {
         const BAD_BANK_HINTS = ['Sales Accounts (Product Stock)', 'Sales Accounts', 'Trading Account', 'Purchase Accounts'];
 
         const hintUp = (rowHint || '').toUpperCase().trim();
-        const isValidCustomHint = rowHint && 
-            hintUp !== 'SUSPENSE ACCOUNT' && 
+        const isValidCustomHint = rowHint &&
+            hintUp !== 'SUSPENSE ACCOUNT' &&
             hintUp !== 'SUSPENSE ACCOUNT (REVIEW)' &&
             hintUp !== 'REVIEW' &&
             hintUp !== 'GRID MAPPED' &&
@@ -4964,8 +5082,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
 
     function createRowElement(row, index, globalAutoCreateLedgers, autoCreateLedgerHints) {
-        let cScore = row.confidence_score !== undefined ? row.confidence_score : 95;
-        
+        let cScore = (row.confidence_score !== undefined && row.confidence_score !== null) ? row.confidence_score : 100;
+
         // 🚨 DBF Product GST Mismatch Check 🚨
         let gstMismatchDetected = false;
         if (currentModule === 'Sales' || currentModule === 'Purchases') {
@@ -4976,14 +5094,14 @@ document.addEventListener('DOMContentLoaded', () => {
                     const mappedComm = (mappedProduct.commodity || mappedProduct.commodity_code || mappedProduct.M21F27 || "").trim().toUpperCase();
                     const rowGst = parseFloat(row.gst_pct) || 0;
                     const expectedComm = rowGst <= 0 ? "CNGT" : (rowGst <= 5 ? "C002" : (rowGst <= 12 ? "C003" : (rowGst <= 18 ? "C004" : "C005")));
-                    
+
                     if (mappedComm !== "" && mappedComm !== expectedComm && mappedItemName !== "AUTO_CREATE_PRODUCT") {
                         gstMismatchDetected = true;
                     }
                 }
             }
         }
-        
+
         if (gstMismatchDetected) {
             cScore = Math.floor(cScore / 2); // Drop confidence to half
             if (!row.flags) row.flags = [];
@@ -4996,14 +5114,14 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         const tr = document.createElement('tr');
         tr.className = `hover:bg-slate-800/30 transition group cursor-text ${borderHighlight}`;
-        
+
         let confColorClass = 'text-emerald-400 bg-emerald-500/10 border border-emerald-500/20';
         if (cScore < 70) {
             confColorClass = 'text-rose-400 bg-rose-500/10 border border-rose-500/20';
         } else if (cScore < 85) {
             confColorClass = 'text-amber-400 bg-amber-500/10 border border-amber-500/20';
         }
-        
+
         let flagsHtml = '';
         if (row.flags && row.flags.length > 0) {
             flagsHtml = `
@@ -5016,7 +5134,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 </div>
             `;
         }
-        
+
         let statusColor = 'text-amber-500 bg-amber-500/10 border-amber-500/20';
         let statusIcon = 'fa-triangle-exclamation';
         let statusText = 'Review';
@@ -5037,8 +5155,8 @@ document.addEventListener('DOMContentLoaded', () => {
                             row.group_hint = matchedLedgerObj.group_name;
                         }
                     } else {
-                        hasMappedMatch = clientLedgers.some(led => 
-                            led.name.trim().toUpperCase() === cleanLedger || 
+                        hasMappedMatch = clientLedgers.some(led =>
+                            led.name.trim().toUpperCase() === cleanLedger ||
                             led.print_name.trim().toUpperCase() === cleanLedger ||
                             led.code.trim().toUpperCase() === cleanLedger
                         );
@@ -5076,13 +5194,13 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         let html = '';
-        
+
         if (currentModule === 'Bank Statements' || currentModule === 'Cash Entries') {
             let hasSuspense = false;
             let ledgerOptions = `<option value="">-- Select Ledger --</option><option value="CREATE_NEW_LEDGER" class="text-cyan-400 font-bold bg-slate-950">➕ + Create New Custom Miracle Ledger...</option>`;
             let hasMappedMatch = false;
             const aiLedger = (row.mapped_ledger || "Suspense Account").toUpperCase().trim();
-            
+
             if (clientLedgers && clientLedgers.length > 0) {
                 clientLedgers.forEach(l => {
                     if (l.name.toUpperCase().trim() === aiLedger) {
@@ -5094,12 +5212,12 @@ document.addEventListener('DOMContentLoaded', () => {
             const rawGroup = inferExpenseGroupHint(row.mapped_ledger, row.transaction_type, row.group_hint);
             const rowGroup = normalizeAccountingGroup(rawGroup);
             row.group_hint = rowGroup;
-            
+
             if (globalAutoCreateLedgers && globalAutoCreateLedgers.length > 0) {
                 globalAutoCreateLedgers.forEach(ul => {
                     const isSelected = (row.mapped_ledger || "").trim().toUpperCase() === ul.toUpperCase() && !hasMappedMatch ? "selected" : "";
-                    const hint = (row.mapped_ledger || "").trim().toUpperCase() === ul.toUpperCase() && row.group_hint 
-                        ? row.group_hint 
+                    const hint = (row.mapped_ledger || "").trim().toUpperCase() === ul.toUpperCase() && row.group_hint
+                        ? row.group_hint
                         : inferExpenseGroupHint(ul, row.transaction_type, autoCreateLedgerHints[ul.toUpperCase()]);
                     ledgerOptions += `<option value="${ul}" data-hint="${hint}" ${isSelected}>${ul} (Auto-Create → ${hint})</option>`;
                 });
@@ -5142,8 +5260,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 ledgerOptions += `<option value="Suspense Account" ${isSelected}>Suspense Account (Auto-Create)</option>`;
             }
 
-            const calculated_balance_formatted = row.calculated_balance !== undefined 
-                ? (Math.abs(row.calculated_balance).toLocaleString('en-IN', {minimumFractionDigits: 2}) + (row.calculated_balance > 0 ? ' Cr' : (row.calculated_balance < 0 ? ' Dr' : '')))
+            const calculated_balance_formatted = row.calculated_balance !== undefined
+                ? (Math.abs(row.calculated_balance).toLocaleString('en-IN', { minimumFractionDigits: 2 }) + (row.calculated_balance > 0 ? ' Cr' : (row.calculated_balance < 0 ? ' Dr' : '')))
                 : '0.00';
             const balColor = row.calculated_balance > 0 ? 'text-emerald-400' : (row.calculated_balance < 0 ? 'text-red-400' : 'text-slate-400');
 
@@ -5172,13 +5290,13 @@ document.addEventListener('DOMContentLoaded', () => {
                     <div class="mt-1.5 flex items-center justify-between gap-1 group-hint-container ${!row.mapped_ledger || row.mapped_ledger.toUpperCase() === 'SUSPENSE ACCOUNT' ? 'hidden' : ''}" title="${rowGroup}">
                         <span class="text-[10px] text-cyan-400 font-bold uppercase tracking-tight whitespace-nowrap" title="${rowGroup}"><i class="fa-solid fa-layer-group text-cyan-400 mr-1"></i>GROUP:</span>
                         ${(() => {
-                            const profileText = (businessProfileInput ? businessProfileInput.value : '').toUpperCase();
-                            const isPersonal = profileText.includes('PERSON') || profileText.includes('INDIVIDUAL') || profileText.includes('PERSONAL');
-                            const STD_OPTS = ['Sales Accounts', 'Direct Income', 'Purchase Accounts', 'Direct Expenses', 'Indirect Expenses', 'Indirect Income', 'Bank Charges', 'Fixed Assets', 'Investments', 'Sundry Debtors', 'Bank Accounts', 'Cash-in-Hand', 'Current Assets', 'Loans & Advances (Asset)', 'Capital Account', 'Capital Account / Drawings', 'Sundry Creditors', 'Duties & Taxes', 'Unsecured Loans', 'Secured Loans', 'Current Liabilities', 'Branch / Divisions', 'Suspense Account'];
-                            const customOptionHtml = (rowGroup && !STD_OPTS.includes(rowGroup)) ? `<option value="${rowGroup}" selected>📂 ${rowGroup} (Custom Group)</option>` : '';
+                    const profileText = (businessProfileInput ? businessProfileInput.value : '').toUpperCase();
+                    const isPersonal = profileText.includes('PERSON') || profileText.includes('INDIVIDUAL') || profileText.includes('PERSONAL');
+                    const STD_OPTS = ['Sales Accounts', 'Direct Income', 'Purchase Accounts', 'Direct Expenses', 'Indirect Expenses', 'Indirect Income', 'Bank Charges', 'Fixed Assets', 'Investments', 'Sundry Debtors', 'Bank Accounts', 'Cash-in-Hand', 'Current Assets', 'Loans & Advances (Asset)', 'Capital Account', 'Capital Account / Drawings', 'Sundry Creditors', 'Duties & Taxes', 'Unsecured Loans', 'Secured Loans', 'Current Liabilities', 'Branch / Divisions', 'Suspense Account'];
+                    const customOptionHtml = (rowGroup && !STD_OPTS.includes(rowGroup)) ? `<option value="${rowGroup}" selected>📂 ${rowGroup} (Custom Group)</option>` : '';
 
-                            if (isPersonal) {
-                                return `
+                    if (isPersonal) {
+                        return `
                                 <select class="bg-slate-950 border border-purple-500/40 text-purple-300 text-[11px] font-bold rounded-lg px-2 py-0.5 focus:outline-none transition group-hint-select cursor-pointer hover:border-purple-400 w-full" title="Select target personal accounting group for Miracle DBF">
                                     ${customOptionHtml}
                                     <optgroup label="🛍️ Personal Expenses & Outflows (P&L)">
@@ -5210,8 +5328,8 @@ document.addEventListener('DOMContentLoaded', () => {
                                         <option value="Suspense Account" ${rowGroup === 'Suspense Account' ? 'selected' : ''}>Suspense Account (Review / Unmapped)</option>
                                     </optgroup>
                                 </select>`;
-                            } else {
-                                return `
+                    } else {
+                        return `
                                 <select class="bg-slate-950 border border-cyan-500/30 text-cyan-300 text-[11px] font-bold rounded-lg px-2 py-0.5 focus:outline-none transition group-hint-select cursor-pointer hover:border-cyan-400 w-full" title="Select target commercial accounting group for Miracle DBF">
                                     ${customOptionHtml}
                                     <optgroup label="📈 Trading Account (Direct Sales, Purchases & Manufacturing)">
@@ -5248,8 +5366,8 @@ document.addEventListener('DOMContentLoaded', () => {
                                         <option value="Suspense Account" ${rowGroup === 'Suspense Account' ? 'selected' : ''}>Suspense Account (Review / Unmapped)</option>
                                     </optgroup>
                                 </select>`;
-                            }
-                        })()}
+                    }
+                })()}
                     </div>
                 </td>
                 <td class="px-3 py-2 border-r border-slate-800/30 text-right" style="width:130px;min-width:130px">
@@ -5381,7 +5499,7 @@ document.addEventListener('DOMContentLoaded', () => {
                                 r.status = 'Ready';
                                 if (cleanSelected && cleanSelected.toUpperCase() !== "SUSPENSE ACCOUNT") {
                                     if (r.flags) r.flags = r.flags.filter(f => f !== "Suspense Mapping");
-                                    r.confidence_score = Math.max(r.confidence_score || 95, 95);
+                                    r.confidence_score = 100;
                                 } else {
                                     if (!r.flags) r.flags = [];
                                     if (!r.flags.includes("Suspense Mapping")) r.flags.push("Suspense Mapping");
@@ -5517,7 +5635,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     <input type="number" step="0.01" class="qty-input bg-slate-900/40 hover:bg-slate-900 border border-slate-800/65 focus:border-brand-500 w-16 text-slate-200 text-sm text-right font-semibold rounded-lg px-2 py-1.5 focus:outline-none transition" value="${row.qty || row.quantity || (row.items && row.items.length > 0 ? row.items.reduce((acc, it) => acc + (parseFloat(it.qty) || 0), 0) : 1) || 1}">
                 </td>
                 <td class="px-3 py-2 border-r border-slate-800/50 text-right">
-                    <input type="text" class="taxable-input bg-slate-900/40 hover:bg-slate-900 border border-slate-800/65 focus:border-brand-500 w-28 text-slate-200 text-sm text-right rounded-lg px-2.5 py-1.5 focus:outline-none transition" value="₹${(row.taxable || 0).toLocaleString('en-IN', {minimumFractionDigits: 2})}">
+                    <input type="text" class="taxable-input bg-slate-900/40 hover:bg-slate-900 border border-slate-800/65 focus:border-brand-500 w-28 text-slate-200 text-sm text-right rounded-lg px-2.5 py-1.5 focus:outline-none transition" value="₹${(row.taxable || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}">
                 </td>
             `;
 
@@ -5525,28 +5643,28 @@ document.addEventListener('DOMContentLoaded', () => {
                 const val = row.discount || 0;
                 html += `
                 <td class="px-3 py-2 border-r border-slate-800/50 text-right">
-                    <input type="text" class="discount-input bg-slate-900/40 hover:bg-slate-900 border border-slate-800/65 focus:border-brand-500 w-20 text-slate-200 text-sm text-right rounded-lg px-2.5 py-1.5 focus:outline-none transition" value="₹${val.toLocaleString('en-IN', {minimumFractionDigits: 2})}">
+                    <input type="text" class="discount-input bg-slate-900/40 hover:bg-slate-900 border border-slate-800/65 focus:border-brand-500 w-20 text-slate-200 text-sm text-right rounded-lg px-2.5 py-1.5 focus:outline-none transition" value="₹${val.toLocaleString('en-IN', { minimumFractionDigits: 2 })}">
                 </td>`;
             }
             if (hasFreight) {
                 const val = row.freight || 0;
                 html += `
                 <td class="px-3 py-2 border-r border-slate-800/50 text-right">
-                    <input type="text" class="freight-input bg-slate-900/40 hover:bg-slate-900 border border-slate-800/65 focus:border-brand-500 w-20 text-slate-200 text-sm text-right rounded-lg px-2.5 py-1.5 focus:outline-none transition" value="₹${val.toLocaleString('en-IN', {minimumFractionDigits: 2})}">
+                    <input type="text" class="freight-input bg-slate-900/40 hover:bg-slate-900 border border-slate-800/65 focus:border-brand-500 w-20 text-slate-200 text-sm text-right rounded-lg px-2.5 py-1.5 focus:outline-none transition" value="₹${val.toLocaleString('en-IN', { minimumFractionDigits: 2 })}">
                 </td>`;
             }
             if (hasTcs) {
                 const val = row.tcs || 0;
                 html += `
                 <td class="px-3 py-2 border-r border-slate-800/50 text-right">
-                    <input type="text" class="tcs-input bg-slate-900/40 hover:bg-slate-900 border border-slate-800/65 focus:border-brand-500 w-20 text-slate-200 text-sm text-right rounded-lg px-2.5 py-1.5 focus:outline-none transition" value="₹${val.toLocaleString('en-IN', {minimumFractionDigits: 2})}">
+                    <input type="text" class="tcs-input bg-slate-900/40 hover:bg-slate-900 border border-slate-800/65 focus:border-brand-500 w-20 text-slate-200 text-sm text-right rounded-lg px-2.5 py-1.5 focus:outline-none transition" value="₹${val.toLocaleString('en-IN', { minimumFractionDigits: 2 })}">
                 </td>`;
             }
             if (hasTds) {
                 const val = row.tds || 0;
                 html += `
                 <td class="px-3 py-2 border-r border-slate-800/50 text-right">
-                    <input type="text" class="tds-input bg-slate-900/40 hover:bg-slate-900 border border-slate-800/65 focus:border-brand-500 w-20 text-slate-200 text-sm text-right rounded-lg px-2.5 py-1.5 focus:outline-none transition" value="₹${val.toLocaleString('en-IN', {minimumFractionDigits: 2})}">
+                    <input type="text" class="tds-input bg-slate-900/40 hover:bg-slate-900 border border-slate-800/65 focus:border-brand-500 w-20 text-slate-200 text-sm text-right rounded-lg px-2.5 py-1.5 focus:outline-none transition" value="₹${val.toLocaleString('en-IN', { minimumFractionDigits: 2 })}">
                 </td>`;
             }
 
@@ -5571,10 +5689,10 @@ document.addEventListener('DOMContentLoaded', () => {
                     </span>
                 </td>
                 <td class="px-3 py-2 border-r border-slate-800/50 text-right">
-                    <input type="text" class="gst-input bg-slate-900/40 hover:bg-slate-900 border border-slate-800/65 focus:border-brand-500 w-24 text-slate-200 text-sm text-right rounded-lg px-2.5 py-1.5 focus:outline-none transition" value="₹${(row.gst || 0).toLocaleString('en-IN', {minimumFractionDigits: 2})}">
+                    <input type="text" class="gst-input bg-slate-900/40 hover:bg-slate-900 border border-slate-800/65 focus:border-brand-500 w-24 text-slate-200 text-sm text-right rounded-lg px-2.5 py-1.5 focus:outline-none transition" value="₹${(row.gst || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}">
                 </td>
                 <td class="px-3 py-2 border-r border-slate-800/50 text-right font-bold text-white total-cell">
-                    ₹${(row.total || 0).toLocaleString('en-IN', {minimumFractionDigits: 2})}
+                    ₹${(row.total || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                 </td>
                 <td class="px-3 py-2 text-center">
                     <div class="flex flex-col items-center justify-center gap-1">
@@ -5631,6 +5749,15 @@ document.addEventListener('DOMContentLoaded', () => {
                     renderGrid(currentExtractedData);
                 });
             }
+            const editLedgerBtn = tr.querySelector('.edit-ledger-btn');
+            if (editLedgerBtn) {
+                editLedgerBtn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    const rawTargetName = row.party || row.party_name || row.mapped_ledger || '';
+                    openEditLedgerModal(rawTargetName, index);
+                });
+            }
+
             if (partyInput) {
                 partyInput.addEventListener('input', () => {
                     const val = partyInput.value;
@@ -5658,10 +5785,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 row.freight = freightInput ? parseCurrency(freightInput.value) : 0;
                 row.tcs = tcsInput ? parseCurrency(tcsInput.value) : 0;
                 row.tds = tdsInput ? parseCurrency(tdsInput.value) : 0;
-                
+
                 const expNet = (row.taxable + row.freight) + row.gst + row.tcs - row.tds;
                 const expGross = (row.taxable - row.discount + row.freight) + row.gst + row.tcs - row.tds;
-                
+
                 if (row.total > 0 && Math.abs(expNet - row.total) <= 2.00) {
                     row.total = expNet;
                 } else if (row.total > 0 && Math.abs(expGross - row.total) <= 2.00) {
@@ -5683,7 +5810,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
                 const totalCell = tr.querySelector('.total-cell');
                 if (totalCell) {
-                    totalCell.innerText = `₹${row.total.toLocaleString('en-IN', {minimumFractionDigits: 2})}`;
+                    totalCell.innerText = `₹${row.total.toLocaleString('en-IN', { minimumFractionDigits: 2 })}`;
                 }
                 recalcGrandTotals();
             };
@@ -5718,7 +5845,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (opBalInput && opBalInput.value !== '' && !isNaN(parseFloat(opBalInput.value))) {
             currentBalance = parseFloat(opBalInput.value);
         }
-        
+
         currentExtractedData.forEach(row => {
             const txType = (row.transaction_type || row.Transaction_Type || row.type || '').toString().trim().toLowerCase();
             let amt = parseCurrency(row.amount) || parseCurrency(row.deposit) || parseCurrency(row.withdrawal) || parseCurrency(row.Amount) || parseCurrency(row.Deposit) || parseCurrency(row.Withdrawal) || 0;
@@ -5742,12 +5869,12 @@ document.addEventListener('DOMContentLoaded', () => {
         let sumTaxable = 0, sumGst = 0, sumTotal = 0;
         let sumDiscount = 0, sumFreight = 0, sumTcs = 0, sumTds = 0;
         let sumReceipts = 0, sumPayments = 0;
-        
+
         if (currentModule === 'Bank Statements' || currentModule === 'Cash Entries') {
             calculateRollingBalances();
         }
         updateFilterCounts();
-        
+
         let count = 0;
         const dataToSum = getFilteredData();
         if (dataToSum && Array.isArray(dataToSum)) {
@@ -5768,10 +5895,10 @@ document.addEventListener('DOMContentLoaded', () => {
                     let rIgst = parseCurrency(row.igst || row.IGST || 0);
                     let rGst = parseCurrency(row.gst || row.GST || row.Total_GST || row['Total GST'] || 0);
                     if (rGst <= 0) rGst = rCgst + rSgst + rIgst;
-                    
+
                     let rTotal = parseCurrency(row.total || row.Total || row.total_amount || row.Grand_Total || row['Grand Total'] || row.amount || 0);
                     if (rTotal <= 0 && (rTaxable > 0 || rGst > 0)) rTotal = rTaxable + rGst;
-                    
+
                     // Fallback to item sums if row-level fields are missing
                     if (rTaxable <= 0 && Array.isArray(row.items) && row.items.length > 0) {
                         row.items.forEach(it => {
@@ -5824,12 +5951,12 @@ document.addEventListener('DOMContentLoaded', () => {
             if (kpiIcon4) kpiIcon4.className = 'fa-solid fa-scale-balanced text-sm text-cyan-400';
 
             if (kpiEntries) kpiEntries.textContent = `${count} Txns`;
-            if (kpiTaxable) kpiTaxable.textContent = `₹${sumReceipts.toLocaleString('en-IN', {minimumFractionDigits: 2})}`;
-            if (kpiGst) kpiGst.textContent = `₹${sumPayments.toLocaleString('en-IN', {minimumFractionDigits: 2})}`;
-            
+            if (kpiTaxable) kpiTaxable.textContent = `₹${sumReceipts.toLocaleString('en-IN', { minimumFractionDigits: 2 })}`;
+            if (kpiGst) kpiGst.textContent = `₹${sumPayments.toLocaleString('en-IN', { minimumFractionDigits: 2 })}`;
+
             const netBalance = sumReceipts - sumPayments;
             const netSign = netBalance > 0 ? '+' : (netBalance < 0 ? '-' : '');
-            if (kpiGrand) kpiGrand.textContent = `${netSign}₹${Math.abs(netBalance).toLocaleString('en-IN', {minimumFractionDigits: 2})}`;
+            if (kpiGrand) kpiGrand.textContent = `${netSign}₹${Math.abs(netBalance).toLocaleString('en-IN', { minimumFractionDigits: 2 })}`;
         } else {
             if (kpiLabel1) kpiLabel1.textContent = 'Total Entries';
             if (kpiLabel2) kpiLabel2.textContent = 'Taxable Total';
@@ -5842,9 +5969,9 @@ document.addEventListener('DOMContentLoaded', () => {
             if (kpiIcon4) kpiIcon4.className = 'fa-solid fa-indian-rupee-sign text-sm text-emerald-400';
 
             if (kpiEntries) kpiEntries.textContent = `${count} Bills`;
-            if (kpiTaxable) kpiTaxable.textContent = `₹${sumTaxable.toLocaleString('en-IN', {minimumFractionDigits: 2})}`;
-            if (kpiGst) kpiGst.textContent = `₹${sumGst.toLocaleString('en-IN', {minimumFractionDigits: 2})}`;
-            if (kpiGrand) kpiGrand.textContent = `₹${sumTotal.toLocaleString('en-IN', {minimumFractionDigits: 2})}`;
+            if (kpiTaxable) kpiTaxable.textContent = `₹${sumTaxable.toLocaleString('en-IN', { minimumFractionDigits: 2 })}`;
+            if (kpiGst) kpiGst.textContent = `₹${sumGst.toLocaleString('en-IN', { minimumFractionDigits: 2 })}`;
+            if (kpiGrand) kpiGrand.textContent = `₹${sumTotal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}`;
         }
 
         if (container) {
@@ -5877,14 +6004,14 @@ document.addEventListener('DOMContentLoaded', () => {
             if (!confirm('This will fetch all Sundry Debtors with an outstanding balance and automatically generate Cash Receipt entries for them in the grid. Existing grid data will be overwritten. Proceed?')) {
                 return;
             }
-            
+
             autoFillBtn.innerHTML = `<i class="fa-solid fa-spinner fa-spin mr-1"></i> Loading...`;
             autoFillBtn.disabled = true;
-            
+
             try {
                 const response = await fetch(`${API_URL}/api/debtor-balances${activeYearFolder ? '?year=' + activeYearFolder : ''}`);
                 if (!response.ok) throw new Error('Network response was not ok');
-                
+
                 const result = await response.json();
                 if (result.status === 'success') {
                     if (!result.data || result.data.length === 0) {
@@ -5935,7 +6062,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
             });
         }
-        
+
         if (lowConfidenceFound) {
             const confirmed = confirm("⚠️ WARNING: Some staged transactions have a low confidence score (below 80%). Do you want to manually confirm and proceed to push them to Miracle?");
             if (!confirmed) {
@@ -5947,14 +6074,15 @@ document.addEventListener('DOMContentLoaded', () => {
         currentExtractedData.forEach((row) => {
             if (currentModule === 'Bank Statements' || currentModule === 'Cash Entries') {
                 const amount = row.amount || 0;
+                const finalPartyName = (row.mapped_ledger && row.mapped_ledger.trim()) ? row.mapped_ledger.trim() : ((row.party_name || row.party || "Suspense Account").trim());
                 vouchers.push({
                     date: (row.date || '').trim(),
                     reference_no: (row.reference_no || '').trim(),
                     narration: (row.narration || row.party_name || row.party || '').trim(),
-                    party_name: (row.mapped_ledger && row.mapped_ledger.trim().toUpperCase() !== "SUSPENSE ACCOUNT") ? row.mapped_ledger.trim() : (row.party_name || row.party || "Suspense Account"),
+                    party_name: finalPartyName,
                     transaction_type: row.transaction_type || 'Receipt',
                     amount: amount,
-                    group_hint: row.group_hint || ''
+                    group_hint: (row.group_hint || '').trim()
                 });
             } else if (currentModule === 'Opening Balances') {
                 vouchers.push({
@@ -5973,11 +6101,11 @@ document.addEventListener('DOMContentLoaded', () => {
                 const tcs = parseFloat(row.tcs) || 0;
                 const tds = parseFloat(row.tds) || 0;
                 const total = parseFloat(row.total) || 0;
-                
-                const partyName = (row.party_name || row.party || row.mapped_ledger || row.PartyName || '').trim();
+
+                const partyName = (row.mapped_ledger && row.mapped_ledger.trim()) ? row.mapped_ledger.trim() : ((row.party_name || row.party || row.PartyName || '').trim());
                 const billNo = (row.bill_no || row.billNo || row.invoice_no || '').trim();
                 const dateVal = (row.date || row.Date || '').trim();
-                
+
                 let originalItems = row.items || [];
                 if (originalItems && originalItems.length > 0) {
                     originalItems.forEach(item => {
@@ -6003,7 +6131,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         gst_pct: gst > 0 && taxable > 0 ? (gst / taxable) * 100 : 18.0
                     }];
                 }
-                
+
                 let cgst = 0, sgst = 0, igst = 0;
                 if (row.igst > 0) {
                     igst = gst;
@@ -6014,7 +6142,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     cgst = gst / 2;
                     sgst = gst / 2;
                 }
-                
+
                 vouchers.push({
                     date: dateVal,
                     bill_no: billNo,
@@ -6036,6 +6164,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     tcs: tcs,
                     tds: tds,
                     total: total,
+                    group_hint: (row.group_hint || '').trim(),
                     items: originalItems
                 });
             }
@@ -6052,7 +6181,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const seenVouchers = new Set();
             const dedupedVouchers = [];
             for (const v of vouchers) {
-                const key = `${v.date}|${v.amount}|${v.transaction_type}|${(v.reference_no||'').toLowerCase()}|${(v.narration||'').substring(0,40).toLowerCase()}`;
+                const key = `${v.date}|${v.amount}|${v.transaction_type}|${(v.reference_no || '').toLowerCase()}|${(v.narration || '').substring(0, 40).toLowerCase()}`;
                 if (!seenVouchers.has(key)) {
                     seenVouchers.add(key);
                     dedupedVouchers.push(v);
@@ -6076,7 +6205,7 @@ document.addEventListener('DOMContentLoaded', () => {
         setTimeout(() => showToast(`📝 Step 2/4: Injecting ${vouchers.length} voucher headers (RKACCT41.DBF)...`, "info"), 600);
         setTimeout(() => showToast(`✍️ Step 3/4: Writing double entries & memo narrations (RKACCT01/40.DBF)...`, "info"), 1400);
         setTimeout(() => showToast(`🔄 Step 4/4: Cross-syncing multi-year ledger masters (YR25, YR26, YR27)...`, "info"), 2200);
-        
+
         if (currentModule === 'Bank Statements') {
             const targetBank = window.currentBankName || "Bank Account";
             pushBtn.innerHTML = `<i class="fa-solid fa-circle-notch fa-spin mr-1"></i> Pushing ${vouchers.length} txns to ${targetBank}...`;
@@ -6088,7 +6217,7 @@ document.addEventListener('DOMContentLoaded', () => {
             pushBtn.innerHTML = `<i class="fa-solid fa-circle-notch fa-spin mr-1"></i> Pushing ${vouchers.length} Opening Balances...`;
             const currentMiraclePath = (typeof miracleBasePathInput !== 'undefined' && miracleBasePathInput && miracleBasePathInput.value)
                 ? miracleBasePathInput.value.trim() : 'C:\\Miracle';
-            
+
             try {
                 let res;
                 if (isLocalBridgeOnline) {
@@ -6106,7 +6235,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         body: JSON.stringify(bridgePayload)
                     });
                 } else {
-                    const payload = { 
+                    const payload = {
                         entries: vouchers,
                         backup_path: inlineBackupPath ? inlineBackupPath.value.trim() : ""
                     };
@@ -6116,12 +6245,12 @@ document.addEventListener('DOMContentLoaded', () => {
                         body: JSON.stringify(payload)
                     });
                 }
-                
+
                 if (!res.ok) {
                     const errData = await res.json();
                     throw new Error(errData.detail || "Failed to push opening balances.");
                 }
-                
+
                 const result = await res.json();
                 alert(`Successfully processed opening balances.`);
                 renderEmptyState();
@@ -6136,10 +6265,10 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
 
-        let activeSetupId = currentModule === 'Sales' 
+        let activeSetupId = currentModule === 'Sales'
             ? (document.getElementById('salesSetupId') ? document.getElementById('salesSetupId').value : 5)
             : (document.getElementById('purchaseSetupId') ? document.getElementById('purchaseSetupId').value : 3);
-            
+
         pushBtn.innerHTML = `<i class="fa-solid fa-circle-notch fa-spin mr-1"></i> Pushing ${vouchers.length} ${currentModule} bills (Setup ID: ${activeSetupId})...`;
 
         const forcePushCheckbox = document.getElementById('forcePushCheckbox');
@@ -6153,8 +6282,16 @@ document.addEventListener('DOMContentLoaded', () => {
             backup_path: inlineBackupPath ? inlineBackupPath.value.trim() : "",
             force_push: isForcePush
         };
-        if (currentModule === 'Bank Statements' && window.currentBankName) {
-            pushPayload.target_bank_name = window.currentBankName;
+        if (currentModule === 'Bank Statements') {
+            const targetBankSelect = document.getElementById('targetBankAccount');
+            if (targetBankSelect && targetBankSelect.value && targetBankSelect.value !== '__CUSTOM__') {
+                const selOpt = targetBankSelect.options[targetBankSelect.selectedIndex];
+                const rawText = selOpt ? selOpt.text.replace(/^[🏦✍️]\s*/, '').replace(/\s*\([^)]*\)$/, '').trim() : 'Bank Account';
+                window.currentBankName = rawText;
+                window.currentBankCode = targetBankSelect.value;
+            }
+            pushPayload.target_bank_name = window.currentBankName || "Bank Account";
+            pushPayload.target_bank_code = window.currentBankCode || null;
         } else if (currentModule === 'Cash Entries') {
             const targetCashDropdown = document.getElementById('targetCashAccount');
             if (targetCashDropdown && targetCashDropdown.value) {
@@ -6186,8 +6323,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
         if (isLocalBridgeOnline) {
             targetPushEndpoint = `${LOCAL_BRIDGE_URL}/inject`;
-            const miracleBasePathVal = (typeof miracleBasePathInput !== 'undefined' && miracleBasePathInput && miracleBasePathInput.value) 
-                ? miracleBasePathInput.value.trim() 
+            const miracleBasePathVal = (typeof miracleBasePathInput !== 'undefined' && miracleBasePathInput && miracleBasePathInput.value)
+                ? miracleBasePathInput.value.trim()
                 : "C:\\Miracle";
             const backupPathVal = (typeof inlineBackupPath !== 'undefined' && inlineBackupPath && inlineBackupPath.value)
                 ? inlineBackupPath.value.trim()
@@ -6201,16 +6338,17 @@ document.addEventListener('DOMContentLoaded', () => {
                 miracle_base_path: miracleBasePathVal,
                 active_client_id: getActiveClientId(),
                 active_year_folder: activeYearFolder || "YR25",
-                module_type: (currentModule === 'Bank Statements') ? 'bank' 
-                    : (currentModule === 'Sales') ? 'sales' 
-                    : (currentModule === 'Purchases') ? 'purchase' 
-                    : (currentModule === 'Cash Entries') ? 'cash' : 'opening_balance',
+                module_type: (currentModule === 'Bank Statements') ? 'bank'
+                    : (currentModule === 'Sales') ? 'sales'
+                        : (currentModule === 'Purchases') ? 'purchase'
+                            : (currentModule === 'Cash Entries') ? 'cash' : 'opening_balance',
                 vouchers: vouchers,
                 sales_setup_id: salesSetupIdVal,
                 purchase_setup_id: purchaseSetupIdVal,
                 sales_prefix: salesPrefixVal,
                 purchase_prefix: purchasePrefixVal,
                 target_bank_name: window.currentBankName || "Bank Account",
+                target_bank_code: window.currentBankCode || null,
                 target_cash_code: (document.getElementById('targetCashAccount') ? document.getElementById('targetCashAccount').value : "ACASHACT") || "ACASHACT",
                 backup_path: backupPathVal,
                 force_push: isForcePush
@@ -6232,15 +6370,15 @@ document.addEventListener('DOMContentLoaded', () => {
                 headers: { 'Content-Type': 'application/json' },
                 body: targetBody
             });
-            
+
             if (!res.ok) {
                 const errData = await res.json();
                 throw new Error(errData.detail || "Failed to push to Miracle.");
             }
-            
+
             const result = await res.json();
-            
-            if (result.primary_year && result.primary_year !== activeYearFolder) {
+
+            if (result.primary_year && result.primary_year !== activeYearFolder && !window.userOverrodeYear) {
                 activeYearFolder = result.primary_year;
                 await fetchClientYears(getActiveClientId(), activeYearFolder);
                 updateHeaderBadges();
@@ -6261,13 +6399,13 @@ document.addEventListener('DOMContentLoaded', () => {
                 document.getElementById('auditDuplicateCount').innerText = ar.duplicates || 0;
                 document.getElementById('auditMissingCount').innerText = ar.missing_parties || 0;
                 document.getElementById('auditAnomalyCount').innerText = ar.anomalies || 0;
-                
+
                 // ── DUPLICATE DETAILS TABLE ──────────────────────────────────────
                 const dupSection = document.getElementById('auditDupSection');
                 const dupTableBody = document.getElementById('auditDupTableBody');
                 const dupBadgeCount = document.getElementById('auditDupBadgeCount');
                 dupTableBody.innerHTML = '';
-                
+
                 const dupDetails = ar.duplicate_details || [];
                 if (dupBadgeCount) {
                     dupBadgeCount.innerText = `${dupDetails.length} items`;
@@ -6292,7 +6430,7 @@ document.addEventListener('DOMContentLoaded', () => {
                             ? `<span class="px-2.5 py-1 rounded-lg text-xs font-semibold bg-cyan-500/10 text-cyan-300 border border-cyan-500/20 whitespace-nowrap"><i class="fa-solid fa-building-columns text-[10px] mr-1"></i> Bank</span>`
                             : `<span class="px-2.5 py-1 rounded-lg text-xs font-semibold bg-purple-500/10 text-purple-300 border border-purple-500/20 whitespace-nowrap"><i class="fa-solid fa-file-invoice text-[10px] mr-1"></i> ${moduleText || 'Vouchers'}</span>`;
 
-                        const amtFmt = Number(d.amount || 0).toLocaleString('en-IN', {minimumFractionDigits: 2});
+                        const amtFmt = Number(d.amount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 });
                         const tr = document.createElement('tr');
                         tr.className = 'hover:bg-slate-800/50 transition-colors border-b border-slate-800/40';
                         tr.innerHTML = `
@@ -6324,7 +6462,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     logList.innerHTML = '<li class="text-emerald-400 italic text-xs flex items-center gap-2"><i class="fa-solid fa-circle-check text-emerald-400"></i> No anomalies or missing items. Clean sweep verification!</li>';
                 }
                 // ─────────────────────────────────────────────────────────────────
-                
+
                 if (result.year_counts && Object.keys(result.year_counts).length > 0) {
                     const yrParts = Object.entries(result.year_counts).map(([y, c]) => `• FY ${y}: ${c} vouchers`).join(' | ');
                     showToast(`🎉 Miracle DBF Push Success! ${yrParts}`, "success");
@@ -6336,7 +6474,7 @@ document.addEventListener('DOMContentLoaded', () => {
             } else {
                 showToast(`🎉 Miracle DBF Push Success! ${result.message}`, "success");
             }
-            
+
             // Clear staging area on success
             renderEmptyState();
         } catch (err) {
@@ -6364,37 +6502,37 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-// ── EXPORT AUDIT PDF FUNCTION ────────────────────────────────────────────────
-function downloadAuditPdf() {
-    if (!window.lastAuditReport) {
-        showToast("No audit report data available to export.", "error");
-        return;
-    }
+    // ── EXPORT AUDIT PDF FUNCTION ────────────────────────────────────────────────
+    function downloadAuditPdf() {
+        if (!window.lastAuditReport) {
+            showToast("No audit report data available to export.", "error");
+            return;
+        }
 
-    const ar = window.lastAuditReport;
-    const clientId = ar.client_id || getActiveClientId();
-    const activeYr = ar.active_year || activeYearFolder || 'YR26';
-    const timestamp = ar.timestamp || new Date().toLocaleString();
-    const dupDetails = ar.duplicate_details || [];
-    const messages = ar.messages || [];
+        const ar = window.lastAuditReport;
+        const clientId = ar.client_id || getActiveClientId();
+        const activeYr = ar.active_year || activeYearFolder || 'YR26';
+        const timestamp = ar.timestamp || new Date().toLocaleString();
+        const dupDetails = ar.duplicate_details || [];
+        const messages = ar.messages || [];
 
-    const injected = ar.injected || 0;
-    const duplicates = ar.duplicates || 0;
-    const anomalies = ar.anomalies || 0;
-    const missing = ar.missing_parties || 0;
+        const injected = ar.injected || 0;
+        const duplicates = ar.duplicates || 0;
+        const anomalies = ar.anomalies || 0;
+        const missing = ar.missing_parties || 0;
 
-    const element = document.createElement('div');
-    element.className = 'pdf-export-container';
-    element.style.padding = '25px 30px';
-    element.style.fontFamily = "'Plus Jakarta Sans', 'Segoe UI', Arial, sans-serif";
-    element.style.color = '#0F172A';
-    element.style.backgroundColor = '#FFFFFF';
+        const element = document.createElement('div');
+        element.className = 'pdf-export-container';
+        element.style.padding = '25px 30px';
+        element.style.fontFamily = "'Plus Jakarta Sans', 'Segoe UI', Arial, sans-serif";
+        element.style.color = '#0F172A';
+        element.style.backgroundColor = '#FFFFFF';
 
-    let dupTableRows = '';
-    if (dupDetails.length > 0) {
-        dupDetails.forEach((d, idx) => {
-            const amt = Number(d.amount || 0).toLocaleString('en-IN', {minimumFractionDigits: 2});
-            dupTableRows += `
+        let dupTableRows = '';
+        if (dupDetails.length > 0) {
+            dupDetails.forEach((d, idx) => {
+                const amt = Number(d.amount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 });
+                dupTableRows += `
                 <tr style="background-color: ${idx % 2 === 0 ? '#F8FAFC' : '#FFFFFF'}; border-bottom: 1px solid #E2E8F0;">
                     <td style="padding: 9px 12px; font-size: 11px; font-family: monospace;">${d.date || '-'}</td>
                     <td style="padding: 9px 12px; font-size: 11px; font-family: monospace; font-weight: 700; color: #B45309;">${d.bill_no || '—'}</td>
@@ -6404,21 +6542,21 @@ function downloadAuditPdf() {
                     <td style="padding: 9px 12px; font-size: 10px; color: #4338CA;"><span style="background: #EEF2FF; color: #4338CA; padding: 4px 10px; border-radius: 12px; font-weight: 600;">${d.module || 'Vouchers'}</span></td>
                 </tr>
             `;
-        });
-    } else {
-        dupTableRows = `<tr><td colspan="6" style="padding: 16px; text-align: center; color: #047857; font-style: italic;">No skipped duplicates recorded in this injection batch.</td></tr>`;
-    }
+            });
+        } else {
+            dupTableRows = `<tr><td colspan="6" style="padding: 16px; text-align: center; color: #047857; font-style: italic;">No skipped duplicates recorded in this injection batch.</td></tr>`;
+        }
 
-    let logItems = '';
-    if (messages.length > 0) {
-        messages.forEach(msg => {
-            logItems += `<li style="margin-bottom: 6px; font-size: 11px; color: #B45309;">⚠️ ${msg}</li>`;
-        });
-    } else {
-        logItems = `<li style="font-size: 11px; color: #047857; font-style: italic;">✅ No anomalies or missing items detected. Verification clean sweep!</li>`;
-    }
+        let logItems = '';
+        if (messages.length > 0) {
+            messages.forEach(msg => {
+                logItems += `<li style="margin-bottom: 6px; font-size: 11px; color: #B45309;">⚠️ ${msg}</li>`;
+            });
+        } else {
+            logItems = `<li style="font-size: 11px; color: #047857; font-style: italic;">✅ No anomalies or missing items detected. Verification clean sweep!</li>`;
+        }
 
-    element.innerHTML = `
+        element.innerHTML = `
         <div style="border-bottom: 2px solid #4F46E5; padding-bottom: 16px; margin-bottom: 20px; display: flex; justify-content: space-between; align-items: center;">
             <div>
                 <h1 style="font-size: 22px; font-weight: 800; color: #4F46E5; margin: 0 0 4px 0; tracking-tight: -0.5px;">Miracle AI Auto-Entry</h1>
@@ -6494,34 +6632,34 @@ function downloadAuditPdf() {
         </div>
     `;
 
-    const opt = {
-        margin:       [10, 10, 10, 10],
-        filename:     `Miracle_Audit_Report_${clientId}_${new Date().toISOString().slice(0,10)}.pdf`,
-        image:        { type: 'jpeg', quality: 0.98 },
-        html2canvas:  { scale: 2, logging: false, useCORS: true },
-        jsPDF:        { unit: 'mm', format: 'a4', orientation: 'portrait' }
-    };
+        const opt = {
+            margin: [10, 10, 10, 10],
+            filename: `Miracle_Audit_Report_${clientId}_${new Date().toISOString().slice(0, 10)}.pdf`,
+            image: { type: 'jpeg', quality: 0.98 },
+            html2canvas: { scale: 2, logging: false, useCORS: true },
+            jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
+        };
 
-    if (typeof html2pdf !== 'undefined') {
-        showToast("📄 Generating PDF audit report...", "info");
-        html2pdf().set(opt).from(element).save().then(() => {
-            showToast("✅ Audit PDF downloaded successfully!", "success");
-        }).catch(err => {
-            console.error("html2pdf failed, fallback to print window:", err);
+        if (typeof html2pdf !== 'undefined') {
+            showToast("📄 Generating PDF audit report...", "info");
+            html2pdf().set(opt).from(element).save().then(() => {
+                showToast("✅ Audit PDF downloaded successfully!", "success");
+            }).catch(err => {
+                console.error("html2pdf failed, fallback to print window:", err);
+                printElementFallback(element);
+            });
+        } else {
             printElementFallback(element);
-        });
-    } else {
-        printElementFallback(element);
+        }
     }
-}
 
-function printElementFallback(element) {
-    const printWin = window.open('', '_blank', 'width=900,height=800');
-    if (!printWin) {
-        showToast("Pop-up blocked. Please allow pop-ups to print PDF.", "error");
-        return;
-    }
-    printWin.document.write(`
+    function printElementFallback(element) {
+        const printWin = window.open('', '_blank', 'width=900,height=800');
+        if (!printWin) {
+            showToast("Pop-up blocked. Please allow pop-ups to print PDF.", "error");
+            return;
+        }
+        printWin.document.write(`
         <!DOCTYPE html>
         <html>
         <head>
@@ -6543,14 +6681,14 @@ function printElementFallback(element) {
         </body>
         </html>
     `);
-    printWin.document.close();
-}
+        printWin.document.close();
+    }
 
     // --- DOCUMENT VIEWER RESIZER & TOGGLE LOGIC ---
     const docViewerPanel = document.getElementById('docViewerPanel');
     const panelResizer = document.getElementById('panelResizer');
     const toggleDocViewerBtn = document.getElementById('toggleDocViewerBtn');
-    
+
     // --- SIDEBAR TOGGLE LOGIC ---
     const toggleSidebarBtn = document.getElementById('toggleSidebarBtn');
     const mainSidebar = document.getElementById('mainSidebar');
@@ -6573,7 +6711,7 @@ function printElementFallback(element) {
             }
         });
     }
-    
+
     // --- FORCE MATH RECALCULATION & DELEGATION ---
     const recalculateMathBtn = document.getElementById('recalculateMathBtn');
     if (recalculateMathBtn) {
@@ -6582,7 +6720,7 @@ function printElementFallback(element) {
             recalcGrandTotals();
             renderVirtualGridRows();
             showToast("Recalculated Closing Balances & Math Totals!", "success");
-            
+
             // Tiny visual feedback
             const icon = recalculateMathBtn.querySelector('i');
             if (icon) {
@@ -6716,7 +6854,7 @@ function printElementFallback(element) {
         let isDocViewerOpen = false;
         docViewerPanel.style.display = 'none';
         panelResizer.style.display = 'none';
-        
+
         toggleDocViewerBtn.addEventListener('click', () => {
             isDocViewerOpen = !isDocViewerOpen;
             if (isDocViewerOpen) {
@@ -6767,14 +6905,14 @@ function printElementFallback(element) {
             }
             console.log("Add Row clicked! currentModule:", currentModule, "currentExtractedData:", currentExtractedData);
             if (!currentExtractedData) currentExtractedData = [];
-            
+
             const todayStr = new Date().toISOString().split('T')[0];
             const newRow = {
                 id: ++globalIndexCounter,
                 status: 'Ready',
                 items: []
             };
-            
+
             if (currentModule === 'Bank Statements' || currentModule === 'Cash Entries') {
                 newRow.date = todayStr;
                 newRow.reference_no = '';
@@ -6800,17 +6938,17 @@ function printElementFallback(element) {
                 newRow.tds = 0;
                 newRow.total = 0;
             }
-            
+
             currentExtractedData.push(newRow); // Add to the bottom
             renderGrid(currentExtractedData);
-            
+
             // Scroll table container specifically to bottom & re-render virtual slice for bottom row
             const gridContainer = document.getElementById('gridTableContainer');
             if (gridContainer) {
                 setTimeout(() => {
                     gridContainer.scrollTop = gridContainer.scrollHeight;
                     renderVirtualGridRows();
-                    
+
                     // Auto-focus the narration / party input in the newly added row
                     const lastRow = gridBody.querySelector('tr:last-child');
                     if (lastRow) {
@@ -6830,6 +6968,27 @@ function printElementFallback(element) {
     if (gridSearchInput) {
         gridSearchInput.addEventListener('input', (e) => {
             currentGridSearch = e.target.value.trim();
+            if (gridBody) gridBody.dataset.needsFullRender = 'true';
+            recalcGrandTotals();
+            renderVirtualGridRows();
+        });
+    }
+
+    const gridGroupFilterSelect = document.getElementById('gridGroupFilterSelect');
+    if (gridGroupFilterSelect) {
+        gridGroupFilterSelect.addEventListener('change', (e) => {
+            currentGridGroupFilter = e.target.value;
+            if (gridBody) gridBody.dataset.needsFullRender = 'true';
+            recalcGrandTotals();
+            renderVirtualGridRows();
+        });
+    }
+
+    const gridAccountFilterSelect = document.getElementById('gridAccountFilterSelect');
+    if (gridAccountFilterSelect) {
+        gridAccountFilterSelect.addEventListener('change', (e) => {
+            currentGridAccountFilter = e.target.value;
+            if (gridBody) gridBody.dataset.needsFullRender = 'true';
             recalcGrandTotals();
             renderVirtualGridRows();
         });
@@ -6897,7 +7056,7 @@ function printElementFallback(element) {
     function showPdfPasswordModal(message, isIncorrect = false, filename = '') {
         if (!pdfPasswordModal) return;
         if (pdfPasswordDesc) {
-            pdfPasswordDesc.innerText = filename 
+            pdfPasswordDesc.innerText = filename
                 ? `The document '${filename}' is encrypted with a password. Please enter the password to process and extract data.`
                 : "The document is encrypted with a password. Please enter the password to process and extract data.";
         }
@@ -6962,10 +7121,10 @@ function printElementFallback(element) {
             e.preventDefault();
             const enteredPassword = pdfPasswordInput ? pdfPasswordInput.value.trim() : '';
             if (!enteredPassword || !pendingUploadContext) return;
-            
+
             const ctx = pendingUploadContext;
             hidePdfPasswordModal();
-            
+
             retryUploadWithPassword(ctx.file, ctx.module, ctx.instruction, enteredPassword);
         });
     }
@@ -6974,7 +7133,7 @@ function printElementFallback(element) {
         if (!loadingState) return;
         const loadingMsg = loadingState.querySelector('h3');
         const loadingSub = loadingState.querySelector('p');
-        
+
         loadingMsg.innerText = `Decrypting & Extracting Data...`;
         loadingSub.innerText = `Unlocking ${file.name} with provided password.`;
         loadingState.classList.remove('hidden');
@@ -7019,7 +7178,7 @@ function printElementFallback(element) {
             }
 
             // Auto-detect year and client if detected
-            if (resData.detected_year && resData.detected_year !== activeYearFolder) {
+            if (resData.detected_year && resData.detected_year !== activeYearFolder && !window.userOverrodeYear) {
                 activeYearFolder = resData.detected_year;
                 await fetchClientYears(getActiveClientId(), activeYearFolder);
             }
@@ -7065,7 +7224,7 @@ function printElementFallback(element) {
                                 isB2C: false,
                                 autoCreateB2B: false,
                                 group_hint: row.group_hint || "",
-                                confidence_score: row.confidence_score || 100,
+                                confidence_score: (row.confidence_score !== undefined && row.confidence_score !== null) ? row.confidence_score : 100,
                                 flags: row.flags || []
                             };
                         } else {

@@ -260,3 +260,15 @@ This document reports and tracks the major bugs identified in both the frontend 
   - **Full Unlimited Memo Writing**: Guaranteed that `T40F02` in `RKACCT40.DBF` receives 100% full unlimited narration text without 50-character truncation limits. Short header field `FIELD82` in `RKACCT41.DBF` remains `C(50)` per fixed DBF schema.
   - **Empirical Verification**: Screenshot from Miracle 9.0 (Rel 7.0) for `21 : Aksharbrahm Consulting Private Limited (2026-2027)` confirmed zero error modals, and narration `2026-07-29 AKSHARBRAHM CONSULTING P S58732899 553481 100000.00 645928.70` rendered 100% completely and perfectly inside the Narration box!
 
+---
+
+## 27. Bug: Blank Account Name for Contra Vouchers (`Ctra`) in Miracle Ledger View (`party_f16_val = None`)
+* **Problem**: In Miracle Accounting Software (`Report -> Account Books -> Ledger -> Ledger`), Contra entries (`Ctra` / `BC`) displayed with a **COMPLETELY BLANK Account Name** column (e.g. Row 5 on `07/03/2026` showing `07/03/2026 Ctra 11,000.00` with no opposite account name).
+* **Root Cause**:
+  - `party_f16_val` in `_inject_bank_statements()` in [`backend/dbf_handler.py`](file:///Users/jaydevnakum/Work%20Place/WORK/APP%20DETAILS/Mirracle%20Auto%20Entre%20Sale%20or%20Purchase%20or%20Bank/backend/dbf_handler.py) was set to `None if is_contra else v_date`, causing `FIELD16` in `RKACCT01.DBF` to be written as `None` for Contra vouchers.
+  - Miracle's Ledger Report queries `RKACCT01.DBF` by matching `FIELD16` date to the report date range. Because `FIELD16` was `None`, Miracle failed to load the opposite account name and document number, rendering the Account Name column blank.
+* **Fix Applied**:
+  - **DBF Handler Engine Upgrade**: Updated `party_f16_val = v_date` in `_inject_bank_statements()` so `FIELD16` in `RKACCT01.DBF` is always populated with the voucher date for Contra entries (`BC`).
+  - **Flag & Date Self-Healing Engine**: Upgraded `repair_bank_entry_flags()` to include `BC` in `target_type in ('BR', 'BP', 'BC')` to repair `FIELD16` dates for Contra lines across all year folders.
+  - **Database Repair Execution**: Ran repair engine across `CMP0027`: successfully repaired **226 Contra T01 records** across `YR25` through `YR31` in `RKACCT01.DBF`.
+  - **Empirical Verification**: Screenshot from Miracle 9.0 (Rel 7.0) for `130 : JIGNESHBHAI JAYANTILAL KHUNT (2025-2026)` confirmed that Contra vouchers (`Ctra`) now display opposite account names and document numbers 100% cleanly!

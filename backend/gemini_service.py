@@ -4,8 +4,12 @@ import warnings
 import logging
 
 # Suppress google-genai SDK automatic function calling (AFC) recommendation warnings
-warnings.filterwarnings("ignore", category=UserWarning, message=".*Automatic function calling.*")
-warnings.filterwarnings("ignore", category=UserWarning, message=".*automatic function calling.*")
+warnings.filterwarnings(
+    "ignore", category=UserWarning, message=".*Automatic function calling.*"
+)
+warnings.filterwarnings(
+    "ignore", category=UserWarning, message=".*automatic function calling.*"
+)
 warnings.filterwarnings("ignore", message=".*Automatic function calling.*")
 warnings.filterwarnings("ignore", message=".*automatic function calling.*")
 
@@ -16,7 +20,11 @@ logging.getLogger("google.generativeai").setLevel(logging.ERROR)
 try:
     import pandas as pd
 except ImportError:
-    backend_venv_sp = os.path.abspath(os.path.join(os.path.dirname(__file__), "venv", "lib", "python3.14", "site-packages"))
+    backend_venv_sp = os.path.abspath(
+        os.path.join(
+            os.path.dirname(__file__), "venv", "lib", "python3.14", "site-packages"
+        )
+    )
     if os.path.exists(backend_venv_sp) and backend_venv_sp not in sys.path:
         sys.path.insert(0, backend_venv_sp)
 
@@ -31,17 +39,30 @@ import datetime
 _GLOBAL_STATUS_LOCK = threading.Lock()
 _GLOBAL_STATUS_STORE = {}
 
+
 def get_current_extraction_status(filename: str = None) -> dict:
     """Returns thread-safe in-memory status without disk lock delays."""
     with _GLOBAL_STATUS_LOCK:
         if filename and filename in _GLOBAL_STATUS_STORE:
             return _GLOBAL_STATUS_STORE[filename]
-        return _GLOBAL_STATUS_STORE.get("_latest", {
-            "filename": "", "part": 0, "total": 0, "progress_pct": 0, "percentage": 0, "message": "Idle"
-        })
+        return _GLOBAL_STATUS_STORE.get(
+            "_latest",
+            {
+                "filename": "",
+                "part": 0,
+                "total": 0,
+                "progress_pct": 0,
+                "percentage": 0,
+                "message": "Idle",
+            },
+        )
+
 
 # --- DAILY 429 MODEL QUOTA BLACKLIST TRACKER ---
-EXHAUSTED_MODELS_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "exhausted_models.json")
+EXHAUSTED_MODELS_FILE = os.path.join(
+    os.path.dirname(os.path.abspath(__file__)), "exhausted_models.json"
+)
+
 
 def _load_exhausted_models_cache() -> dict:
     if os.path.exists(EXHAUSTED_MODELS_FILE):
@@ -54,6 +75,7 @@ def _load_exhausted_models_cache() -> dict:
             return {}
     return {}
 
+
 def _save_exhausted_models_cache(cache: dict):
     try:
         with open(EXHAUSTED_MODELS_FILE, "w") as f:
@@ -61,13 +83,16 @@ def _save_exhausted_models_cache(cache: dict):
     except Exception as e:
         print(f"Warning: Could not save exhausted models cache: {e}")
 
+
 _EXHAUSTED_MODELS_CACHE = _load_exhausted_models_cache()
 
 import hashlib
 
+
 def _make_key_model_cache_key(api_key: str | None, model_name: str) -> str:
-    k_hash = hashlib.md5((api_key or "default").encode('utf-8')).hexdigest()[:12]
+    k_hash = hashlib.md5((api_key or "default").encode("utf-8")).hexdigest()[:12]
     return f"{k_hash}:{model_name}"
+
 
 def is_key_model_quota_exhausted_today(api_key: str | None, model_name: str) -> bool:
     global _EXHAUSTED_MODELS_CACHE
@@ -82,6 +107,7 @@ def is_key_model_quota_exhausted_today(api_key: str | None, model_name: str) -> 
             return False
     return False
 
+
 def mark_key_model_quota_exhausted_today(api_key: str | None, model_name: str):
     global _EXHAUSTED_MODELS_CACHE
     today_str = datetime.date.today().isoformat()
@@ -89,28 +115,37 @@ def mark_key_model_quota_exhausted_today(api_key: str | None, model_name: str):
     _EXHAUSTED_MODELS_CACHE[cache_key] = today_str
     _save_exhausted_models_cache(_EXHAUSTED_MODELS_CACHE)
     masked_key = (api_key[:6] + "...") if api_key and len(api_key) > 6 else "key"
-    print(f"🚫 [Daily Key Blacklist] Key '{masked_key}' hit 429 daily quota on '{model_name}'. Blacklisted until 12:00 AM midnight reset!")
+    print(
+        f"🚫 [Daily Key Blacklist] Key '{masked_key}' hit 429 daily quota on '{model_name}'. Blacklisted until 12:00 AM midnight reset!"
+    )
+
 
 def is_model_quota_exhausted_today(model_name: str) -> bool:
     return is_key_model_quota_exhausted_today("default", model_name)
 
+
 def mark_model_quota_exhausted_today(model_name: str):
     mark_key_model_quota_exhausted_today("default", model_name)
+
+
 try:
     from google import genai
     from google.genai import types
 except ImportError:
     try:
         import google.generativeai as genai
+
         types = None
     except ImportError:
         genai = None
         types = None
 
+
 def make_config(response_mime_type="application/json"):
     if types and hasattr(types, "GenerateContentConfig"):
         return types.GenerateContentConfig(response_mime_type=response_mime_type)
     return None
+
 
 class LegacyGenerativeAIClientWrapper:
     def __init__(self, api_key: str):
@@ -151,18 +186,27 @@ class LegacyGenerativeAIClientWrapper:
         return self._ModelsWrapper(self.api_key)
 
     def generate_content(self, model: str, contents, config=None):
-        return self.models.generate_content(model=model, contents=contents, config=config)
+        return self.models.generate_content(
+            model=model, contents=contents, config=config
+        )
+
 
 # Module-level spec file cache: {md5_hash: distilled_rules_text}
 _SPEC_FILE_CACHE: dict = {}
 
+
 class GeminiService:
-    def __init__(self, api_key: str | None = None, model_name: str | None = None, is_paid_api_key: bool | None = None):
+    def __init__(
+        self,
+        api_key: str | None = None,
+        model_name: str | None = None,
+        is_paid_api_key: bool | None = None,
+    ):
         from core.config import get_gemini_api_key_pool, clean_api_key
 
         if not api_key:
             api_key = os.getenv("GEMINI_API_KEY")
-            
+
         if not api_key:
             try:
                 settings_path = os.path.join(os.path.dirname(__file__), "settings.json")
@@ -170,15 +214,17 @@ class GeminiService:
                     with open(settings_path, "r") as f:
                         cfg = json.load(f)
                         api_key = cfg.get("gemini_api_key")
-                        if model_name is None: model_name = cfg.get("gemini_model")
-                        if is_paid_api_key is None: is_paid_api_key = cfg.get("is_paid_api_key")
+                        if model_name is None:
+                            model_name = cfg.get("gemini_model")
+                        if is_paid_api_key is None:
+                            is_paid_api_key = cfg.get("is_paid_api_key")
             except Exception:
                 pass
 
         # Build 10-Key API Pool (GEMINI_API_KEY .. GEMINI_API_KEY_10)
         self.api_keys_pool = []
         if api_key:
-            for raw_k in re.split(r'[,;\s]+', str(api_key)):
+            for raw_k in re.split(r"[,;\s]+", str(api_key)):
                 c_k = clean_api_key(raw_k)
                 if c_k and c_k not in self.api_keys_pool:
                     self.api_keys_pool.append(c_k)
@@ -191,10 +237,14 @@ class GeminiService:
         self.current_key_idx = 0
         if self.api_keys_pool:
             self.api_key = self.api_keys_pool[0]
-            print(f"🔑 [API Key Pool Initialized] Loaded {len(self.api_keys_pool)} active Gemini API key(s) for smart rotation.")
+            print(
+                f"🔑 [API Key Pool Initialized] Loaded {len(self.api_keys_pool)} active Gemini API key(s) for smart rotation."
+            )
         else:
             self.api_key = api_key or ""
-            print("WARNING: Gemini API Key not found. Please provide it in settings or environment variables.")
+            print(
+                "WARNING: Gemini API Key not found. Please provide it in settings or environment variables."
+            )
 
         self.model_name = model_name or "gemini-3.1-flash-lite"
         self.is_paid_api_key = is_paid_api_key if is_paid_api_key is not None else False
@@ -227,53 +277,68 @@ class GeminiService:
 
         # 1. Remove markdown code blocks
         if "```" in text:
-            text = re.sub(r'```(?:json)?\s*', '', text)
-            text = re.sub(r'```\s*$', '', text)
+            text = re.sub(r"```(?:json)?\s*", "", text)
+            text = re.sub(r"```\s*$", "", text)
 
         # 2. Extract substring between first '{' and last '}'
-        first_curly = text.find('{')
-        last_curly = text.rfind('}')
+        first_curly = text.find("{")
+        last_curly = text.rfind("}")
         if first_curly != -1 and last_curly != -1 and last_curly > first_curly:
-            text = text[first_curly:last_curly+1]
+            text = text[first_curly : last_curly + 1]
 
         # 3. Inject missing commas between adjacent objects (e.g. `} {` or `} \n {`)
-        text = re.sub(r'\}\s*\{', '},{', text)
+        text = re.sub(r"\}\s*\{", "},{", text)
 
         # 4. Strip stray non-ASCII hallucinated words (like 'хорошо') appearing between JSON elements
         lines = []
         for line in text.splitlines():
-            line_cleaned = re.sub(r'(?<=[\}\],])\s*[^\x00-\x7F]+\s*(?=[\{\[\"]|$)', '', line)
-            line_cleaned = re.sub(r'^[^\x00-\x7F\s\{\}\[\]\",]+$', '', line_cleaned)
-            line_cleaned = re.sub(r'[^\x00-\x7F]+', '', line_cleaned)
+            line_cleaned = re.sub(
+                r"(?<=[\}\],])\s*[^\x00-\x7F]+\s*(?=[\{\[\"]|$)", "", line
+            )
+            line_cleaned = re.sub(r"^[^\x00-\x7F\s\{\}\[\]\",]+$", "", line_cleaned)
+            line_cleaned = re.sub(r"[^\x00-\x7F]+", "", line_cleaned)
             if line_cleaned.strip():
                 lines.append(line_cleaned)
         text = "\n".join(lines)
 
         # 5. Inject missing commas between adjacent objects (e.g. `} {` or `} \n {`)
-        text = re.sub(r'\}\s*\{', '},{', text)
-        text = re.sub(r'\}\s*\"', '},"', text)
-        text = re.sub(r'\]\s*\{', '],{', text)
+        text = re.sub(r"\}\s*\{", "},{", text)
+        text = re.sub(r"\}\s*\"", '},"', text)
+        text = re.sub(r"\]\s*\{", "],{", text)
 
         # 6. Fix trailing commas before closing braces/brackets
-        text = re.sub(r',\s*\}', '}', text)
-        text = re.sub(r',\s*\]', ']', text)
+        text = re.sub(r",\s*\}", "}", text)
+        text = re.sub(r",\s*\]", "]", text)
 
         return text.strip()
 
     @staticmethod
-    def _is_valid_ledger_match(mapped_name: str, narr: str, bank_name: str = "") -> bool:
+    def _is_valid_ledger_match(
+        mapped_name: str, narr: str, bank_name: str = ""
+    ) -> bool:
         """
         Validates whether a mapped ledger account name is physically present inside the narration text.
         Supports space-insensitive matching (e.g. 'S S R Footcare' matching 'SSRFOOTCARE' or 'FOOTC ARE').
         """
         if not mapped_name or not narr:
             return False
-            
+
         mapped_upper = mapped_name.upper().strip()
         narr_upper = narr.upper().strip()
-        
+
         # 0. Anti-Dummy & Generic Filler Ledger Guard: Never accept dummy filler words (REMARK, DUMMY, etc.) as valid party ledgers!
-        BANNED_DUMMY_LEDGERS = {"REMARK", "REMARKS", "SUSPENSE", "DUMMY", "UNKNOWN", "PART PAYMENT", "NARRATION", "NOTE", "PAYMENT", "RECEIPT"}
+        BANNED_DUMMY_LEDGERS = {
+            "REMARK",
+            "REMARKS",
+            "SUSPENSE",
+            "DUMMY",
+            "UNKNOWN",
+            "PART PAYMENT",
+            "NARRATION",
+            "NOTE",
+            "PAYMENT",
+            "RECEIPT",
+        }
         if mapped_upper in BANNED_DUMMY_LEDGERS:
             return False
 
@@ -285,48 +350,53 @@ class GeminiService:
         # Automatically recognizes System, Expense, Income, Tax, Utility, & Operating ledgers across 100+ industries
         SYSTEM_LEDGER_PATTERNS = [
             # Banking, Treasury, Loans & Finance
-            r'\b(BANK\s*CHARG|CHARGES|INTEREST|SWEEP|FD|FIXED\s*DEPOSIT|MUTUAL\s*FUND|INVESTMENT|LOAN|ADVANCE|CAPITAL|DRAWING|OVERDRAFT|OD|CC|LOAN\s*A/C)\b',
+            r"\b(BANK\s*CHARG|CHARGES|INTEREST|SWEEP|FD|FIXED\s*DEPOSIT|MUTUAL\s*FUND|INVESTMENT|LOAN|ADVANCE|CAPITAL|DRAWING|OVERDRAFT|OD|CC|LOAN\s*A/C)\b",
             # Payroll, Staff & HR
-            r'\b(SALARY|WAGES|STIPEND|BONUS|PF|ESI|WELFARE|INCENTIVE|REMUNERATION|STAFF|EMPLOYEE|ALLOWANCE|GRATUITY)\b',
+            r"\b(SALARY|WAGES|STIPEND|BONUS|PF|ESI|WELFARE|INCENTIVE|REMUNERATION|STAFF|EMPLOYEE|ALLOWANCE|GRATUITY)\b",
             # Utilities, Rent & Real Estate
-            r'\b(RENT|ELECTRICITY|POWER|WATER|GAS|FUEL|PETROL|DIESEL|TELEPHONE|MOBILE|BROADBAND|INTERNET|WIFI|LEASE|OFFICE\s*EXP)\b',
+            r"\b(RENT|ELECTRICITY|POWER|WATER|GAS|FUEL|PETROL|DIESEL|TELEPHONE|MOBILE|BROADBAND|INTERNET|WIFI|LEASE|OFFICE\s*EXP)\b",
             # Taxes, Duties & Statutory Compliance
-            r'\b(GST|CGST|SGST|IGST|CESS|TDS|TCS|DUTY|DUTIES|TAX|INCOME\s*TAX|PROFESSIONAL\s*TAX|PTAX|PENALTY|LATE\s*FEE|CUSTOMS)\b',
+            r"\b(GST|CGST|SGST|IGST|CESS|TDS|TCS|DUTY|DUTIES|TAX|INCOME\s*TAX|PROFESSIONAL\s*TAX|PTAX|PENALTY|LATE\s*FEE|CUSTOMS)\b",
             # Operations, Maintenance, Spares & Repairs (Electric, Pumps, Machinery, Motors, Vehicles, Testing)
-            r'\b(REPAIR|REPAIRS|MAINTENANCE|SERVICE|SERVICING|WINDING|TOOLS|HARDWARE|SPARES|FITTING|EQUIPMENT|MACHINERY|VEHICLE|TESTING|CALIBRATION|LAB|WEIGHTBRIDGE|CUTTING)\b',
+            r"\b(REPAIR|REPAIRS|MAINTENANCE|SERVICE|SERVICING|WINDING|TOOLS|HARDWARE|SPARES|FITTING|EQUIPMENT|MACHINERY|VEHICLE|TESTING|CALIBRATION|LAB|WEIGHTBRIDGE|CUTTING)\b",
             # Freight, Logistics & Travel
-            r'\b(FREIGHT|CARTAGE|OCTROI|LOADING|UNLOADING|TRANSPORT|CONVEYANCE|TRAVEL|TRAVELLING|LODGING|BOARDING|COURIER|POSTAGE|DELIVERY)\b',
+            r"\b(FREIGHT|CARTAGE|OCTROI|LOADING|UNLOADING|TRANSPORT|CONVEYANCE|TRAVEL|TRAVELLING|LODGING|BOARDING|COURIER|POSTAGE|DELIVERY)\b",
             # Office Supplies, Technology & Professional Services
-            r'\b(PRINTING|STATIONERY|SOFTWARE|SUBSCRIPTION|LICENSE|DOMAIN|HOSTING|CLOUD|IT\s*EXPENSE|LEGAL|AUDIT|PROFESSIONAL|FEES|COMMISSION|BROKERAGE|ADVERTISEMENT|PROMOTION|MARKETING)\b',
+            r"\b(PRINTING|STATIONERY|SOFTWARE|SUBSCRIPTION|LICENSE|DOMAIN|HOSTING|CLOUD|IT\s*EXPENSE|LEGAL|AUDIT|PROFESSIONAL|FEES|COMMISSION|BROKERAGE|ADVERTISEMENT|PROMOTION|MARKETING)\b",
             # General Accounting & Misc Ledger Suffixes
-            r'\b(EXPENSE|EXPENSES|EXP|INCOME|CHARGES|SUSPENSE|MISC|ROUND\s*OFF|DISCOUNT|REBATE|CASH|ACCOUNT|A/C)\b'
+            r"\b(EXPENSE|EXPENSES|EXP|INCOME|CHARGES|SUSPENSE|MISC|ROUND\s*OFF|DISCOUNT|REBATE|CASH|ACCOUNT|A/C)\b",
         ]
 
         for pattern in SYSTEM_LEDGER_PATTERNS:
             if re.search(pattern, mapped_upper):
                 return True
-            
+
         # Strip all non-alphanumeric characters for clean letter-sequence comparison
         def clean_letters(s):
-            return re.sub(r'[^A-Z0-9]', '', str(s).upper())
-            
+            return re.sub(r"[^A-Z0-9]", "", str(s).upper())
+
         mapped_clean = clean_letters(mapped_name)
         narr_clean = clean_letters(narr)
-        
+
         # 1. Full space-insensitive name match (e.g. "S S R FOOTCARE" -> "SSRFOOTCARE" in "502001...SSRFOOTCARE000")
         if len(mapped_clean) >= 3 and mapped_clean in narr_clean:
             return True
-            
+
         # 2. Key word letter sequence match (e.g. "FOOTCARE", "HEENARAJENDRAS", "PATTANAYAKSONALI", "SARTY")
-        mapped_words = [w for w in re.split(r'[\s\-\/@._]+', mapped_upper) if len(w) >= 3 and w not in ("LTD", "PVT", "INC", "CORP", "BANK", "ACCOUNT", "A/C")]
+        mapped_words = [
+            w
+            for w in re.split(r"[\s\-\/@._]+", mapped_upper)
+            if len(w) >= 3
+            and w not in ("LTD", "PVT", "INC", "CORP", "BANK", "ACCOUNT", "A/C")
+        ]
         if not mapped_words:
             return True
-            
+
         for w in mapped_words:
             w_clean = clean_letters(w)
             if len(w_clean) >= 3 and w_clean in narr_clean:
                 return True
-                
+
         # 3. Soft Fallback: If mapped name contains clean alphabetic words, allow it as a party resolution
         if len(mapped_clean) >= 3:
             return True
@@ -344,82 +414,314 @@ class GeminiService:
         if not narr:
             return ""
         narr_str = str(narr).strip()
-        # 0. Strip leading transaction type prefixes (e.g. 'ACH D -', 'ACH C -', 'NEFT CR -', 'TPT-')
-        narr_str = re.sub(r'^(ACH\s*[CD]?\s*[-_]?\s*|ACH\s*DR\s*[-_]?\s*|ACH\s*CR\s*[-_]?\s*|NEFT\s*[DR|CR]*\s*[-_]?\s*|RTGS\s*[DR|CR]*\s*[-_]?\s*|IMPS\s*[-_]?\s*|TPT\s*[-_]?\s*)', '', narr_str, flags=re.IGNORECASE).strip()
+
+        # Delegate to BankEntityRecognizer for primary NER extraction
+        try:
+            from modules.bank.parser import BankEntityRecognizer
+            clean_entity, _ = BankEntityRecognizer.extract_vendor_entity(narr_str)
+            if clean_entity and len(clean_entity) >= 3 and not clean_entity.isdigit():
+                return clean_entity
+        except Exception:
+            pass
+
+        # 0. Strip leading transaction type prefixes and DEBIT/CREDIT tokens (e.g. 'ACH D -', 'NEFT CR -', 'DEBIT PUNJANI')
+        narr_str = re.sub(
+            r"^(ACH\s*[CD]?\s*[-_]?\s*|ACH\s*DR\s*[-_]?\s*|ACH\s*CR\s*[-_]?\s*|NEFT\s*[DR|CR]*\s*[-_]?\s*|RTGS\s*[DR|CR]*\s*[-_]?\s*|IMPS\s*[-_]?\s*|TPT\s*[-_]?\s*|DEBIT\s*[-_]?\s*|CREDIT\s*[-_]?\s*)",
+            "",
+            narr_str,
+            flags=re.IGNORECASE,
+        ).strip()
+        narr_str = re.sub(r"\b(DEBIT|CREDIT|DR|CR)\b", " ", narr_str, flags=re.IGNORECASE).strip()
 
         # 1. Pre-clean @handle and dot/hyphen VPA domain suffixes BEFORE any regex splitting!
-        raw_no_handle = re.sub(r'@[A-Za-z0-9_\-\.\s]{1,25}(?:AXIS|ICICI|HDFC|DFCBANK|FCBANK|SBI|YES|PAYTM|YBL|KOTAK|UPI|PTYES|YESCRED|NAVIAXIS|PTAXIS|WAAXIS|AXL|IPL|IBL|OKAXIS|OKICICI|OKSBI|MAHB|BARB|INDB|TMBL|SVCB)', '', narr_str, flags=re.IGNORECASE)
-        raw_no_handle = re.sub(r'@[A-Za-z0-9_\-\.]+', '', raw_no_handle)
-        raw_no_handle = re.sub(r'[\.\-](?:SBI|OKSBI|OKICICI|OKAXIS|KHDFCBANK|YBL|KOTAK|PAYTM|PHONEPE|GPAY|BHIM|PTYES|AXIS|ICICI|HDFC)\b', '', raw_no_handle, flags=re.IGNORECASE)
-        raw_no_handle = re.sub(r'\b(X{2,10}|XXXXX)\b', '', raw_no_handle, flags=re.IGNORECASE)
-        raw_no_handle = re.sub(r'\b(OKH|OKICIC|OKICICI|OKAXIS|OKSBI|KHDFCBANK|FCBANK|DFCBANK|KOTAK|PAYTM|PHONEPE|GPAY|BHIM|PTYES|YESCRED|NAVIAXIS|PTAXIS|WAAXIS|AXL|YBL|IPL|IBL)\b', '', raw_no_handle, flags=re.IGNORECASE)
+        raw_no_handle = re.sub(
+            r"@[A-Za-z0-9_\-\.\s]{1,25}(?:AXIS|ICICI|HDFC|DFCBANK|FCBANK|SBI|YES|PAYTM|YBL|KOTAK|UPI|PTYES|YESCRED|NAVIAXIS|PTAXIS|WAAXIS|AXL|IPL|IBL|OKAXIS|OKICICI|OKSBI|MAHB|BARB|INDB|TMBL|SVCB)",
+            "",
+            narr_str,
+            flags=re.IGNORECASE,
+        )
+        raw_no_handle = re.sub(r"@[A-Za-z0-9_\-\.]+", "", raw_no_handle)
+        raw_no_handle = re.sub(
+            r"[\.\-](?:SBI|OKSBI|OKICICI|OKAXIS|KHDFCBANK|YBL|KOTAK|PAYTM|PHONEPE|GPAY|BHIM|PTYES|AXIS|ICICI|HDFC)\b",
+            "",
+            raw_no_handle,
+            flags=re.IGNORECASE,
+        )
+        raw_no_handle = re.sub(
+            r"\b(X{2,10}|XXXXX)\b", "", raw_no_handle, flags=re.IGNORECASE
+        )
+        raw_no_handle = re.sub(
+            r"\b(OKH|OKICIC|OKICICI|OKAXIS|OKSBI|KHDFCBANK|FCBANK|DFCBANK|KOTAK|PAYTM|PHONEPE|GPAY|BHIM|PTYES|YESCRED|NAVIAXIS|PTAXIS|WAAXIS|AXL|YBL|IPL|IBL)\b",
+            "",
+            raw_no_handle,
+            flags=re.IGNORECASE,
+        )
 
         # 2. Strip standard IFSC codes (4 alpha + 0 + 6 alphanumeric)
-        raw_no_ifsc = re.sub(r'\b[A-Za-z]{4}0[A-Za-z0-9]{6}\b', '', raw_no_handle, flags=re.IGNORECASE)
-        raw_no_ifsc = re.sub(r'\b[A-Za-z]{4}[0-9][A-Za-z0-9]{4,6}\b', '', raw_no_ifsc, flags=re.IGNORECASE)
+        raw_no_ifsc = re.sub(
+            r"\b[A-Za-z]{4}0[A-Za-z0-9]{6}\b", "", raw_no_handle, flags=re.IGNORECASE
+        )
+        raw_no_ifsc = re.sub(
+            r"\b[A-Za-z]{4}[0-9][A-Za-z0-9]{4,6}\b",
+            "",
+            raw_no_ifsc,
+            flags=re.IGNORECASE,
+        )
 
         # 3. Strip long standalone numeric ref numbers/UTRs (11+ digits), keeping party IDs like DU82848 or 10-digit mobile handles
-        raw_no_ids = re.sub(r'\b\d{11,}\b', '', raw_no_ifsc)
+        raw_no_ids = re.sub(r"\b\d{11,}\b", "", raw_no_ifsc)
 
         NOISE_TOKENS = {
-            'UPI', 'IMPS', 'NEFT', 'RTGS', 'P2A', 'P2P', 'MOB', 'DR', 'CR',
-            'NOREF', 'PAYMENT', 'RECEIPT', 'TRANSFER', 'TRF', 'FRM', 'TO',
-            'INB', 'BY', 'CHQ', 'PAID', 'YESB', 'SBIN', 'HDFC', 'ICIC', 'UTIB',
-            'KKBK', 'BARB', 'CNRB', 'UBIN', 'PUNB', 'TM', 'AB', 'TPT', 'NETBANK',
-            'NETB', 'HDFCH', 'HDFCN', 'HDFCE', 'HDFCBANK', 'ICICI', 'AXIS', 'MAHB',
-            'SVCB', 'TMBL', 'INDB', 'CCBL', 'OKAXIS', 'OKICICI', 'OKHDFCBANK', 'OKSBI',
-            'PTYES', 'YESCRED', 'NAVIAXIS', 'PTAXIS', 'WAAXIS', 'AXL', 'YBL', 'IPL',
-            'IBL', 'KOTAK', 'PAYTM', 'PHONEPE', 'GPAY', 'BHIM', 'SENT', 'USING',
-            'REMARKS', 'REMARK', 'INSTAALERTCHG', 'SMS', 'CDT', 'HAND', 'LOAN',
-            'SELF', 'NEHRU', 'NAGAR', 'KURLA', 'EAST', 'WEST', 'BRANCH',
-            'KAXIS', 'IS', 'CI', 'FCBANK', 'KHDFCBANK', 'OKICIC', 'OKS', 'OKI', 'OKA', 'XIS'
+            "UPI",
+            "IMPS",
+            "NEFT",
+            "RTGS",
+            "P2A",
+            "P2P",
+            "MOB",
+            "DR",
+            "CR",
+            "NOREF",
+            "PAYMENT",
+            "RECEIPT",
+            "TRANSFER",
+            "TRF",
+            "FRM",
+            "TO",
+            "INB",
+            "BY",
+            "CHQ",
+            "PAID",
+            "YESB",
+            "SBIN",
+            "HDFC",
+            "ICIC",
+            "UTIB",
+            "KKBK",
+            "BARB",
+            "CNRB",
+            "UBIN",
+            "PUNB",
+            "TM",
+            "AB",
+            "TPT",
+            "NETBANK",
+            "NETB",
+            "HDFCH",
+            "HDFCN",
+            "HDFCE",
+            "HDFCBANK",
+            "ICICI",
+            "AXIS",
+            "MAHB",
+            "SVCB",
+            "TMBL",
+            "INDB",
+            "CCBL",
+            "OKAXIS",
+            "OKICICI",
+            "OKHDFCBANK",
+            "OKSBI",
+            "PTYES",
+            "YESCRED",
+            "NAVIAXIS",
+            "PTAXIS",
+            "WAAXIS",
+            "AXL",
+            "YBL",
+            "IPL",
+            "IBL",
+            "KOTAK",
+            "PAYTM",
+            "PHONEPE",
+            "GPAY",
+            "BHIM",
+            "SENT",
+            "USING",
+            "REMARKS",
+            "REMARK",
+            "INSTAALERTCHG",
+            "SMS",
+            "CDT",
+            "HAND",
+            "LOAN",
+            "SELF",
+            "NEHRU",
+            "NAGAR",
+            "KURLA",
+            "EAST",
+            "WEST",
+            "BRANCH",
+            "KAXIS",
+            "IS",
+            "CI",
+            "FCBANK",
+            "KHDFCBANK",
+            "OKICIC",
+            "OKS",
+            "OKI",
+            "OKA",
+            "XIS",
         }
 
-        MONTH_NAMES = {'JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC',
-                       'JANUARY', 'FEBRUARY', 'MARCH', 'APRIL', 'JUNE', 'JULY', 'AUGUST', 'SEPTEMBER', 'OCTOBER', 'NOVEMBER', 'DECEMBER'}
+        MONTH_NAMES = {
+            "JAN",
+            "FEB",
+            "MAR",
+            "APR",
+            "MAY",
+            "JUN",
+            "JUL",
+            "AUG",
+            "SEP",
+            "OCT",
+            "NOV",
+            "DEC",
+            "JANUARY",
+            "FEBRUARY",
+            "MARCH",
+            "APRIL",
+            "JUNE",
+            "JULY",
+            "AUGUST",
+            "SEPTEMBER",
+            "OCTOBER",
+            "NOVEMBER",
+            "DECEMBER",
+        }
 
         COMMON_NAME_PARTS = [
-            'AATHIRA', 'CHANDRAN', 'PALLAVI', 'PANCHAL', 'RUPALI', 'WAGH', 'NIKHILA', 'KIRALE',
-            'PAWAN', 'KUMAR', 'SHAH', 'SHASHANK', 'GAWDE', 'GAWD', 'SAMPADA', 'VEDAK', 'SWATI', 'TILAK',
-            'RINDA', 'FERNS', 'JAYEETA', 'DOKERAJU', 'SAURABH', 'PANDEY', 'HIRAL', 'CHANDARANA',
-            'ANJANAVELIL', 'VARSHA', 'SHRIKANT', 'DANGE', 'NAMRATA', 'GANGTOK', 'PRADEEP', 'SHAW',
-            'SUNEETA', 'HARSHA', 'PAREKH', 'DIGAMBAR', 'KHETLE', 'SONAWANE', 'JAYWANT', 'TAUSIF',
-            'SIRAJ', 'SHAIKH', 'CHANDRAKANT', 'PARTE', 'BONY', 'YALLAPPA', 'KUNCHI', 'KORVE', 'MASALI',
-            'ANAND', 'SHARMA', 'SANJAY', 'DEEPAK', 'RARESH', 'RAJESH', 'PRIYA', 'AMJAD', 'MITUL', 'MANISH',
-            'HASMUKH', 'SHANTILAL', 'MEENA', 'PATIDAR', 'KALAMBE', 'PANDURANG', 'NATROX', 'GIBZ', 'VANIA', 'VARUN',
-            'SINGH', 'PATEL', 'VERMA', 'GUPTA', 'JAIN', 'MEHTA', 'DESHMUKH', 'CHAVAN', 'PAWAR', 'JADHAV',
-            'MORE', 'JOSHI', 'KULKARNI', 'PATIL', 'AGRAWAL', 'SURI', 'BHATIA', 'KAPOOR', 'KHAN', 'RODRIGUES',
-            'FERNANDES', 'ALMEIDA', 'DOUZA', 'SOARES', 'SHAH', 'CHAUDHARY', 'REDDY', 'NAIR', 'MENON', 'PILLAI'
+            "AATHIRA",
+            "CHANDRAN",
+            "PALLAVI",
+            "PANCHAL",
+            "RUPALI",
+            "WAGH",
+            "NIKHILA",
+            "KIRALE",
+            "PAWAN",
+            "KUMAR",
+            "SHAH",
+            "SHASHANK",
+            "GAWDE",
+            "GAWD",
+            "SAMPADA",
+            "VEDAK",
+            "SWATI",
+            "TILAK",
+            "RINDA",
+            "FERNS",
+            "JAYEETA",
+            "DOKERAJU",
+            "SAURABH",
+            "PANDEY",
+            "HIRAL",
+            "CHANDARANA",
+            "ANJANAVELIL",
+            "VARSHA",
+            "SHRIKANT",
+            "DANGE",
+            "NAMRATA",
+            "GANGTOK",
+            "PRADEEP",
+            "SHAW",
+            "SUNEETA",
+            "HARSHA",
+            "PAREKH",
+            "DIGAMBAR",
+            "KHETLE",
+            "SONAWANE",
+            "JAYWANT",
+            "TAUSIF",
+            "SIRAJ",
+            "SHAIKH",
+            "CHANDRAKANT",
+            "PARTE",
+            "BONY",
+            "YALLAPPA",
+            "KUNCHI",
+            "KORVE",
+            "MASALI",
+            "ANAND",
+            "SHARMA",
+            "SANJAY",
+            "DEEPAK",
+            "RARESH",
+            "RAJESH",
+            "PRIYA",
+            "AMJAD",
+            "MITUL",
+            "MANISH",
+            "HASMUKH",
+            "SHANTILAL",
+            "MEENA",
+            "PATIDAR",
+            "KALAMBE",
+            "PANDURANG",
+            "NATROX",
+            "GIBZ",
+            "VANIA",
+            "VARUN",
+            "SINGH",
+            "PATEL",
+            "VERMA",
+            "GUPTA",
+            "JAIN",
+            "MEHTA",
+            "DESHMUKH",
+            "CHAVAN",
+            "PAWAR",
+            "JADHAV",
+            "MORE",
+            "JOSHI",
+            "KULKARNI",
+            "PATIL",
+            "AGRAWAL",
+            "SURI",
+            "BHATIA",
+            "KAPOOR",
+            "KHAN",
+            "RODRIGUES",
+            "FERNANDES",
+            "ALMEIDA",
+            "DOUZA",
+            "SOARES",
+            "SHAH",
+            "CHAUDHARY",
+            "REDDY",
+            "NAIR",
+            "MENON",
+            "PILLAI",
         ]
 
         CORPORATE_MAP = {
-            'PVT LTD': 'Pvt Ltd',
-            'PRIVATE LIMITED': 'Private Limited',
-            'LLP': 'LLP',
-            'ENTERPRISES': 'Enterprises',
-            'TRADERS': 'Traders',
-            'INDUSTRIES': 'Industries',
-            'SERVICES': 'Services',
-            'SOLUTIONS': 'Solutions',
-            'TECHNOLOGIES': 'Technologies',
-            'MOTORS': 'Motors',
-            'HARDWARE': 'Hardware',
-            'STORES': 'Stores',
-            'AGENCIES': 'Agencies',
-            'LOGISTICS': 'Logistics'
+            "PVT LTD": "Pvt Ltd",
+            "PRIVATE LIMITED": "Private Limited",
+            "LLP": "LLP",
+            "ENTERPRISES": "Enterprises",
+            "TRADERS": "Traders",
+            "INDUSTRIES": "Industries",
+            "SERVICES": "Services",
+            "SOLUTIONS": "Solutions",
+            "TECHNOLOGIES": "Technologies",
+            "MOTORS": "Motors",
+            "HARDWARE": "Hardware",
+            "STORES": "Stores",
+            "AGENCIES": "Agencies",
+            "LOGISTICS": "Logistics",
         }
 
         def _sanitize_party(candidate: str) -> str:
             if not candidate:
                 return ""
             # Strip hyphenated trailing index numbers (e.g. NIKHILAKIRALE-1 -> NIKHILAKIRALE)
-            cand = re.sub(r'[\s\-]\d+$', '', candidate)
+            cand = re.sub(r"[\s\-]\d+$", "", candidate)
 
             tokens = []
-            for w in re.split(r'[\s\-\/@._]+', cand):
+            for w in re.split(r"[\s\-\/@._]+", cand):
                 w_clean = w
-                if not re.match(r'^[A-Z]{2}\d{4,6}$', w, re.IGNORECASE):
-                    w_clean = re.sub(r'(?<=[A-Za-z]{3})\d{1,4}$', '', w)
+                if not re.match(r"^[A-Z]{2}\d{4,6}$", w, re.IGNORECASE):
+                    w_clean = re.sub(r"(?<=[A-Za-z]{3})\d{1,4}$", "", w)
                 w_upper = w_clean.upper()
 
                 if not w_clean or w_upper in NOISE_TOKENS or w_upper in MONTH_NAMES:
@@ -434,7 +736,11 @@ class GeminiService:
 
             # Cryptic reference IDs (e.g. DU82848, TXN12345, REF99281) or pure numbers/short noise are NOT party names!
             # Reject them (return "") so they automatically route to Suspense Account for manual/AI review.
-            if re.match(r'^[A-Z]{1,4}\d{4,12}$', clean_raw, re.IGNORECASE) or clean_raw.isdigit() or len(clean_raw) < 3:
+            if (
+                re.match(r"^[A-Z]{1,4}\d{4,12}$", clean_raw, re.IGNORECASE)
+                or clean_raw.isdigit()
+                or len(clean_raw) < 3
+            ):
                 return ""
 
             # Syllable splitting & Title casing for human names
@@ -464,7 +770,7 @@ class GeminiService:
                     if seg in rem:
                         idx = rem.find(seg)
                         matched_segments.append((idx, seg))
-                        rem = rem[:idx] + (" " * len(seg)) + rem[idx + len(seg):]
+                        rem = rem[:idx] + (" " * len(seg)) + rem[idx + len(seg) :]
 
                 if matched_segments:
                     matched_segments.sort(key=lambda x: x[0])
@@ -474,35 +780,55 @@ class GeminiService:
                         if seg_idx > curr_idx:
                             between = w_up[curr_idx:seg_idx].strip()
                             if between:
-                                built_parts.append(between.upper() if len(between) <= 2 else between.title())
+                                built_parts.append(
+                                    between.upper()
+                                    if len(between) <= 2
+                                    else between.title()
+                                )
                         built_parts.append(seg_str.title())
                         curr_idx = seg_idx + len(seg_str)
                     if curr_idx < len(w_up):
                         trailing = w_up[curr_idx:].strip()
                         if trailing:
-                            built_parts.append(trailing.upper() if len(trailing) <= 2 else trailing.title())
+                            built_parts.append(
+                                trailing.upper()
+                                if len(trailing) <= 2
+                                else trailing.title()
+                            )
                     formatted_words.append(" ".join(built_parts))
                 else:
                     formatted_words.append(w.title())
                 i += 1
 
             result = " ".join(formatted_words).strip()
-            return re.sub(r'\s+', ' ', result)
+            return re.sub(r"\s+", " ", result)
 
         # Pattern matches on pre-cleaned string
-        mA = re.search(r'UPI[/\-]\d*[/\-]?(?:DR|CR)?[/\-]?([A-Za-z0-9_\-\s&\.]+?)(?:[/\-]|$)', raw_no_ids, re.IGNORECASE)
+        mA = re.search(
+            r"UPI[/\-]\d*[/\-]?(?:DR|CR)?[/\-]?([A-Za-z0-9_\-\s&\.]+?)(?:[/\-]|$)",
+            raw_no_ids,
+            re.IGNORECASE,
+        )
         if mA:
             res = _sanitize_party(mA.group(1))
             if res and len(res) >= 2:
                 return res
 
-        mB = re.search(r'(?:NEFT|RTGS|IMPS)[/\-\s]+(?:CR|DR|P2A|P2P)?[/\-\s]*[A-Za-z0-9]*[/\-\s]*([A-Za-z0-9_\-\s&\.]+?)(?:[/\-]|$)', raw_no_ids, re.IGNORECASE)
+        mB = re.search(
+            r"(?:NEFT|RTGS|IMPS)[/\-\s]+(?:CR|DR|P2A|P2P)?[/\-\s]*[A-Za-z0-9]*[/\-\s]*([A-Za-z0-9_\-\s&\.]+?)(?:[/\-]|$)",
+            raw_no_ids,
+            re.IGNORECASE,
+        )
         if mB:
             res = _sanitize_party(mB.group(1))
             if res and len(res) >= 2:
                 return res
 
-        mC = re.search(r'TPT[/\-\s]+(?:[A-Za-z0-9]+\s*)*[/\-\s]+([A-Za-z0-9_\-\s&\.]+?)$', raw_no_ids, re.IGNORECASE)
+        mC = re.search(
+            r"TPT[/\-\s]+(?:[A-Za-z0-9]+\s*)*[/\-\s]+([A-Za-z0-9_\-\s&\.]+?)$",
+            raw_no_ids,
+            re.IGNORECASE,
+        )
         if mC:
             res = _sanitize_party(mC.group(1))
             if res and len(res) >= 2:
@@ -516,10 +842,12 @@ class GeminiService:
         return ""
 
     @staticmethod
-    def classify_transaction_nature(narr: str, party_name: str, tx_type: str = "Receipt", amount: float = 0.0) -> str:
+    def classify_transaction_nature(
+        narr: str, party_name: str, tx_type: str = "Receipt", amount: float = 0.0
+    ) -> str:
         """
         Deep Transaction Nature & Group Classifier for Indian Accounting (ICAI / Ind AS).
-        
+
         DECISION FRAMEWORK:
         ════════════════════════════════════════════════════════════════════
         STEP 1: Read NARRATION PREFIX (UPI / ACH D / NEFT CR etc.)
@@ -552,19 +880,62 @@ class GeminiService:
 
         # AMOUNT RANGE SIGNALS
         amt = abs(float(amount or 0))
-        is_small_amt   = amt < 5000          # petty cash / food / cab / recharge
-        is_medium_amt  = 5000 <= amt < 50000  # salary / vendor / utility
-        is_large_amt   = amt >= 50000         # EMI / bulk salary / investment / bank transfer
+        is_small_amt = amt < 5000  # petty cash / food / cab / recharge
+        is_medium_amt = 5000 <= amt < 50000  # salary / vendor / utility
+        is_large_amt = amt >= 50000  # EMI / bulk salary / investment / bank transfer
         # Round amount = multiple of 500 with no paise → likely scheduled/auto-debit (EMI, SIP, transfer)
-        is_round_amt   = amt > 0 and amt % 500 == 0 and amt == int(amt)
+        is_round_amt = amt > 0 and amt % 500 == 0 and amt == int(amt)
+
+        # ── STEP 0-CASH: CASH MOVEMENTS (Cash in Hand / Contra) ──────────────
+        CASH_MOVEMENT_KWS = [
+            "CASH RECEIVED",
+            "CASH REC",
+            "CASH RECVD",
+            "CASH RECIEVED",
+            "CASH DEPOSIT",
+            "CASH DEPO",
+            "CASH PAID",
+            "CASH CHQ",
+            "CASH CHEQUE",
+            "CASH WITHDRAWAL",
+            "CASH WITHDR",
+            "ATM CASH",
+            "BY CASH",
+            "TO CASH",
+        ]
+        if any(k in text for k in CASH_MOVEMENT_KWS) or party_name.upper() in ("CASH", "CASH RECEIVED", "CASH ACCOUNT", "CASH A/C", "CASH IN HAND"):
+            return "Cash in Hand"
 
         # ── STEP 0: BANK CHARGES & FEES (Top Priority Expense) ───────────────
         BANK_CHARGE_KWS = [
-            'BANK CHARGES', 'BANK CHAGES', 'BANK CHARG', 'BANK CHAG', 'MDR RCVRY', 'RUPAY MDR',
-            'INSTAALERT', 'INSTAALERTCHG', 'ALERTCHG', 'SMS CHG', 'SMS-CHARG', 'SMS CHARGE', 'MIN BAL',
-            'ATM CHG', 'DEBIT CARD CHG', 'CHQ BOUNCE', 'DEPOSITORY CHARGES',
-            'PROCESSING FEE', 'LATE FEE', 'PENALTY', 'FORECLOSURE', 'POS RENTAL', 'SOUND BOX',
-            'SERVICE CHG', 'SERVICE CHARGE', 'SERVICE CHARGES', 'NACH CHARGE', 'ECS CHARGE'
+            "BANK CHARGES",
+            "BANK CHAGES",
+            "BANK CHARG",
+            "BANK CHAG",
+            "MDR RCVRY",
+            "RUPAY MDR",
+            "INSTAALERT",
+            "INSTAALERTCHG",
+            "ALERTCHG",
+            "SMS CHG",
+            "SMS-CHARG",
+            "SMS CHARGE",
+            "MIN BAL",
+            "ATM CHG",
+            "DEBIT CARD CHG",
+            "CHQ BOUNCE",
+            "DEPOSITORY CHARGES",
+            "PROCESSING FEE",
+            "LATE FEE",
+            "PENALTY",
+            "FORECLOSURE",
+            "POS RENTAL",
+            "SOUND BOX",
+            "SERVICE CHG",
+            "SERVICE CHARGE",
+            "SERVICE CHARGES",
+            "NACH CHARGE",
+            "ECS CHARGE",
         ]
         if any(k in text for k in BANK_CHARGE_KWS):
             return "Indirect Expenses"
@@ -575,16 +946,32 @@ class GeminiService:
             is_payment = True
             is_receipt = False
         # NEFT CR / ACH CR = money coming IN
-        if narr_up.startswith(("NEFT CR", "IMPS CR", "UPI CR", "ACH CR", "NACH CR", "ECS CR")):
+        if narr_up.startswith(
+            ("NEFT CR", "IMPS CR", "UPI CR", "ACH CR", "NACH CR", "ECS CR")
+        ):
             is_receipt = True
             is_payment = False
 
         # ── STEP 2: AMOUNT + DIRECTION COMBINED SIGNALS ─────────────────────
         # Large round DR amount starting with ACH/NACH = Loan EMI or SIP
         if is_payment and is_round_amt and is_large_amt:
-            if any(k in text for k in ["EMI", "LOAN", "HOUSING", "HOME LOAN", "PERSONAL LOAN", "AUTO LOAN", "VEHICLE"]):
+            if any(
+                k in text
+                for k in [
+                    "EMI",
+                    "LOAN",
+                    "HOUSING",
+                    "HOME LOAN",
+                    "PERSONAL LOAN",
+                    "AUTO LOAN",
+                    "VEHICLE",
+                ]
+            ):
                 return "Secured Loans"
-            if any(k in text for k in ["SIP", "INVEST", "MUTUAL FUND", "GROWW", "ZERODHA", "UPSTOX"]):
+            if any(
+                k in text
+                for k in ["SIP", "INVEST", "MUTUAL FUND", "GROWW", "ZERODHA", "UPSTOX"]
+            ):
                 return "Investments"
 
         # Large CR amount = could be salary received, loan received, FD maturity
@@ -596,28 +983,70 @@ class GeminiService:
 
         # ── STEP 2b: STATUTORY TAXES & GOVT DUTIES (Top Priority) ───────────
         STATUTORY_TAX_KWS = [
-            'PROFESSIONAL TAX', 'PTAX', 'GST', 'CGST', 'SGST', 'IGST', 'TDS', 'TCS',
-            'ADVANCE TAX', 'INCOME TAX', 'DUTIES & TAXES', 'CHALLAN', 'GSTPMT',
-            'NSDL', 'TRACES', 'TAX PAYMENT', 'TDS PAYMENT'
+            "PROFESSIONAL TAX",
+            "PTAX",
+            "GST",
+            "CGST",
+            "SGST",
+            "IGST",
+            "TDS",
+            "TCS",
+            "ADVANCE TAX",
+            "INCOME TAX",
+            "DUTIES & TAXES",
+            "CHALLAN",
+            "GSTPMT",
+            "NSDL",
+            "TRACES",
+            "TAX PAYMENT",
+            "TDS PAYMENT",
         ]
         if any(k in text for k in STATUTORY_TAX_KWS):
             return "Duties & Taxes"
 
         # ── STEP 3: INVESTMENT PLATFORMS & CLEARING CORPS ───────────────────
         INVESTMENT_KWS = [
-            'GROWW', 'NEXTBILLION', 'ZERODHA', 'UPSTOX', 'ANGEL ONE', 'ANGELBROKING',
-            'PAYTM MONEY', 'ICICI DIRECT', 'MOTILAL OSWAL', 'INDIAN CLEARING',
-            'INDIAN CLEARING CORP', 'CLEARING CORP', 'NSCCL', 'BSCCL', 'ICCL',
-            'NSE CLEARING', 'BSE CLEARING', 'MUTUAL FUND', 'SHARES', 'SECURITIES', 'DEMAT',
-            'SMALLCASE', 'KUVERA', 'FYERS', 'DHANI STOCKS'
+            "GROWW",
+            "NEXTBILLION",
+            "ZERODHA",
+            "UPSTOX",
+            "ANGEL ONE",
+            "ANGELBROKING",
+            "PAYTM MONEY",
+            "ICICI DIRECT",
+            "MOTILAL OSWAL",
+            "INDIAN CLEARING",
+            "INDIAN CLEARING CORP",
+            "CLEARING CORP",
+            "NSCCL",
+            "BSCCL",
+            "ICCL",
+            "NSE CLEARING",
+            "BSE CLEARING",
+            "MUTUAL FUND",
+            "SHARES",
+            "SECURITIES",
+            "DEMAT",
+            "SMALLCASE",
+            "KUVERA",
+            "FYERS",
+            "DHANI STOCKS",
         ]
         if any(k in text for k in INVESTMENT_KWS):
             return "Investments"  # Both DR (SIP/clearing out) and CR (redemption in) = Investments
 
         # ── STEP 5: CREDIT CARD GATEWAYS ────────────────────────────────────
         CREDIT_CARD_GATEWAY_KWS = [
-            'CRED', 'CRED CLUB', 'RAZORPAY', 'PAYTM GATEWAY', 'INSTAMOJO',
-            'BILLDESK', 'CCAVENUE', 'PAYU', 'EASEBUZZ', 'CASHFREE'
+            "CRED",
+            "CRED CLUB",
+            "RAZORPAY",
+            "PAYTM GATEWAY",
+            "INSTAMOJO",
+            "BILLDESK",
+            "CCAVENUE",
+            "PAYU",
+            "EASEBUZZ",
+            "CASHFREE",
         ]
         if any(k in text for k in CREDIT_CARD_GATEWAY_KWS):
             # CRED DR = credit card bill payment; CRED CR = cashback
@@ -625,125 +1054,309 @@ class GeminiService:
 
         # ── STEP 6: BANKS & FINANCIAL INSTITUTIONS ───────────────────────────
         BANK_FINANCE_KWS = [
-            'IDFC FIRST BANK', 'IDFCFIRST', 'HDFC BANK', 'ICICI BANK', 'AXIS BANK',
-            'STATE BANK OF INDIA', 'SBI ', 'KOTAK MAHINDRA', 'INDUSIND BANK', 'BANK OF BARODA',
-            'PUNJAB NATIONAL BANK', 'CANARA BANK', 'UNION BANK', 'FINANCIAL SERVICES',
-            'BANDHAN BANK', 'YES BANK', 'RBL BANK', 'FEDERAL BANK', 'KARNATAKA BANK'
+            "IDFC FIRST BANK",
+            "IDFCFIRST",
+            "HDFC BANK",
+            "ICICI BANK",
+            "AXIS BANK",
+            "STATE BANK OF INDIA",
+            "SBI ",
+            "KOTAK MAHINDRA",
+            "INDUSIND BANK",
+            "BANK OF BARODA",
+            "PUNJAB NATIONAL BANK",
+            "CANARA BANK",
+            "UNION BANK",
+            "FINANCIAL SERVICES",
+            "BANDHAN BANK",
+            "YES BANK",
+            "RBL BANK",
+            "FEDERAL BANK",
+            "KARNATAKA BANK",
         ]
+        # Check for Government / Bank Portal Fees (e.g. SBIMOPS)
+        if "SBIMOPS" in text or "MOPS" in text:
+            return "Indirect Expenses"
+
         if any(k in text for k in BANK_FINANCE_KWS):
-            if is_payment:
-                if any(k in text for k in ['EMI', 'LOAN', 'REPAY', 'OD', 'OVERDRAFT']):
-                    return "Secured Loans"
-                # Large round DR to bank = inter-bank transfer
-                return "Bank Accounts"
-            else:
-                if any(k in text for k in ['INTEREST', 'INT CR', 'CREDIT INT']):
-                    return "Indirect Income"
-                if is_large_amt and is_round_amt:
-                    return "Secured Loans"  # Likely loan disbursement
-                return "Bank Accounts"
+            # STRICT GUARD: Only evaluate party_name (clean entity), NEVER raw narration (which has VPA handles like oksbi/IFSC SBIN)
+            p_upper = (party_name or "").upper().strip()
+            is_real_bank = any(b in p_upper for b in ["HDFC BANK", "ICICI BANK", "STATE BANK", "SBI A/C", "AXIS BANK", "KOTAK BANK", "CANARA BANK", "UNION BANK", "BANK OF BARODA", "PNB BANK", "IDBI BANK", "FEDERAL BANK", "INDUSIND BANK"]) or p_upper.endswith("BANK") or "BANK A/C" in p_upper
+            if is_real_bank:
+                if is_payment:
+                    if any(k in text for k in ["EMI", "LOAN", "REPAY", "OD", "OVERDRAFT"]):
+                        return "Secured Loans"
+                    return "Bank Accounts"
+                else:
+                    if any(k in text for k in ["INTEREST", "INT CR", "CREDIT INT"]):
+                        return "Indirect Income"
+                    if is_large_amt and is_round_amt:
+                        return "Secured Loans"  # Likely loan disbursement
+                    return "Bank Accounts"
 
         # ── STEP 7: E-COMMERCE & FOOD DELIVERY (Amount-Aware) ───────────────
         ECOM_KWS = [
-            'AMAZON', 'FLIPKART', 'MYNTRA', 'AJIO', 'NYKAA', 'MEESHO', 'SNAPDEAL',
-            'JIO MART', 'JIOMART', 'BIGBASKET', 'MILKBASKET', 'BLINKIT', 'ZEPTO',
-            'SWIGGY', 'ZOMATO', 'INSTAMART', 'DUNZO', 'URBAN COMPANY', 'URBANCLAP'
+            "AMAZON",
+            "FLIPKART",
+            "MYNTRA",
+            "AJIO",
+            "NYKAA",
+            "MEESHO",
+            "SNAPDEAL",
+            "JIO MART",
+            "JIOMART",
+            "BIGBASKET",
+            "MILKBASKET",
+            "BLINKIT",
+            "ZEPTO",
+            "SWIGGY",
+            "ZOMATO",
+            "INSTAMART",
+            "DUNZO",
+            "URBAN COMPANY",
+            "URBANCLAP",
         ]
         if any(k in text for k in ECOM_KWS):
             if is_payment:
                 # Small Amazon DR = consumer purchase (indirect expense)
                 # Large Amazon DR = could be seller stock purchase
-                return "Indirect Expenses" if is_small_amt or is_medium_amt else "Purchase Accounts"
+                return (
+                    "Indirect Expenses"
+                    if is_small_amt or is_medium_amt
+                    else "Purchase Accounts"
+                )
             else:
                 # Amazon CR = seller payment received from Amazon
                 return "Sundry Debtors"
 
         # ── STEP 8: UTILITY & BILLS & BANK CHARGES ───────────────────────────
         UTILITY_KWS = [
-            'ELECTRICITY', 'BIJLI', 'POWER', 'TELEPHONE', 'MOBILE', 'RECHARGE',
-            'WIFI', 'BROADBAND', 'AIRTEL', 'JIO', 'VODAFONE', 'BSNL', 'TATA SKY',
-            'PETROL', 'FUEL', 'DIESEL', 'INDANE', 'HPCL', 'BPCL', 'IOCL',
-            'RENT', 'LEASE', 'MAINTENANCE', 'WATER BILL', 'GAS BILL',
-            'GOOGLE PLAY', 'NETFLIX', 'AMAZON PRIME', 'HOTSTAR', 'SPOTIFY',
-            'INSTAALERT', 'ALERTCHG', 'SMS CHARGE', 'SOUND BOX', 'EDC RENTAL', 'POS RENTAL',
-            'MSEB', 'BEST', 'TATA POWER', 'ADANI ELECTRICITY', 'TORRENT POWER', 'MAHADISCOM'
+            "ELECTRICITY",
+            "BIJLI",
+            "POWER",
+            "TELEPHONE",
+            "MOBILE",
+            "RECHARGE",
+            "WIFI",
+            "BROADBAND",
+            "AIRTEL",
+            "JIO",
+            "VODAFONE",
+            "BSNL",
+            "TATA SKY",
+            "PETROL",
+            "FUEL",
+            "DIESEL",
+            "INDANE",
+            "HPCL",
+            "BPCL",
+            "IOCL",
+            "RENT",
+            "LEASE",
+            "MAINTENANCE",
+            "WATER BILL",
+            "GAS BILL",
+            "GOOGLE PLAY",
+            "NETFLIX",
+            "AMAZON PRIME",
+            "HOTSTAR",
+            "SPOTIFY",
+            "INSTAALERT",
+            "ALERTCHG",
+            "SMS CHARGE",
+            "SOUND BOX",
+            "EDC RENTAL",
+            "POS RENTAL",
+            "MSEB",
+            "BEST",
+            "TATA POWER",
+            "ADANI ELECTRICITY",
+            "TORRENT POWER",
+            "MAHADISCOM",
         ]
         if any(k in text for k in UTILITY_KWS):
             return "Indirect Expenses" if is_payment else "Indirect Income"
 
         # ── STEP 8b: HEALTHCARE, DIAGNOSTICS & TRADE VENDORS ───────────────
         TRADE_HEALTH_KWS = [
-            'DIABETIC', 'FOOTWEAR', 'SHOES', 'DIAGNOSTICS', 'HEALTHCARE',
-            'HOSPITAL', 'CLINIC', 'LAB ', 'PHARMA', 'MEDICAL'
+            "DIABETIC",
+            "FOOTWEAR",
+            "SHOES",
+            "DIAGNOSTICS",
+            "HEALTHCARE",
+            "HOSPITAL",
+            "CLINIC",
+            "LAB ",
+            "PHARMA",
+            "MEDICAL",
         ]
         if any(k in text for k in TRADE_HEALTH_KWS):
             return "Sundry Debtors" if is_receipt else "Sundry Creditors"
 
         # ── STEP 9: PAYMENT WALLETS ──────────────────────────────────────────
-        WALLET_KWS = ['GOOGLE PAY', 'GPAY', 'PAYTM', 'PHONEPE', 'BHIM', 'FAMPAY']
+        WALLET_KWS = ["GOOGLE PAY", "GPAY", "PAYTM", "PHONEPE", "BHIM", "FAMPAY"]
         if any(k in text for k in WALLET_KWS):
             if is_payment:
                 # Small wallet DR = petty expense; large wallet DR = person-to-person transfer
-                return "Indirect Expenses" if is_small_amt else "Loans & Advances (Asset)"
+                return (
+                    "Indirect Expenses" if is_small_amt else "Loans & Advances (Asset)"
+                )
             else:
-                return "Sundry Debtors" if is_medium_amt or is_large_amt else "Indirect Income"
+                return (
+                    "Sundry Debtors"
+                    if is_medium_amt or is_large_amt
+                    else "Indirect Income"
+                )
 
         # ── STEP 10: STATUTORY TAXES & GOVT DUTIES ───────────────────────────
         STATUTORY_TAX_KWS = [
-            'PROFESSIONAL TAX', ' PTAX ', ' GST ', 'CGST', 'SGST', 'IGST', ' TDS ', ' TCS ',
-            'ADVANCE TAX', 'INCOME TAX', 'DUTIES & TAXES', 'CHALLAN', 'GSTPMT',
-            'NSDL', 'TRACES', 'TAX PAYMENT'
+            "PROFESSIONAL TAX",
+            " PTAX ",
+            " GST ",
+            "CGST",
+            "SGST",
+            "IGST",
+            " TDS ",
+            " TCS ",
+            "ADVANCE TAX",
+            "INCOME TAX",
+            "DUTIES & TAXES",
+            "CHALLAN",
+            "GSTPMT",
+            "NSDL",
+            "TRACES",
+            "TAX PAYMENT",
         ]
         if any(k in text for k in STATUTORY_TAX_KWS):
             return "Duties & Taxes"
 
         # ── STEP 11: BANK FEES & CHARGES ────────────────────────────────────
         BANK_CHARGE_KWS = [
-            'BANK CHARGES', 'MDR RCVRY', 'RUPAY MDR', 'INSTAALERT', 'SMS CHG', 'MIN BAL',
-            'ATM CHG', 'DEBIT CARD CHG', 'CHQ BOUNCE', 'DEPOSITORY CHARGES',
-            'PROCESSING FEE', 'LATE FEE', 'PENALTY', 'FORECLOSURE'
+            "BANK CHARGES",
+            "MDR RCVRY",
+            "RUPAY MDR",
+            "INSTAALERT",
+            "SMS CHG",
+            "MIN BAL",
+            "ATM CHG",
+            "DEBIT CARD CHG",
+            "CHQ BOUNCE",
+            "DEPOSITORY CHARGES",
+            "PROCESSING FEE",
+            "LATE FEE",
+            "PENALTY",
+            "FORECLOSURE",
         ]
         if any(k in text for k in BANK_CHARGE_KWS):
             return "Indirect Expenses"
 
         # ── STEP 12: SALARY & PAYROLL (Amount-Aware) ────────────────────────
-        if any(k in text for k in ['SALARY', 'SALARIES', 'WAGES', 'STIPEND', 'BONUS', 'PAYROLL', 'COMPENSATION', 'HR PAY']):
+        if any(
+            k in text
+            for k in [
+                "SALARY",
+                "SALARIES",
+                "WAGES",
+                "STIPEND",
+                "BONUS",
+                "PAYROLL",
+                "COMPENSATION",
+                "HR PAY",
+            ]
+        ):
             if is_payment:
                 return "Indirect Expenses"  # Salary paid out
             else:
-                return "Indirect Income"    # Salary received (own salary)
+                return "Indirect Income"  # Salary received (own salary)
 
         # ── STEP 13: GENERAL EXPENSE KEYWORDS ───────────────────────────────
         EXPENSE_KWS = [
-            'EXPENSE', 'EXPENSES', 'PF ', 'ESI', 'AUDIT', 'LEGAL', 'FEE', 'FEES', 'COMMISSION',
-            'PRINTING', 'STATIONERY', 'COURIER', 'POSTAGE', 'CLEANING', 'REPAIR', 'REPAIRS',
-            'SOFTWARE', 'DOMAIN', 'HOSTING', 'CLOUD', 'TAXI', 'CAB', 'TRAVEL',
-            'CONVEYANCE', 'SUBSCRIPTION', 'DONATION', 'WELFARE', 'INSURANCE', 'PREMIUM'
+            "EXPENSE",
+            "EXPENSES",
+            "PF ",
+            "ESI",
+            "AUDIT",
+            "LEGAL",
+            "FEE",
+            "FEES",
+            "COMMISSION",
+            "PRINTING",
+            "STATIONERY",
+            "COURIER",
+            "POSTAGE",
+            "CLEANING",
+            "REPAIR",
+            "REPAIRS",
+            "SOFTWARE",
+            "DOMAIN",
+            "HOSTING",
+            "CLOUD",
+            "TAXI",
+            "CAB",
+            "TRAVEL",
+            "CONVEYANCE",
+            "SUBSCRIPTION",
+            "DONATION",
+            "WELFARE",
+            "INSURANCE",
+            "PREMIUM",
         ]
         if any(k in text for k in EXPENSE_KWS):
             return "Indirect Expenses" if is_payment else "Indirect Income"
 
         # ── STEP 14: PERSONAL / DRAWINGS ────────────────────────────────────
-        if any(k in text for k in ['LIC', 'MEDICLAIM', 'MEDICINE', 'HEALTH INSURANCE', 'PERSONAL EXP']):
+        if any(
+            k in text
+            for k in [
+                "LIC",
+                "MEDICLAIM",
+                "MEDICINE",
+                "HEALTH INSURANCE",
+                "PERSONAL EXP",
+            ]
+        ):
             return "Capital Account / Drawings" if is_payment else "Indirect Income"
 
         # ── STEP 15: HUMAN PERSONS — Loans between individuals ──────────────
-        is_human = any(t in text for t in ['BHAI', 'KUMAR', 'LAL', 'DEVI', 'SHAH', 'PATEL', 'MEHTA', 'MANDALIA', 'BEN ', 'KAKA '])
-        is_company = any(b in text for b in ['LTD', 'LIMITED', 'PVT', 'PRIVATE', 'CORP', 'TRADERS', 'ENTERPRISE', 'INDUSTRIES', 'INC', 'LLC'])
+        is_human = any(
+            t in text
+            for t in [
+                "BHAI",
+                "KUMAR",
+                "LAL",
+                "DEVI",
+                "SHAH",
+                "PATEL",
+                "MEHTA",
+                "MANDALIA",
+                "BEN ",
+                "KAKA ",
+            ]
+        )
+        is_company = any(
+            b in text
+            for b in [
+                "LTD",
+                "LIMITED",
+                "PVT",
+                "PRIVATE",
+                "CORP",
+                "TRADERS",
+                "ENTERPRISE",
+                "INDUSTRIES",
+                "INC",
+                "LLC",
+            ]
+        )
         if is_human and not is_company:
             return "Loans & Advances (Asset)" if is_payment else "Unsecured Loans"
 
         # ── STEP 16: FINAL DR/CR DIRECTION GATE (when no keyword matched) ───
-        # Use amount size as final tiebreaker for unknown parties
+        # Counterparty payments map to Sundry Creditors (or Expenses); receipts map to Sundry Debtors
         if is_payment:
-            if is_large_amt and is_round_amt:
-                return "Bank Accounts"   # Large round DR with unknown party = likely inter-bank transfer
-            return "Sundry Creditors"    # Unknown DR = vendor payment (expense payable)
+            return "Sundry Creditors"  # Counterparty payment = vendor/party (payable)
         else:
-            if is_large_amt and is_round_amt:
-                return "Unsecured Loans" # Large round CR from unknown party = possible loan
-            return "Sundry Debtors"      # Unknown CR = customer receipt
-
+            return "Sundry Debtors"  # Counterparty receipt = customer/party (receivable)
 
     def _update_status(self, filename, part, total, message):
         try:
@@ -754,13 +1367,15 @@ class GeminiService:
                 "total": total,
                 "progress_pct": pct,
                 "percentage": pct,
-                "message": message
+                "message": message,
             }
             with _GLOBAL_STATUS_LOCK:
                 _GLOBAL_STATUS_STORE[filename] = status_data
                 _GLOBAL_STATUS_STORE["_latest"] = status_data
             try:
-                status_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "extraction_status.json")
+                status_path = os.path.join(
+                    os.path.dirname(os.path.abspath(__file__)), "extraction_status.json"
+                )
                 with open(status_path, "w") as f:
                     json.dump(status_data, f)
             except Exception:
@@ -768,10 +1383,19 @@ class GeminiService:
         except Exception as e:
             print(f"Warning: Failed to update extraction status: {e}")
 
-    def _generate_content_with_retry(self, client, model, contents, config=None, max_retries=4, initial_backoff=2.0, start_key_offset: int = 0):
+    def _generate_content_with_retry(
+        self,
+        client,
+        model,
+        contents,
+        config=None,
+        max_retries=4,
+        initial_backoff=2.0,
+        start_key_offset: int = 0,
+    ):
         import time
         import random
-        
+
         # Production Fallback Hierarchy ordered by RPM/RPD capacity & speed:
         # Tier 1 (15 RPM / 500 RPD = 5,000 daily requests across 10 keys):
         #   - gemini-3.1-flash-lite, gemini-3.5-flash-lite, gemini-2.5-flash-lite
@@ -785,9 +1409,9 @@ class GeminiService:
             "gemini-3.7-flash",
             "gemini-3.5-flash",
             "gemini-3-flash",
-            "gemini-2.5-flash"
+            "gemini-2.5-flash",
         ]
-        
+
         # Build candidate list starting from requested model
         raw_models = [model]
         for m in FALLBACK_MODELS:
@@ -798,103 +1422,177 @@ class GeminiService:
         models_to_try = []
         for m in raw_models:
             if is_model_quota_exhausted_today(m):
-                print(f"⚡ [Daily Quota Guard] Model '{m}' is quota-exhausted for today (429 Limit). Instantly routing to next fallback model...")
+                print(
+                    f"⚡ [Daily Quota Guard] Model '{m}' is quota-exhausted for today (429 Limit). Instantly routing to next fallback model..."
+                )
             else:
                 models_to_try.append(m)
 
         if not models_to_try:
-            print("⚠️ [Daily Quota Guard] All candidate models were blacklisted today. Resetting daily cache to attempt emergency recovery...")
+            print(
+                "⚠️ [Daily Quota Guard] All candidate models were blacklisted today. Resetting daily cache to attempt emergency recovery..."
+            )
             _EXHAUSTED_MODELS_CACHE.clear()
             _save_exhausted_models_cache({})
             models_to_try = raw_models
 
         last_exception = None
-        keys_pool = self.api_keys_pool if self.api_keys_pool else ([self.api_key] if self.api_key else [])
+        keys_pool = (
+            self.api_keys_pool
+            if self.api_keys_pool
+            else ([self.api_key] if self.api_key else [])
+        )
 
         for active_model in models_to_try:
             for key_offset in range(len(keys_pool)):
-                actual_idx = (self.current_key_idx + start_key_offset + key_offset) % len(keys_pool)
+                actual_idx = (
+                    self.current_key_idx + start_key_offset + key_offset
+                ) % len(keys_pool)
                 active_key = keys_pool[actual_idx]
-                
+
                 # Instant 0.00s skip for keys blacklisted today for this model
                 if is_key_model_quota_exhausted_today(active_key, active_model):
-                    print(f"⚡ [Daily Blacklist Skip] Key #{actual_idx + 1} ({active_key[:6]}...) is daily quota-exhausted for '{active_model}'. Skipping instantly...")
+                    print(
+                        f"⚡ [Daily Blacklist Skip] Key #{actual_idx + 1} ({active_key[:6]}...) is daily quota-exhausted for '{active_model}'. Skipping instantly..."
+                    )
                     continue
 
                 try:
                     active_client = self._get_client(target_key=active_key)
-                    print(f"🔮 [Gemini Request] Sending payload using Key #{actual_idx + 1}/{len(keys_pool)} ({active_key[:6]}...{active_key[-4:]}) and model '{active_model}'")
+                    print(
+                        f"🔮 [Gemini Request] Sending payload using Key #{actual_idx + 1}/{len(keys_pool)} ({active_key[:6]}...{active_key[-4:]}) and model '{active_model}'"
+                    )
                     if config:
                         res = active_client.models.generate_content(
-                            model=active_model,
-                            contents=contents,
-                            config=config
+                            model=active_model, contents=contents, config=config
                         )
                     else:
                         res = active_client.models.generate_content(
-                            model=active_model,
-                            contents=contents
+                            model=active_model, contents=contents
                         )
-                    # Update active key index on clean success with thread safety
-                    if not hasattr(self, '_key_lock'):
+                    # Update active key index on clean success with thread safety to rotate keys dynamically
+                    if not hasattr(self, "_key_lock"):
                         import threading
+
                         self._key_lock = threading.Lock()
                     with self._key_lock:
-                        self.current_key_idx = actual_idx
-                        self.api_key = active_key
+                        self.current_key_idx = (actual_idx + 1) % len(keys_pool)
+                        self.api_key = keys_pool[self.current_key_idx]
                     return res
                 except Exception as e:
                     last_exception = e
                     err_msg = str(e).lower()
 
                     # Model Not Found / 404 -> skip model tier immediately
-                    is_not_found = any(x in err_msg for x in ["404", "not_found", "not found", "is not found for api version"])
+                    is_not_found = any(
+                        x in err_msg
+                        for x in [
+                            "404",
+                            "not_found",
+                            "not found",
+                            "is not found for api version",
+                        ]
+                    )
                     if is_not_found:
-                        print(f"⚠️ Model '{active_model}' returned 404 / unsupported on API. Blacklisting model '{active_model}' and trying next model tier...")
+                        print(
+                            f"⚠️ Model '{active_model}' returned 404 / unsupported on API. Blacklisting model '{active_model}' and trying next model tier..."
+                        )
                         mark_model_quota_exhausted_today(active_model)
                         break
-                    
+
                     # 503 Overloaded -> try next key / fallback
                     if "503" in err_msg or "unavailable" in err_msg:
-                        print(f"⚠️ Model '{active_model}' overloaded on Key #{actual_idx + 1}. Retrying next key/model...")
+                        print(
+                            f"⚠️ Model '{active_model}' overloaded on Key #{actual_idx + 1}. Retrying next key/model..."
+                        )
                         time.sleep(0.3)
                         continue
 
                     # Check for 429 Daily Free Tier Quota / Rate Limit
-                    is_quota_429 = any(x in err_msg for x in ["429", "quota", "exhausted", "resource_exhausted", "rate_limit", "key_invalid", "permission_denied"])
+                    is_quota_429 = any(
+                        x in err_msg
+                        for x in [
+                            "429",
+                            "quota",
+                            "exhausted",
+                            "resource_exhausted",
+                            "rate_limit",
+                            "key_invalid",
+                            "permission_denied",
+                        ]
+                    )
                     if is_quota_429:
                         # Only blacklist for the whole day if it's a true daily quota exhaustion error
-                        is_daily_exhausted = any(x in err_msg for x in ["quota", "resource_exhausted", "daily", "exceeded your current quota", "free tier", "limit reached"])
+                        is_daily_exhausted = any(
+                            x in err_msg
+                            for x in [
+                                "quota",
+                                "resource_exhausted",
+                                "daily",
+                                "exceeded your current quota",
+                                "free tier",
+                                "limit reached",
+                            ]
+                        )
                         if is_daily_exhausted:
-                            mark_key_model_quota_exhausted_today(active_key, active_model)
-                            
+                            mark_key_model_quota_exhausted_today(
+                                active_key, active_model
+                            )
+
                         if self.is_paid_api_key:
                             self.is_paid_api_key = False
-                        
+
                         next_key_num = ((actual_idx + 1) % len(keys_pool)) + 1
-                        reason_lbl = "Daily 500 RPD Limit" if is_daily_exhausted else "Per-Minute RPM Spike"
-                        print(f"🔑 [API Key Rotator] Key #{actual_idx + 1} ({reason_lbl}) on model '{active_model}'. Seamlessly rotating to Key #{next_key_num}...")
+                        reason_lbl = (
+                            "Daily 500 RPD Limit"
+                            if is_daily_exhausted
+                            else "Per-Minute RPM Spike"
+                        )
+                        print(
+                            f"🔑 [API Key Rotator] Key #{actual_idx + 1} ({reason_lbl}) on model '{active_model}'. Seamlessly rotating to Key #{next_key_num}..."
+                        )
                         time.sleep(0.2)
                         continue
-                    
+
                     # Transient network error
-                    is_transient = any(x in err_msg for x in [
-                        "limit", "timeout", "capacity", "server disconnected", "connection reset",
-                        "connection error", "remoteerror", "remoteprotocol",
-                        "peer closed connection", "read timeout", "connect timeout",
-                        "serverdisconnected", "eof occurred", "network", "broken pipe",
-                        "ssl", "handshake", "connect failed", "name or service not known"
-                    ])
-                    
+                    is_transient = any(
+                        x in err_msg
+                        for x in [
+                            "limit",
+                            "timeout",
+                            "capacity",
+                            "server disconnected",
+                            "connection reset",
+                            "connection error",
+                            "remoteerror",
+                            "remoteprotocol",
+                            "peer closed connection",
+                            "read timeout",
+                            "connect timeout",
+                            "serverdisconnected",
+                            "eof occurred",
+                            "network",
+                            "broken pipe",
+                            "ssl",
+                            "handshake",
+                            "connect failed",
+                            "name or service not known",
+                        ]
+                    )
+
                     if is_transient:
-                        print(f"⚠️ Key #{actual_idx + 1} transient network error: {e}. Retrying next key...")
+                        print(
+                            f"⚠️ Key #{actual_idx + 1} transient network error: {e}. Retrying next key..."
+                        )
                         time.sleep(0.3)
                         continue
                     else:
                         raise e
-            
-            print(f"🔄 [Model Fallback] All {len(keys_pool)} API keys hit rate limits on model '{active_model}'. Falling back to next model tier...")
-            
+
+            print(
+                f"🔄 [Model Fallback] All {len(keys_pool)} API keys hit rate limits on model '{active_model}'. Falling back to next model tier..."
+            )
+
         # If all models failed, raise the last exception
         if last_exception:
             raise last_exception
@@ -903,9 +1601,9 @@ class GeminiService:
         """Generates a deep business context profile based on raw aggregated DBF data."""
         if not self.api_key:
             raise ValueError("Gemini API Key is not configured.")
-            
+
         client = self._get_client()
-        
+
         prompt = f"""You are an expert AI business analyst and accountant.
 I will provide you with raw aggregated data from a client's accounting software database (Ledgers and Transaction frequencies).
 
@@ -924,32 +1622,32 @@ Instructions for the Profile:
 6. Keep the tone professional, objective, and dense with facts. No fluff. Do NOT use markdown code blocks.
 """
         response = self._generate_content_with_retry(
-            client=client,
-            model=self.model_name,
-            contents=prompt
+            client=client, model=self.model_name, contents=prompt
         )
         return response.text.strip() if response and response.text else ""
 
     def extract_text_from_file(self, file_path: str) -> str:
         """Extracts text content from a given specification file using local parsing or Gemini File API."""
         ext = os.path.splitext(file_path)[1].lower()
-        
+
         # --- SPEC FILE CACHE: Skip AI if this exact file was processed before ---
         try:
-            with open(file_path, 'rb') as _f:
+            with open(file_path, "rb") as _f:
                 file_hash = hashlib.md5(_f.read()).hexdigest()
             if file_hash in _SPEC_FILE_CACHE:
-                print(f"⚡ [Spec Cache HIT] Returning cached spec for hash {file_hash[:8]}... (instant, no API call)")
+                print(
+                    f"⚡ [Spec Cache HIT] Returning cached spec for hash {file_hash[:8]}... (instant, no API call)"
+                )
                 return _SPEC_FILE_CACHE[file_hash]
         except Exception:
             file_hash = None
-        
+
         # Gemini Parsing (Image/PDF/Excel/Text/CSV)
         if not self.api_key:
             raise ValueError("Gemini API Key is not configured.")
-            
+
         client = self._get_client()
-        
+
         uploaded_file = None
         contents = []
         prompt = """You are an Expert AI Accountant and Data Analyst. The user has uploaded a file containing specifications, rules, or remarks for a specific client (e.g. how to categorize expenses, which ledgers to map to, etc).
@@ -978,23 +1676,25 @@ Return ONLY the distilled rules and mappings."""
             contents = [prompt]
         else:
             if ext in [".pdf", ".png", ".jpg", ".jpeg"]:
-                print(f"Uploading {file_path} to Gemini File API for specification distillation...")
+                print(
+                    f"Uploading {file_path} to Gemini File API for specification distillation..."
+                )
                 uploaded_file = client.files.upload(file=file_path)
                 contents = [uploaded_file, prompt]
             else:
                 raise ValueError(f"Unsupported specification file type: {ext}")
-        
+
         try:
             response = self._generate_content_with_retry(
-                client=client,
-                model=self.model_name,
-                contents=contents
+                client=client, model=self.model_name, contents=contents
             )
             result_text = response.text.strip() if response and response.text else ""
             # Cache result so the same spec file never hits the API twice
             if file_hash and result_text:
                 _SPEC_FILE_CACHE[file_hash] = result_text
-                print(f"💾 [Spec Cache STORE] Cached spec result for hash {file_hash[:8]}...")
+                print(
+                    f"💾 [Spec Cache STORE] Cached spec result for hash {file_hash[:8]}..."
+                )
             return result_text
         finally:
             if uploaded_file:
@@ -1011,29 +1711,84 @@ Return ONLY the distilled rules and mappings."""
             return {}
         mappings = {}
         lines = [l.strip() for l in text_content.splitlines() if l.strip()]
-        
+
         # 1. Pattern: Expense Transaction Report parser (Date -> Party Name -> Category -> Description)
         for i in range(len(lines)):
-            m = re.match(r'^\d{1,2}[\/\.-]\d{1,2}[\/\.-]\d{2,4}$', lines[i])
+            m = re.match(r"^\d{1,2}[\/\.-]\d{1,2}[\/\.-]\d{2,4}$", lines[i])
             if m:
-                window = lines[i+1:i+14]
+                window = lines[i + 1 : i + 14]
                 for w in window:
-                    if len(w) >= 3 and not re.match(r'^\d+(\.\d+)?$', w) and not re.match(r'^\d{1,2}[\/\.-]\d{1,2}[\/\.-]\d{2,4}$', w):
+                    if (
+                        len(w) >= 3
+                        and not re.match(r"^\d+(\.\d+)?$", w)
+                        and not re.match(r"^\d{1,2}[\/\.-]\d{1,2}[\/\.-]\d{2,4}$", w)
+                    ):
                         w_up = w.upper()
-                        skip_headers = ['PARTY NAME', 'GSTIN', 'TOTAL AMOUNT', 'PAYMENT TYPE', 'PAID AMOUNT', 'BALANCE AMOUNT', 'DESCRIPTION', 'TRANSACTION TYPE', 'USERNAME', 'ALL USERS', 'GENERATED ON']
+                        skip_headers = [
+                            "PARTY NAME",
+                            "GSTIN",
+                            "TOTAL AMOUNT",
+                            "PAYMENT TYPE",
+                            "PAID AMOUNT",
+                            "BALANCE AMOUNT",
+                            "DESCRIPTION",
+                            "TRANSACTION TYPE",
+                            "USERNAME",
+                            "ALL USERS",
+                            "GENERATED ON",
+                        ]
                         if not any(sh == w_up for sh in skip_headers):
-                            if any(k in w_up for k in ['EXPENSE', 'SALARY', 'RENT', 'FUEL', 'PETROL', 'DIESEL', 'ELECTRICITY', 'TELEPHONE', 'MOBILE', 'FOOD', 'TEA', 'TRAVEL', 'COURIER', 'STATIONERY', 'MAINTENANCE', 'REPAIR', 'TAX', 'AUDIT', 'LEGAL', 'BANK', 'INTEREST', 'CHARGES', 'TRANSPORT', 'FREIGHT', 'OFFICE']):
+                            if any(
+                                k in w_up
+                                for k in [
+                                    "EXPENSE",
+                                    "SALARY",
+                                    "RENT",
+                                    "FUEL",
+                                    "PETROL",
+                                    "DIESEL",
+                                    "ELECTRICITY",
+                                    "TELEPHONE",
+                                    "MOBILE",
+                                    "FOOD",
+                                    "TEA",
+                                    "TRAVEL",
+                                    "COURIER",
+                                    "STATIONERY",
+                                    "MAINTENANCE",
+                                    "REPAIR",
+                                    "TAX",
+                                    "AUDIT",
+                                    "LEGAL",
+                                    "BANK",
+                                    "INTEREST",
+                                    "CHARGES",
+                                    "TRANSPORT",
+                                    "FREIGHT",
+                                    "OFFICE",
+                                ]
+                            ):
                                 mappings[w_up] = w
 
         # 2. Pattern: Key: Value or Key -> Value pairs in text
         for line in lines:
-            if '->' in line or '=>' in line:
-                parts = re.split(r'->|=>', line, maxsplit=1)
+            if "->" in line or "=>" in line:
+                parts = re.split(r"->|=>", line, maxsplit=1)
                 if len(parts) == 2:
                     k, v = parts[0].strip(), parts[1].strip()
                     if k and v and len(k) > 1 and len(v) > 1:
-                        skip_words = ['date', 'time', 'generated', 'total', 'amount', 'username', 'all users']
-                        if not re.match(r'^\d+$', k) and not any(w in k.lower() for w in skip_words):
+                        skip_words = [
+                            "date",
+                            "time",
+                            "generated",
+                            "total",
+                            "amount",
+                            "username",
+                            "all users",
+                        ]
+                        if not re.match(r"^\d+$", k) and not any(
+                            w in k.lower() for w in skip_words
+                        ):
                             mappings[k.upper()] = v
         return mappings
 
@@ -1046,21 +1801,21 @@ Return ONLY the distilled rules and mappings."""
         if zipfile.is_zipfile(file_path):
             try:
                 strings = []
-                with zipfile.ZipFile(file_path, 'r') as z:
+                with zipfile.ZipFile(file_path, "r") as z:
                     shared_strs = []
-                    if 'xl/sharedStrings.xml' in z.namelist():
-                        tree = ET.fromstring(z.read('xl/sharedStrings.xml'))
+                    if "xl/sharedStrings.xml" in z.namelist():
+                        tree = ET.fromstring(z.read("xl/sharedStrings.xml"))
                         for elem in tree.iter():
-                            if elem.tag.endswith('t') and elem.text:
+                            if elem.tag.endswith("t") and elem.text:
                                 shared_strs.append(elem.text)
-                    
+
                     for name in z.namelist():
-                        if name.startswith('xl/worksheets/sheet'):
+                        if name.startswith("xl/worksheets/sheet"):
                             sheet_tree = ET.fromstring(z.read(name))
                             for cell in sheet_tree.iter():
-                                if cell.tag.endswith('t') and cell.text:
+                                if cell.tag.endswith("t") and cell.text:
                                     strings.append(cell.text)
-                                elif cell.tag.endswith('v') and cell.text:
+                                elif cell.tag.endswith("v") and cell.text:
                                     try:
                                         idx = int(cell.text)
                                         if 0 <= idx < len(shared_strs):
@@ -1077,8 +1832,8 @@ Return ONLY the distilled rules and mappings."""
         try:
             with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
                 raw_text = f.read()
-                clean = re.sub(r'<[^>]+>', ' ', raw_text)
-                clean = re.sub(r'\s+', ' ', clean).strip()
+                clean = re.sub(r"<[^>]+>", " ", raw_text)
+                clean = re.sub(r"\s+", " ", clean).strip()
                 if len(clean) > 50:
                     return clean
         except Exception:
@@ -1087,8 +1842,12 @@ Return ONLY the distilled rules and mappings."""
         try:
             with open(file_path, "rb") as f:
                 content = f.read()
-                ascii_strings = re.findall(rb'[A-Za-z0-9\s\.\,\/\-\:\_\@]{4,}', content)
-                decoded = [s.decode('ascii', errors='ignore').strip() for s in ascii_strings if len(s.strip()) > 3]
+                ascii_strings = re.findall(rb"[A-Za-z0-9\s\.\,\/\-\:\_\@]{4,}", content)
+                decoded = [
+                    s.decode("ascii", errors="ignore").strip()
+                    for s in ascii_strings
+                    if len(s.strip()) > 3
+                ]
                 if decoded:
                     return "\n".join(decoded[:500])
         except Exception:
@@ -1104,11 +1863,11 @@ Return ONLY the distilled rules and mappings."""
         ext = os.path.splitext(file_path)[1].lower()
         if not self.api_key:
             raise ValueError("Gemini API Key is not configured.")
-            
+
         client = self._get_client()
         uploaded_file = None
         contents = []
-        
+
         prompt = """You are an Expert AI Accountant.
 The user uploaded a Client Specification / Guideline document (Excel, PDF, Image, Word, CSV, or Text).
 Your task is to analyze it deeply and extract:
@@ -1141,17 +1900,23 @@ Return your response ONLY as a JSON object matching this schema:
         elif ext == ".pdf":
             try:
                 import pypdf
+
                 reader = pypdf.PdfReader(file_path)
                 pdf_text = []
                 for page in reader.pages:
                     t = page.extract_text()
-                    if t: pdf_text.append(t)
+                    if t:
+                        pdf_text.append(t)
                 if pdf_text:
                     excel_csv_content = "\n".join(pdf_text)
             except Exception:
                 pass
 
-        native_mappings = self._extract_native_excel_mappings(excel_csv_content) if excel_csv_content else {}
+        native_mappings = (
+            self._extract_native_excel_mappings(excel_csv_content)
+            if excel_csv_content
+            else {}
+        )
 
         if excel_csv_content:
             prompt += f"\n\nHere is the raw content of the specification file:\n{excel_csv_content}"
@@ -1161,88 +1926,115 @@ Return your response ONLY as a JSON object matching this schema:
                 uploaded_file = client.files.upload(file=file_path)
                 contents = [uploaded_file, prompt]
             except Exception as ex:
-                print(f"Warning: File upload failed ({ex}), using local native extraction fallback.")
+                print(
+                    f"Warning: File upload failed ({ex}), using local native extraction fallback."
+                )
 
-        parsed = {"specifications_summary": "", "expense_mappings": {}, "product_mappings": {}}
+        parsed = {
+            "specifications_summary": "",
+            "expense_mappings": {},
+            "product_mappings": {},
+        }
         try:
             response = self._generate_content_with_retry(
                 client=client,
                 model=self.model_name or "gemini-2.5-flash",
                 contents=contents,
-                config=make_config("application/json")
+                config=make_config("application/json"),
             )
             text = response.text.strip() if response and response.text else "{}"
-            if text.startswith("```json"): text = text[7:]
-            if text.startswith("```"): text = text[3:]
-            if text.endswith("```"): text = text[:-3]
+            if text.startswith("```json"):
+                text = text[7:]
+            if text.startswith("```"):
+                text = text[3:]
+            if text.endswith("```"):
+                text = text[:-3]
             if text.strip():
                 try:
                     parsed = json.loads(text.strip())
                 except Exception:
                     pass
         except Exception as e:
-            print(f"Warning: Gemini spec extraction failed ({e}), using native extraction fallback.")
+            print(
+                f"Warning: Gemini spec extraction failed ({e}), using native extraction fallback."
+            )
         finally:
             if uploaded_file:
                 try:
-                    if uploaded_file.name: client.files.delete(name=uploaded_file.name)
-                except: pass
+                    if uploaded_file.name:
+                        client.files.delete(name=uploaded_file.name)
+                except:
+                    pass
 
         if not isinstance(parsed, dict):
             parsed = {}
-            
+
         gemini_exp = parsed.get("expense_mappings", {})
-        if not isinstance(gemini_exp, dict): gemini_exp = {}
-        
+        if not isinstance(gemini_exp, dict):
+            gemini_exp = {}
+
         combined_exp = {**native_mappings, **gemini_exp}
         parsed["expense_mappings"] = combined_exp
-        
+
         if not parsed.get("specifications_summary") and combined_exp:
-            rules_summary = "\n".join([f"• Map '{k}' to '{v}'" for k, v in combined_exp.items()])
-            parsed["specifications_summary"] = f"Learned Expense Categorization Rules:\n{rules_summary}"
-            
+            rules_summary = "\n".join(
+                [f"• Map '{k}' to '{v}'" for k, v in combined_exp.items()]
+            )
+            parsed[
+                "specifications_summary"
+            ] = f"Learned Expense Categorization Rules:\n{rules_summary}"
+
         return parsed
 
-    def _extract_single_content(self, client, contents, start_key_offset: int = 0) -> dict:
+    def _extract_single_content(
+        self, client, contents, start_key_offset: int = 0
+    ) -> dict:
         response = self._generate_content_with_retry(
             client=client,
             model=self.model_name,
             contents=contents,
-            config=types.GenerateContentConfig(
-                response_mime_type="application/json"
-            ),
-            start_key_offset=start_key_offset
+            config=types.GenerateContentConfig(response_mime_type="application/json"),
+            start_key_offset=start_key_offset,
         )
         text = response.text.strip() if response and response.text else ""
         text = self.repair_json_string(text)
         try:
             parsed = json.loads(text)
             if isinstance(parsed, list):
-                print(f"⚠️ Gemini returned a JSON array ({len(parsed)} elements) instead of object wrapper. Wrapping automatically...")
+                print(
+                    f"⚠️ Gemini returned a JSON array ({len(parsed)} elements) instead of object wrapper. Wrapping automatically..."
+                )
                 return {"status": "success", "extracted_data": parsed}
             elif isinstance(parsed, dict):
                 return parsed
             else:
                 return {"status": "error", "extracted_data": []}
         except Exception as e:
-            print(f"❌ Failed to parse JSON response from Gemini: {e}. Raw text was: {text[:500]}...")
+            print(
+                f"❌ Failed to parse JSON response from Gemini: {e}. Raw text was: {text[:500]}..."
+            )
             return {"status": "error", "extracted_data": []}
 
-    def detect_pdf_chronology(self, file_path: str) -> str:
+    def detect_pdf_chronology(self, file_path: str, preloaded_reader=None) -> str:
         """
         Detects if a PDF statement is 'forward' (oldest first) or 'reverse' (newest first).
         Returns 'forward', 'reverse', or 'unknown'.
+
+        Args:
+            file_path: Path to the PDF file.
+            preloaded_reader: Optional pre-opened pypdf.PdfReader. When supplied,
+                              no extra file open is performed (memory optimization).
         """
         import re
         from datetime import datetime as _ddt
-        
+
         first_page_dates = []
         last_page_dates = []
-        
+
         def extract_dates(text):
             dates = []
             # Try to find standard dates like "1 July 2026", "31 July 2026"
-            standard_matches = re.findall(r'\b\d{1,2}\s+[A-Za-z]+\s+\d{4}\b', text)
+            standard_matches = re.findall(r"\b\d{1,2}\s+[A-Za-z]+\s+\d{4}\b", text)
             for m in standard_matches:
                 try:
                     dt = _ddt.strptime(m, "%d %B %Y")
@@ -1253,23 +2045,23 @@ Return your response ONLY as a JSON object matching this schema:
                         dates.append(dt)
                     except ValueError:
                         pass
-                        
+
             # Also find split dates like "2026-\n07-31" by replacing newline
             cleaned = text
-            cleaned = re.sub(r'(\d{4}-)\s*\n\s*(\d{2}-\d{2})', r'\1\2', cleaned)
-            cleaned = re.sub(r'(\d{2}-\d{2})\s*\n\s*(\d{4}-)', r'\2\1', cleaned)
-            
+            cleaned = re.sub(r"(\d{4}-)\s*\n\s*(\d{2}-\d{2})", r"\1\2", cleaned)
+            cleaned = re.sub(r"(\d{2}-\d{2})\s*\n\s*(\d{4}-)", r"\2\1", cleaned)
+
             # Now look for YYYY-MM-DD
-            matches = re.findall(r'\b\d{4}-\d{2}-\d{2}\b', cleaned)
+            matches = re.findall(r"\b\d{4}-\d{2}-\d{2}\b", cleaned)
             for m in matches:
                 try:
                     dt = _ddt.strptime(m, "%Y-%m-%d")
                     dates.append(dt)
                 except ValueError:
                     pass
-                    
+
             # If no dates found, look for DD/MM/YYYY or DD-MM-YYYY
-            matches = re.findall(r'\b\d{2}[-/.]\d{2}[-/.]\d{4}\b', cleaned)
+            matches = re.findall(r"\b\d{2}[-/.]\d{2}[-/.]\d{4}\b", cleaned)
             for m in matches:
                 for fmt in ("%d/%m/%Y", "%d-%m-%Y", "%Y-%m-%d"):
                     try:
@@ -1280,18 +2072,58 @@ Return your response ONLY as a JSON object matching this schema:
                         pass
             return dates
 
+        # ── OPTIMIZATION: Use the pre-loaded reader when available ────────────
+        # This avoids opening a 3rd PdfReader (page-count reader + chunk reader +
+        # chronology reader were all open simultaneously before this fix).
+        if preloaded_reader is not None:
+            try:
+                total_p = len(preloaded_reader.pages)
+                if total_p < 2:
+                    return "forward"
+                first_txt = preloaded_reader.pages[0].extract_text() or ""
+                first_page_dates = extract_dates(first_txt)
+                for idx in range(total_p - 1, -1, -1):
+                    last_txt = preloaded_reader.pages[idx].extract_text() or ""
+                    last_page_dates = extract_dates(last_txt)
+                    if last_page_dates:
+                        break
+                if first_page_dates and last_page_dates:
+                    avg_first = sum((d.timestamp() for d in first_page_dates)) / len(
+                        first_page_dates
+                    )
+                    avg_last = sum((d.timestamp() for d in last_page_dates)) / len(
+                        last_page_dates
+                    )
+                    if avg_first > avg_last:
+                        print(
+                            f"📅 [Chronology Detector] Detected REVERSE chronological statement."
+                        )
+                        return "reverse"
+                    else:
+                        print(
+                            f"📅 [Chronology Detector] Detected FORWARD chronological statement."
+                        )
+                        return "forward"
+                return "unknown"
+            except Exception as e:
+                print(
+                    f"⚠️ Chronology detection via preloaded reader failed: {e}. Falling back to file open."
+                )
+                # Fall through to the standard file-open path below
+
         pdf_extracted = False
         try:
             import pdfplumber
+
             with pdfplumber.open(file_path) as pdf:
                 total_p = len(pdf.pages)
                 if total_p < 2:
                     return "forward"
-                
+
                 # Check first page
                 first_txt = pdf.pages[0].extract_text() or ""
                 first_page_dates = extract_dates(first_txt)
-                
+
                 # Scan backwards from the end to find the first page that contains any dates
                 for idx in range(total_p - 1, -1, -1):
                     last_txt = pdf.pages[idx].extract_text() or ""
@@ -1305,14 +2137,15 @@ Return your response ONLY as a JSON object matching this schema:
         if not pdf_extracted:
             try:
                 import pypdf
+
                 reader = pypdf.PdfReader(file_path)
                 total_p = len(reader.pages)
                 if total_p < 2:
                     return "forward"
-                
+
                 first_txt = reader.pages[0].extract_text() or ""
                 first_page_dates = extract_dates(first_txt)
-                
+
                 for idx in range(total_p - 1, -1, -1):
                     last_txt = reader.pages[idx].extract_text() or ""
                     last_page_dates = extract_dates(last_txt)
@@ -1321,17 +2154,25 @@ Return your response ONLY as a JSON object matching this schema:
             except Exception as e:
                 print(f"⚠️ Chronology detection failed: {e}")
                 return "unknown"
-            
+
         if first_page_dates and last_page_dates:
-            avg_first = sum((d.timestamp() for d in first_page_dates)) / len(first_page_dates)
-            avg_last = sum((d.timestamp() for d in last_page_dates)) / len(last_page_dates)
+            avg_first = sum((d.timestamp() for d in first_page_dates)) / len(
+                first_page_dates
+            )
+            avg_last = sum((d.timestamp() for d in last_page_dates)) / len(
+                last_page_dates
+            )
             if avg_first > avg_last:
-                print(f"📅 [Chronology Detector] Detected REVERSE chronological statement (avg first page: {avg_first} > avg last page: {avg_last}).")
+                print(
+                    f"📅 [Chronology Detector] Detected REVERSE chronological statement (avg first page: {avg_first} > avg last page: {avg_last})."
+                )
                 return "reverse"
             else:
-                print(f"📅 [Chronology Detector] Detected FORWARD chronological statement (avg first page: {avg_first} <= avg last page: {avg_last}).")
+                print(
+                    f"📅 [Chronology Detector] Detected FORWARD chronological statement (avg first page: {avg_first} <= avg last page: {avg_last})."
+                )
                 return "forward"
-                
+
         return "unknown"
 
     def parse_bank_pdf_natively(self, file_path: str, pdf_password: str = "") -> dict:
@@ -1340,29 +2181,41 @@ Return your response ONLY as a JSON object matching this schema:
         Delegates to modules.bank.parser.
         """
         import sys
+
         sys.path.append(os.path.join(os.path.dirname(__file__), "modules"))
         from modules.bank.parser import BankParser
+
         bp = BankParser()
         return bp.parse_bank_pdf_natively(file_path, pdf_password=pdf_password)
 
-    def extract_invoice_data(self, file_path: str, client_memory: dict, module: str, instruction: str = "", pdf_password: str = "") -> dict:
+    def extract_invoice_data(
+        self,
+        file_path: str,
+        client_memory: dict,
+        module: str,
+        instruction: str = "",
+        pdf_password: str = "",
+    ) -> dict:
         """
         Takes a file path (Excel, image, PDF), sends it to Gemini,
         and returns structured JSON data using the client_memory.
         """
         file_path = os.path.abspath(file_path)
         ext = os.path.splitext(file_path)[1].lower()
-        
+
         if not self.api_key:
             raise ValueError("Gemini API Key is not configured.")
-            
+
         client = self._get_client()
         base_filename = os.path.basename(file_path)
-        self._update_status(base_filename, 0, 0, f"Initializing extraction for {base_filename}...")
-        
-        print(f"Extracting data from {file_path} using Gemini API for module {module}...")
-        
-        
+        self._update_status(
+            base_filename, 0, 0, f"Initializing extraction for {base_filename}..."
+        )
+
+        print(
+            f"Extracting data from {file_path} using Gemini API for module {module}..."
+        )
+
         # Format the memory into the prompt
         expense_mappings = client_memory.get("expense_mappings", {})
         memory_instruction = ""
@@ -1370,7 +2223,7 @@ Return your response ONLY as a JSON object matching this schema:
             memory_instruction = "Use the following mappings to correct party names based on narration or keywords:\n"
             for k, v in expense_mappings.items():
                 memory_instruction += f"- '{k}' maps to '{v}'\n"
-                
+
         existing_ledgers = client_memory.get("existing_ledgers", [])
         ledgers_instruction = ""
         if existing_ledgers:
@@ -1380,20 +2233,26 @@ Return your response ONLY as a JSON object matching this schema:
                     l_name = (led.get("name") or led.get("print_name") or "").strip()
                     l_grp = (led.get("group_name") or "").strip()
                     if l_name:
-                        ledgers_instruction += f"- {l_name} ({l_grp})\n" if l_grp else f"- {l_name}\n"
+                        ledgers_instruction += (
+                            f"- {l_name} ({l_grp})\n" if l_grp else f"- {l_name}\n"
+                        )
                 elif led:
                     l_str = str(led).strip()
                     if l_str:
                         ledgers_instruction += f"- {l_str}\n"
-                
+
         user_context = ""
         if instruction:
-            user_context = f"\nUSER PROVIDED CONTEXT (follow this very carefully): {instruction}"
+            user_context = (
+                f"\nUSER PROVIDED CONTEXT (follow this very carefully): {instruction}"
+            )
 
         business_profile = client_memory.get("business_profile", "")
         profile_instruction = ""
         if business_profile:
-            profile_instruction = f"\nCLIENT BUSINESS PROFILE (CRITICAL CONTEXT):\n{business_profile}\n"
+            profile_instruction = (
+                f"\nCLIENT BUSINESS PROFILE (CRITICAL CONTEXT):\n{business_profile}\n"
+            )
 
         specifications = client_memory.get("specifications", "")
         spec_instruction = ""
@@ -1416,7 +2275,7 @@ Return your response ONLY as a JSON object matching this schema:
             "running_balance": 0.0,
             "reference_no": "Cheque/Ref/UTR number as string, or empty string",
             "group_hint": "Hint for the account group (e.g. Indirect Expenses, Incomes, Debtors, Creditors, Fixed Assets, Investments, Capital, Suspense, etc.)",
-            "confidence_score": 95,
+            "confidence_score": "Integer between 0 and 100 representing AI confidence in the mapping",
             "flags": []
         }
     ]
@@ -1557,7 +2416,7 @@ Return your response ONLY as a JSON object matching this schema:
                     "discount": 0.0
                 }
             ],
-            "confidence_score": 95,
+            "confidence_score": "Integer between 0 and 100 representing AI confidence in the mapping",
             "flags": []
         }
     ]
@@ -1588,13 +2447,20 @@ Return your response ONLY as a JSON object matching this schema:
         if module in ["Sales", "Purchases"]:
             try:
                 from ai_memory import AIMemoryVault as _AIMemVault
-                _tmp_vault_path = os.path.join(os.path.dirname(__file__), "..", "AI_Memory_Vault")
+
+                _tmp_vault_path = os.path.join(
+                    os.path.dirname(__file__), "..", "AI_Memory_Vault"
+                )
                 _tmp_vault = _AIMemVault(vault_path=_tmp_vault_path)
                 _client_id = client_memory.get("_client_id", "")
                 if _client_id:
-                    catalog_injection = _tmp_vault.get_catalog_prompt_injection(_client_id, module)
+                    catalog_injection = _tmp_vault.get_catalog_prompt_injection(
+                        _client_id, module
+                    )
                     if catalog_injection:
-                        print(f"⚡ [Catalog Injection] Injecting product catalog into {module} prompt.")
+                        print(
+                            f"⚡ [Catalog Injection] Injecting product catalog into {module} prompt."
+                        )
             except Exception as _cat_err:
                 print(f"  [Catalog Injection] Skipped: {_cat_err}")
 
@@ -1617,27 +2483,47 @@ Return the extracted data EXACTLY following this JSON schema. Do not output anyt
             print("Converting and chunking Excel for deep extraction...")
             try:
                 import pandas as pd
+
                 xl = pd.ExcelFile(file_path)
                 for sheet in xl.sheet_names:
                     df = pd.read_excel(file_path, sheet_name=sheet)
-                    
+
                     # 1. Forward-fill date columns to prevent empty cells causing column shifts
                     for col in df.columns:
                         col_str = str(col).upper()
-                        if 'DATE' in col_str or 'VAL' in col_str or 'TRANS' in col_str:
+                        if "DATE" in col_str or "VAL" in col_str or "TRANS" in col_str:
                             df[col] = df[col].ffill()
-                            
+
                     if len(df.columns) > 0:
                         first_col = df.columns[0]
-                        if 'DATE' in str(first_col).upper() or df[first_col].astype(str).str.contains(r'\d{2,4}[-/.]\d{2}[-/.]\d{2,4}', na=False).any():
+                        if (
+                            "DATE" in str(first_col).upper()
+                            or df[first_col]
+                            .astype(str)
+                            .str.contains(r"\d{2,4}[-/.]\d{2}[-/.]\d{2,4}", na=False)
+                            .any()
+                        ):
                             df[first_col] = df[first_col].ffill()
-                            
+
                     # 2. Fill empty values in financial/amount columns with 0.0 for explicit column boundary alignment
                     for col in df.columns:
                         col_str = str(col).upper()
-                        if any(k in col_str for k in ['WITHDRAW', 'DEPOSIT', 'DEBIT', 'CREDIT', 'AMOUNT', 'PAYMENT', 'RECEIPT', 'DR', 'CR']):
+                        if any(
+                            k in col_str
+                            for k in [
+                                "WITHDRAW",
+                                "DEPOSIT",
+                                "DEBIT",
+                                "CREDIT",
+                                "AMOUNT",
+                                "PAYMENT",
+                                "RECEIPT",
+                                "DR",
+                                "CR",
+                            ]
+                        ):
                             try:
-                                numeric_series = pd.to_numeric(df[col], errors='coerce')
+                                numeric_series = pd.to_numeric(df[col], errors="coerce")
                                 if numeric_series.notna().any():
                                     df[col] = df[col].fillna(0.0)
                             except:
@@ -1646,7 +2532,7 @@ Return the extracted data EXACTLY following this JSON schema. Do not output anyt
                     i = 0
                     while i < len(df):
                         end_idx = min(i + chunk_size, len(df))
-                        
+
                         # Smart Boundary Detection: Prevent breaking a transaction in half
                         while end_idx < len(df):
                             row_nulls = df.iloc[end_idx].isna().sum()
@@ -1656,17 +2542,17 @@ Return the extracted data EXACTLY following this JSON schema. Do not output anyt
                                 end_idx += 1
                             else:
                                 break
-                                
+
                         excel_chunks.append((sheet, i, end_idx - 1))
                         i = end_idx
             except Exception as e:
                 raise ValueError(f"Failed to parse Excel file locally: {e}")
-            
+
         uploaded_files_to_delete = []
         try:
             results_array = []
             base_filename = os.path.basename(file_path)
-            
+
             def verify_chunk_math(extracted_rows, opening_balance, pages_count=1):
                 """
                 Validates extracted bank transactions for:
@@ -1681,36 +2567,54 @@ Return the extracted data EXACTLY following this JSON schema. Do not output anyt
                     prev_balance = float(opening_balance)
                 except Exception:
                     return True, ""
-                
+
                 from datetime import datetime as _ddt
+
                 prev_date = None
-                
+
                 for idx, row in enumerate(extracted_rows):
                     running_bal = row.get("running_balance")
                     amount_raw = row.get("amount", 0.0)
-                    
-                    if running_bal is None or running_bal == "" or float(running_bal or 0) == 0.0:
+
+                    if (
+                        running_bal is None
+                        or running_bal == ""
+                        or float(running_bal or 0) == 0.0
+                    ):
                         continue
                     try:
                         running_bal = float(running_bal)
                         amount_val = float(amount_raw or 0.0)
-                        
+
                         # ── Check 1: Running balance math ──────────────────────────────
                         if prev_balance is not None:
                             delta = round(running_bal - prev_balance, 2)
                             if abs(abs(delta) - amount_val) > 5.0:
-                                expected_bal = prev_balance + amount_val if str(row.get("transaction_type")).strip().capitalize() == "Receipt" else prev_balance - amount_val
+                                expected_bal = (
+                                    prev_balance + amount_val
+                                    if str(row.get("transaction_type"))
+                                    .strip()
+                                    .capitalize()
+                                    == "Receipt"
+                                    else prev_balance - amount_val
+                                )
                                 msg = f"Math discrepancy at row {idx+1} (Date: {row.get('date')}, Amount: {amount_val}, Narration: {row.get('narration')[:50]}). Expected running balance to change from {prev_balance:.2f} to {expected_bal:.2f} (delta={delta:.2f}), but PDF shows running balance as {running_bal:.2f}. Please make sure you have extracted all transactions including any duplicate amounts on the same date."
                                 print(f"   [Math Check Failed] {msg}")
                                 return False, msg
                         prev_balance = running_bal
-                        
+
                         # ── Check 2: Date-gap continuity (silent skip detection) ────────
                         if pages_count > 1:
                             raw_date = str(row.get("date", "")).strip()
                             if raw_date and raw_date != "None":
                                 cur_date = None
-                                for _fmt in ("%Y-%m-%d", "%d/%m/%Y", "%d/%m/%y", "%d-%m-%Y", "%d-%m-%y"):
+                                for _fmt in (
+                                    "%Y-%m-%d",
+                                    "%d/%m/%Y",
+                                    "%d/%m/%y",
+                                    "%d-%m-%Y",
+                                    "%d-%m-%y",
+                                ):
                                     try:
                                         cur_date = _ddt.strptime(raw_date[:10], _fmt)
                                         break
@@ -1735,14 +2639,22 @@ Return the extracted data EXACTLY following this JSON schema. Do not output anyt
                 """
                 if not extracted_rows or len(extracted_rows) < 2:
                     return extracted_rows
-                
+
                 # Check date chronology
                 from datetime import datetime as _ddt3
+
                 dates = []
                 for r in extracted_rows:
                     d_str = str(r.get("date", "")).strip()
                     parsed = None
-                    for fmt in ("%Y-%m-%d", "%d/%m/%Y", "%d-%m-%Y", "%d/%m/%y", "%d-%m-%y", "%Y/%m/%d"):
+                    for fmt in (
+                        "%Y-%m-%d",
+                        "%d/%m/%Y",
+                        "%d-%m-%Y",
+                        "%d/%m/%y",
+                        "%d-%m-%y",
+                        "%Y/%m/%d",
+                    ):
                         try:
                             parsed = _ddt3.strptime(d_str[:10], fmt)
                             break
@@ -1750,17 +2662,19 @@ Return the extracted data EXACTLY following this JSON schema. Do not output anyt
                             pass
                     if parsed:
                         dates.append(parsed)
-                
+
                 if len(dates) == len(extracted_rows):
                     first_date = dates[0]
                     last_date = dates[-1]
                     if first_date > last_date:
                         extracted_rows.reverse()
-                        print("🔄 [Chronology Normalizer] Detected newest-first order via dates. Reversed chunk data.")
+                        print(
+                            "🔄 [Chronology Normalizer] Detected newest-first order via dates. Reversed chunk data."
+                        )
                         return extracted_rows
                     elif first_date < last_date:
                         return extracted_rows
-                        
+
                 # Fallback to running balances
                 first_bal = extracted_rows[0].get("running_balance")
                 last_bal = extracted_rows[-1].get("running_balance")
@@ -1769,69 +2683,135 @@ Return the extracted data EXACTLY following this JSON schema. Do not output anyt
                         first_bal = float(first_bal)
                         last_bal = float(last_bal)
                         p_bal = float(prev_bal)
-                        
+
                         first_amt = float(extracted_rows[0].get("amount") or 0.0)
-                        first_type = str(extracted_rows[0].get("transaction_type", "")).strip().capitalize()
-                        expected_first = p_bal + first_amt if first_type == "Receipt" else p_bal - first_amt
-                        
+                        first_type = (
+                            str(extracted_rows[0].get("transaction_type", ""))
+                            .strip()
+                            .capitalize()
+                        )
+                        expected_first = (
+                            p_bal + first_amt
+                            if first_type == "Receipt"
+                            else p_bal - first_amt
+                        )
+
                         last_amt = float(extracted_rows[-1].get("amount") or 0.0)
-                        last_type = str(extracted_rows[-1].get("transaction_type", "")).strip().capitalize()
-                        expected_last = p_bal + last_amt if last_type == "Receipt" else p_bal - last_amt
-                        
-                        if abs(last_bal - expected_last) < abs(first_bal - expected_first):
+                        last_type = (
+                            str(extracted_rows[-1].get("transaction_type", ""))
+                            .strip()
+                            .capitalize()
+                        )
+                        expected_last = (
+                            p_bal + last_amt
+                            if last_type == "Receipt"
+                            else p_bal - last_amt
+                        )
+
+                        if abs(last_bal - expected_last) < abs(
+                            first_bal - expected_first
+                        ):
                             extracted_rows.reverse()
-                            print("🔄 [Chronology Normalizer] Detected newest-first order via running balances. Reversed chunk data.")
+                            print(
+                                "🔄 [Chronology Normalizer] Detected newest-first order via running balances. Reversed chunk data."
+                            )
                     except:
                         pass
                 return extracted_rows
 
             if module in ["Bank Statements", "Cash Entries"]:
                 from modules.bank.parser import BankParser
+
                 b_parser = BankParser()
                 native_excel_res = b_parser.parse_bank_excel_natively(file_path)
                 if native_excel_res and native_excel_res.get("status") == "success":
-                    print("🎉 Direct Native Excel Engine Succeeded! Bypassing Gemini LLM with 100% Math Accuracy & 0.1s Speed!")
-                    native_excel_res = self.validate_and_fix_transaction_types(native_excel_res)
-                    return self.apply_product_mappings(native_excel_res, client_memory, module, instruction)
+                    print(
+                        "🎉 Direct Native Excel Engine Succeeded! Bypassing Gemini LLM with 100% Math Accuracy & 0.1s Speed!"
+                    )
+                    native_excel_res = self.validate_and_fix_transaction_types(
+                        native_excel_res
+                    )
+                    return self.apply_product_mappings(
+                        native_excel_res, client_memory, module, instruction
+                    )
 
             if excel_chunks:
                 import time
-                
-                def extract_excel_rows_recursive(sheet, start_row_idx, end_row_idx, prev_balance, trial=1, feedback_msg=""):
+
+                def extract_excel_rows_recursive(
+                    sheet,
+                    start_row_idx,
+                    end_row_idx,
+                    prev_balance,
+                    trial=1,
+                    feedback_msg="",
+                ):
                     # Load the dataframe sheet locally
                     try:
                         import pandas as pd
+
                         df = pd.read_excel(file_path, sheet_name=sheet)
                         # Apply the same forward fill & fillna pre-processing to this range
                         for col in df.columns:
                             col_str = str(col).upper()
-                            if 'DATE' in col_str or 'VAL' in col_str or 'TRANS' in col_str:
+                            if (
+                                "DATE" in col_str
+                                or "VAL" in col_str
+                                or "TRANS" in col_str
+                            ):
                                 df[col] = df[col].ffill()
                         if len(df.columns) > 0:
                             first_col = df.columns[0]
-                            if 'DATE' in str(first_col).upper() or df[first_col].astype(str).str.contains(r'\d{2,4}[-/.]\d{2}[-/.]\d{2,4}', na=False).any():
+                            if (
+                                "DATE" in str(first_col).upper()
+                                or df[first_col]
+                                .astype(str)
+                                .str.contains(
+                                    r"\d{2,4}[-/.]\d{2}[-/.]\d{2,4}", na=False
+                                )
+                                .any()
+                            ):
                                 df[first_col] = df[first_col].ffill()
                         for col in df.columns:
                             col_str = str(col).upper()
-                            if any(k in col_str for k in ['WITHDRAW', 'DEPOSIT', 'DEBIT', 'CREDIT', 'AMOUNT', 'PAYMENT', 'RECEIPT', 'DR', 'CR']):
+                            if any(
+                                k in col_str
+                                for k in [
+                                    "WITHDRAW",
+                                    "DEPOSIT",
+                                    "DEBIT",
+                                    "CREDIT",
+                                    "AMOUNT",
+                                    "PAYMENT",
+                                    "RECEIPT",
+                                    "DR",
+                                    "CR",
+                                ]
+                            ):
                                 try:
-                                    numeric_series = pd.to_numeric(df[col], errors='coerce')
+                                    numeric_series = pd.to_numeric(
+                                        df[col], errors="coerce"
+                                    )
                                     if numeric_series.notna().any():
                                         df[col] = df[col].fillna(0.0)
                                 except:
                                     pass
                     except Exception as e:
-                        raise ValueError(f"Failed to read sheet '{sheet}' during recursive Excel extract: {e}")
-                        
+                        raise ValueError(
+                            f"Failed to read sheet '{sheet}' during recursive Excel extract: {e}"
+                        )
+
                     rows_count = end_row_idx - start_row_idx + 1
-                    chunk_df = df.iloc[start_row_idx:end_row_idx + 1]
+                    chunk_df = df.iloc[start_row_idx : end_row_idx + 1]
                     csv_str = f"--- Rows {start_row_idx + 1} to {end_row_idx + 1} ---\n"
                     csv_str += chunk_df.to_csv(index=False)
-                    
+
                     msg = f"Reading Rows {start_row_idx + 1} to {end_row_idx + 1} (File: {base_filename})"
                     self._update_status(base_filename, start_row_idx + 1, len(df), msg)
-                    print(f"  [Recursive Excel Extract] Sheet '{sheet}', Rows {start_row_idx + 1} to {end_row_idx + 1} (Size: {rows_count} row(s), Trial: {trial})")
-                    
+                    print(
+                        f"  [Recursive Excel Extract] Sheet '{sheet}', Rows {start_row_idx + 1} to {end_row_idx + 1} (Size: {rows_count} row(s), Trial: {trial})"
+                    )
+
                     # Construct chunk prompt
                     chunk_context = (
                         f"\n\n--- CHUNK FILE CONTEXT ---\n"
@@ -1848,21 +2828,31 @@ Return the extracted data EXACTLY following this JSON schema. Do not output anyt
                             f"PREVIOUS BALANCE CONTEXT: The running bank balance right before this chunk starts was {prev_bal_str}. "
                             f"Use this to correctly determine the transaction type (Receipt/Payment) of the first transaction in this chunk.\n"
                         )
-                        
-                    chunk_prompt = prompt + chunk_context + f"\n\nHere is a chunk of raw data from the Excel file converted to CSV format:\n{csv_str}\n\nParse this tabular data perfectly according to the rules. DO NOT SKIP ANY ROWS."
+
+                    chunk_prompt = (
+                        prompt
+                        + chunk_context
+                        + f"\n\nHere is a chunk of raw data from the Excel file converted to CSV format:\n{csv_str}\n\nParse this tabular data perfectly according to the rules. DO NOT SKIP ANY ROWS."
+                    )
                     if feedback_msg:
                         chunk_prompt += f"\n\n⚠️ IMPORTANT FEEDBACK FROM PREVIOUS ATTEMPT:\n{feedback_msg}\nPlease correct this mistake in your new output and make sure no entries are missing or hallucinated."
-                    
+
                     res = None
                     try:
                         res = self._extract_single_content(client, [chunk_prompt])
                     except Exception as err:
-                        print(f"❌ Error processing Excel range {start_row_idx + 1}-{end_row_idx + 1}: {err}")
+                        print(
+                            f"❌ Error processing Excel range {start_row_idx + 1}-{end_row_idx + 1}: {err}"
+                        )
                         raise err
-                        
+
                     # Math validation
-                    extracted_data = res.get("extracted_data", []) if isinstance(res, dict) else []
-                    extracted_data = normalize_extracted_chunk_chronology(extracted_data, prev_balance)
+                    extracted_data = (
+                        res.get("extracted_data", []) if isinstance(res, dict) else []
+                    )
+                    extracted_data = normalize_extracted_chunk_chronology(
+                        extracted_data, prev_balance
+                    )
                     op_balance = prev_balance
                     if not op_balance and isinstance(res, dict):
                         op_balance = res.get("opening_balance", 0.0)
@@ -1870,78 +2860,134 @@ Return the extracted data EXACTLY following this JSON schema. Do not output anyt
                             first_row = extracted_data[0]
                             first_bal = first_row.get("running_balance")
                             first_amt = first_row.get("amount", 0.0)
-                            first_type = str(first_row.get("transaction_type", "")).strip().capitalize()
+                            first_type = (
+                                str(first_row.get("transaction_type", ""))
+                                .strip()
+                                .capitalize()
+                            )
                             if first_bal and first_amt:
                                 first_bal = float(first_bal)
                                 first_amt = float(first_amt)
-                                op_balance = first_bal - first_amt if first_type == "Receipt" else first_bal + first_amt
-                                
+                                op_balance = (
+                                    first_bal - first_amt
+                                    if first_type == "Receipt"
+                                    else first_bal + first_amt
+                                )
+
                     is_valid = True
                     feedback_msg = ""
                     if not extracted_data:
                         is_valid = False
                         feedback_msg = "Gemini returned zero transactions for this excel chunk. Please extract all rows."
                     elif op_balance:
-                        is_valid, feedback_msg = verify_chunk_math(extracted_data, op_balance, pages_count=rows_count)
-                        
+                        is_valid, feedback_msg = verify_chunk_math(
+                            extracted_data, op_balance, pages_count=rows_count
+                        )
+
                     # If math check fails and range has multiple rows, split range in half
                     if not is_valid and rows_count > 1:
-                        print(f"⚠️ [Recursive Excel Extract] Math check failed for Rows {start_row_idx + 1}-{end_row_idx + 1}. Splitting in half...")
+                        print(
+                            f"⚠️ [Recursive Excel Extract] Math check failed for Rows {start_row_idx + 1}-{end_row_idx + 1}. Splitting in half..."
+                        )
                         mid = (start_row_idx + end_row_idx) // 2
-                        
-                        res_first = extract_excel_rows_recursive(sheet, start_row_idx, mid, prev_balance, trial=trial)
-                        
+
+                        res_first = extract_excel_rows_recursive(
+                            sheet, start_row_idx, mid, prev_balance, trial=trial
+                        )
+
                         first_extracted = res_first.get("extracted_data", [])
                         end_balance_first = prev_balance
                         if first_extracted:
-                            last_rows = [r for r in first_extracted if r.get("running_balance")]
+                            last_rows = [
+                                r for r in first_extracted if r.get("running_balance")
+                            ]
                             if last_rows:
-                                end_balance_first = float(last_rows[-1].get("running_balance", 0))
-                                
-                        res_second = extract_excel_rows_recursive(sheet, mid + 1, end_row_idx, end_balance_first, trial=trial)
-                        
+                                end_balance_first = float(
+                                    last_rows[-1].get("running_balance", 0)
+                                )
+
+                        res_second = extract_excel_rows_recursive(
+                            sheet, mid + 1, end_row_idx, end_balance_first, trial=trial
+                        )
+
                         combined_res = {
-                          "status": "success",
-                          "bank_name": res_first.get("bank_name") or res_second.get("bank_name"),
-                          "opening_balance": res_first.get("opening_balance") or res_second.get("opening_balance") or op_balance,
-                          "extracted_data": first_extracted + res_second.get("extracted_data", [])
+                            "status": "success",
+                            "bank_name": res_first.get("bank_name")
+                            or res_second.get("bank_name"),
+                            "opening_balance": res_first.get("opening_balance")
+                            or res_second.get("opening_balance")
+                            or op_balance,
+                            "extracted_data": first_extracted
+                            + res_second.get("extracted_data", []),
                         }
                         return combined_res
-                        
-                     # If math check fails on single row, retry up to 2 times
+
+                    # If math check fails on single row, retry up to 2 times
                     elif not is_valid and rows_count == 1 and trial < 3:
-                        print(f"⚠️ [Recursive Excel Extract] Math check failed for single row {start_row_idx + 1}. Retrying (Attempt {trial + 1})...")
+                        print(
+                            f"⚠️ [Recursive Excel Extract] Math check failed for single row {start_row_idx + 1}. Retrying (Attempt {trial + 1})..."
+                        )
                         # Only sleep if API quota is exhausted (not preemptively)
-                        return extract_excel_rows_recursive(sheet, start_row_idx, end_row_idx, prev_balance, trial=trial + 1, feedback_msg=feedback_msg)
-                        
+                        return extract_excel_rows_recursive(
+                            sheet,
+                            start_row_idx,
+                            end_row_idx,
+                            prev_balance,
+                            trial=trial + 1,
+                            feedback_msg=feedback_msg,
+                        )
+
                     return res
 
                 # Walk through chunks — parallel for Sales/Purchases, sequential for Bank (balance-dependent)
                 current_balance = ""
                 num_chunks = len(excel_chunks)
-                self._update_status(base_filename, 0, num_chunks, "Initializing Excel extraction...")
-                
+                self._update_status(
+                    base_filename, 0, num_chunks, "Initializing Excel extraction..."
+                )
+
                 if module in ["Bank Statements", "Cash Entries"]:
                     # Bank must be sequential: each chunk needs prior running balance
-                    for chunk_idx, (sheet, start_idx, end_idx) in enumerate(excel_chunks):
-                        res = extract_excel_rows_recursive(sheet, start_idx, end_idx, current_balance)
+                    for chunk_idx, (sheet, start_idx, end_idx) in enumerate(
+                        excel_chunks
+                    ):
+                        res = extract_excel_rows_recursive(
+                            sheet, start_idx, end_idx, current_balance
+                        )
                         results_array.append(res)
                         if isinstance(res, dict) and res.get("extracted_data"):
-                            last_rows = [r for r in res["extracted_data"] if r.get("running_balance")]
+                            last_rows = [
+                                r
+                                for r in res["extracted_data"]
+                                if r.get("running_balance")
+                            ]
                             if last_rows:
-                                current_balance = float(last_rows[-1].get("running_balance", 0))
+                                current_balance = float(
+                                    last_rows[-1].get("running_balance", 0)
+                                )
                 else:
                     # Sales / Purchases: all chunks are independent — process in parallel
                     from concurrent.futures import ThreadPoolExecutor, as_completed
+
                     max_workers = min(4, num_chunks)  # Cap at 4 parallel API calls
-                    print(f"⚡ [Parallel Extraction] Processing {num_chunks} chunk(s) with {max_workers} parallel workers...")
-                    
+                    print(
+                        f"⚡ [Parallel Extraction] Processing {num_chunks} chunk(s) with {max_workers} parallel workers..."
+                    )
+
                     future_to_idx = {}
                     with ThreadPoolExecutor(max_workers=max_workers) as executor:
-                        for chunk_idx, (sheet, start_idx, end_idx) in enumerate(excel_chunks):
-                            future = executor.submit(extract_excel_rows_recursive, sheet, start_idx, end_idx, "")
+                        for chunk_idx, (sheet, start_idx, end_idx) in enumerate(
+                            excel_chunks
+                        ):
+                            future = executor.submit(
+                                extract_excel_rows_recursive,
+                                sheet,
+                                start_idx,
+                                end_idx,
+                                "",
+                            )
                             future_to_idx[future] = chunk_idx
-                    
+
                     # Collect results in ORIGINAL order to preserve invoice sequence
                     ordered_results = [None] * num_chunks
                     for future in as_completed(future_to_idx):
@@ -1950,33 +2996,62 @@ Return the extracted data EXACTLY following this JSON schema. Do not output anyt
                             ordered_results[idx] = future.result()
                         except Exception as pe:
                             print(f"❌ Parallel chunk {idx} failed: {pe}")
-                            ordered_results[idx] = {"status": "error", "extracted_data": []}
-                    
-                    results_array.extend([r for r in ordered_results if r is not None])
+                            ordered_results[idx] = {
+                                "status": "error",
+                                "extracted_data": [],
+                            }
 
+                    results_array.extend([r for r in ordered_results if r is not None])
 
             elif ext == ".pdf":
                 if module == "Bank Statements":
-                    native_res = self.parse_bank_pdf_natively(file_path, pdf_password=pdf_password)
+                    native_res = self.parse_bank_pdf_natively(
+                        file_path, pdf_password=pdf_password
+                    )
                     if native_res and native_res.get("status") == "success":
-                        print("🎉 Direct Native PDF Engine Succeeded! Bypassing Gemini LLM with 100% Math Accuracy & 0.05s Speed!")
+                        print(
+                            "🎉 Direct Native PDF Engine Succeeded! Bypassing Gemini LLM with 100% Math Accuracy & 0.05s Speed!"
+                        )
                         # Deterministically validate and fix transaction types for native PDF entries
                         native_res = self.validate_and_fix_transaction_types(native_res)
-                        return self.apply_product_mappings(native_res, client_memory, module, instruction)
+                        return self.apply_product_mappings(
+                            native_res, client_memory, module, instruction
+                        )
 
                 import time
-                
+
                 total_pages = 0
                 avg_lines_per_page = 0
-                
+                # ── OPTIMIZATION: shared_pdf_reader ────────────────────────────
+                # We open the PdfReader ONCE here and reuse it for:
+                #   (a) page count,  (b) sampled line density,
+                #   (c) detect_pdf_chronology,  (d) text extraction inside each chunk.
+                # This replaces what was previously 3 separate PdfReader opens.
+                shared_pdf_reader = None
+
                 # Check page count and line density natively (to prevent LLM output truncation)
                 try:
                     from pypdf import PdfReader, PdfWriter
+
                     reader = PdfReader(file_path, strict=False)
-                    if getattr(reader, 'is_encrypted', False):
+                    if getattr(reader, "is_encrypted", False):
                         decrypted = False
                         pass_clean = (pdf_password or "").strip()
-                        candidates = list(dict.fromkeys([pass_candidate for pass_candidate in [pdf_password, pass_clean, pass_clean.upper(), pass_clean.lower(), ""] if pass_candidate is not None]))
+                        candidates = list(
+                            dict.fromkeys(
+                                [
+                                    pass_candidate
+                                    for pass_candidate in [
+                                        pdf_password,
+                                        pass_clean,
+                                        pass_clean.upper(),
+                                        pass_clean.lower(),
+                                        "",
+                                    ]
+                                    if pass_candidate is not None
+                                ]
+                            )
+                        )
                         for pass_candidate in candidates:
                             try:
                                 res = reader.decrypt(pass_candidate)
@@ -1987,98 +3062,209 @@ Return the extracted data EXACTLY following this JSON schema. Do not output anyt
                                 pass
                         if not decrypted:
                             if pdf_password:
-                                raise ValueError("PDF_PASSWORD_INCORRECT: Incorrect password for encrypted PDF file.")
+                                raise ValueError(
+                                    "PDF_PASSWORD_INCORRECT: Incorrect password for encrypted PDF file."
+                                )
                             else:
-                                raise ValueError("PDF_PASSWORD_REQUIRED: This PDF file is password protected. Please enter the password to process.")
+                                raise ValueError(
+                                    "PDF_PASSWORD_REQUIRED: This PDF file is password protected. Please enter the password to process."
+                                )
                     total_pages = len(reader.pages)
+                    # ── P3: Sampled line density (max 10 evenly-distributed pages) ──
+                    # Avoids decoding all 50+ pages just to estimate chunk size.
                     total_lines = 0
-                    for p in reader.pages:
-                        try:
-                            p_txt = p.extract_text() or ""
-                            total_lines += len([l for l in p_txt.split('\n') if l.strip()])
-                        except:
-                            pass
-                    avg_lines_per_page = (total_lines / total_pages) if total_pages > 0 else 0
+                    sample_size = min(total_pages, 10)
+                    if sample_size > 0:
+                        step = max(1, total_pages // sample_size)
+                        sampled_indices = list(range(0, total_pages, step))[
+                            :sample_size
+                        ]
+                        for _si in sampled_indices:
+                            try:
+                                p_txt = reader.pages[_si].extract_text() or ""
+                                total_lines += len(
+                                    [l for l in p_txt.split("\n") if l.strip()]
+                                )
+                            except:
+                                pass
+                        avg_lines_per_page = (
+                            (total_lines / len(sampled_indices))
+                            if sampled_indices
+                            else 0
+                        )
+                    else:
+                        avg_lines_per_page = 0
+                    # Keep reader alive for reuse — don't close it yet
+                    shared_pdf_reader = reader
                 except ValueError as ve:
                     raise ve
                 except Exception as e:
                     err_s = str(e).lower()
-                    if "decrypted" in err_s or "password" in err_s or "encrypt" in err_s:
+                    if (
+                        "decrypted" in err_s
+                        or "password" in err_s
+                        or "encrypt" in err_s
+                    ):
                         if pdf_password:
-                            raise ValueError("PDF_PASSWORD_INCORRECT: Incorrect password for encrypted PDF file.")
+                            raise ValueError(
+                                "PDF_PASSWORD_INCORRECT: Incorrect password for encrypted PDF file."
+                            )
                         else:
-                            raise ValueError("PDF_PASSWORD_REQUIRED: This PDF file is password protected. Please enter the password to process.")
-                    print(f"⚠️ pypdf failed to count pages/lines ({e}). Falling back to pdfplumber...")
+                            raise ValueError(
+                                "PDF_PASSWORD_REQUIRED: This PDF file is password protected. Please enter the password to process."
+                            )
+                    print(
+                        f"⚠️ pypdf failed to count pages/lines ({e}). Falling back to pdfplumber..."
+                    )
                     try:
                         import pdfplumber
+
                         open_kwargs = {"password": pdf_password} if pdf_password else {}
                         with pdfplumber.open(file_path, **open_kwargs) as pdf:
                             total_pages = len(pdf.pages)
                             total_lines = 0
-                            for p in pdf.pages:
+                            # Sample up to 10 pages here too
+                            sample_size = min(total_pages, 10)
+                            step = (
+                                max(1, total_pages // sample_size)
+                                if sample_size > 0
+                                else 1
+                            )
+                            sampled_indices = list(range(0, total_pages, step))[
+                                :sample_size
+                            ]
+                            for _si in sampled_indices:
                                 try:
-                                    p_txt = p.extract_text() or ""
-                                    total_lines += len([l for l in p_txt.split('\n') if l.strip()])
+                                    p_txt = pdf.pages[_si].extract_text() or ""
+                                    total_lines += len(
+                                        [l for l in p_txt.split("\n") if l.strip()]
+                                    )
                                 except:
                                     pass
-                            avg_lines_per_page = (total_lines / total_pages) if total_pages > 0 else 0
+                            avg_lines_per_page = (
+                                (total_lines / len(sampled_indices))
+                                if sampled_indices
+                                else 0
+                            )
                     except ModuleNotFoundError:
-                        print(f"❌ pdfplumber is not installed. Root PDF reading error: {e}")
+                        print(
+                            f"❌ pdfplumber is not installed. Root PDF reading error: {e}"
+                        )
                         raise ValueError(f"Failed to read PDF file: {e}")
                     except Exception as e2:
                         err_s2 = str(e2).lower()
                         if "password" in err_s2 or "encrypt" in err_s2:
                             if pdf_password:
-                                raise ValueError("PDF_PASSWORD_INCORRECT: Incorrect password for encrypted PDF file.")
+                                raise ValueError(
+                                    "PDF_PASSWORD_INCORRECT: Incorrect password for encrypted PDF file."
+                                )
                             else:
-                                raise ValueError("PDF_PASSWORD_REQUIRED: This PDF file is password protected. Please enter the password to process.")
-                        print(f"❌ Both pypdf and pdfplumber failed to read page count: {e2}")
+                                raise ValueError(
+                                    "PDF_PASSWORD_REQUIRED: This PDF file is password protected. Please enter the password to process."
+                                )
+                        print(
+                            f"❌ Both pypdf and pdfplumber failed to read page count: {e2}"
+                        )
                         raise ValueError(f"Failed to read PDF file: {e2}")
-                
-                print(f"📊 PDF Page Density: {total_pages} total pages, ~{int(avg_lines_per_page)} lines/page")
-                
+
+                print(
+                    f"📊 PDF Page Density: {total_pages} total pages, ~{int(avg_lines_per_page)} lines/page (sampled)"
+                )
+
                 # Dynamic Chunk Size Adaptation based on Page Count & Line Density
                 # High-Speed Increased Chunking: Bank statements use max 15 pages to prevent JSON output truncation
                 if module == "Bank Statements":
-                    pages_per_chunk = max(5, min(15, 1200 // max(1, int(avg_lines_per_page))))
-                    print(f"🏦 Bank Statement chunk size set to max {pages_per_chunk} pages/chunk to guarantee 0 JSON output truncation.")
+                    pages_per_chunk = max(
+                        5, min(15, 1200 // max(1, int(avg_lines_per_page)))
+                    )
+                    print(
+                        f"🏦 Bank Statement chunk size set to max {pages_per_chunk} pages/chunk to guarantee 0 JSON output truncation."
+                    )
                 elif avg_lines_per_page > 150:
-                    pages_per_chunk = max(10, min(25, 2500 // max(1, int(avg_lines_per_page))))
-                    print(f"⚡ Ultra-dense PDF detected (~{int(avg_lines_per_page)} lines/page)! Setting pages_per_chunk = {pages_per_chunk}.")
+                    pages_per_chunk = max(
+                        10, min(25, 2500 // max(1, int(avg_lines_per_page)))
+                    )
+                    print(
+                        f"⚡ Ultra-dense PDF detected (~{int(avg_lines_per_page)} lines/page)! Setting pages_per_chunk = {pages_per_chunk}."
+                    )
                 elif total_pages <= 30:
                     pages_per_chunk = total_pages
-                    print(f"🚀 High-Speed Small PDF ({total_pages} pages): Processing all pages in 1 single API call!")
+                    print(
+                        f"🚀 High-Speed Small PDF ({total_pages} pages): Processing all pages in 1 single API call!"
+                    )
                 else:
-                    pages_per_chunk = max(20, min(50, 3500 // max(1, int(avg_lines_per_page))))
-                    print(f"🚀 High-Speed Large PDF ({total_pages} pages): Setting pages_per_chunk = {pages_per_chunk}.")
-                
-                chronology = self.detect_pdf_chronology(file_path) if module in ["Bank Statements", "Cash Entries"] else "forward"
+                    pages_per_chunk = max(
+                        20, min(50, 3500 // max(1, int(avg_lines_per_page)))
+                    )
+                    print(
+                        f"🚀 High-Speed Large PDF ({total_pages} pages): Setting pages_per_chunk = {pages_per_chunk}."
+                    )
+
+                chronology = (
+                    self.detect_pdf_chronology(
+                        file_path, preloaded_reader=shared_pdf_reader
+                    )
+                    if module in ["Bank Statements", "Cash Entries"]
+                    else "forward"
+                )
                 # Build chunk page index ranges
                 chunk_ranges = []
                 for i in range(0, total_pages, pages_per_chunk):
                     end_idx = min(i + pages_per_chunk - 1, total_pages - 1)
                     chunk_ranges.append((i, end_idx))
-                
+
                 if chronology == "reverse":
                     chunk_ranges.reverse()
-                    print(f"🔄 Reversed PDF chunk ranges for chronological flow: {chunk_ranges}")
-                    
+                    print(
+                        f"🔄 Reversed PDF chunk ranges for chronological flow: {chunk_ranges}"
+                    )
+
                 num_chunks = len(chunk_ranges)
-                print(f"Deep Extraction: Processing PDF {file_path} sequentially in {num_chunks} base chunks (with recursive split-on-failure)...")
-                
-                def extract_pdf_pages_recursive(start_page_idx, end_page_idx, prev_balance, trial=1, feedback_msg="", chunk_offset: int = 0):
+                print(
+                    f"Deep Extraction: Processing PDF {file_path} sequentially in {num_chunks} base chunks (with recursive split-on-failure)..."
+                )
+
+                def extract_pdf_pages_recursive(
+                    start_page_idx,
+                    end_page_idx,
+                    prev_balance,
+                    trial=1,
+                    feedback_msg="",
+                    chunk_offset: int = 0,
+                ):
                     pages_count = end_page_idx - start_page_idx + 1
                     start_p = start_page_idx + 1
                     end_p = end_page_idx + 1
-                    
+
+                    # ── OPTIMIZATION: Shared vs. per-thread PdfReader ──────────────
+                    # Sequential (Bank): reuse the single shared_pdf_reader opened above — zero extra opens.
+                    # Parallel (Sales/Purchase): each worker thread needs its own reader (thread-safety).
+                    # We detect the parallel case by checking if we are NOT on the main thread.
+                    import threading as _threading
+
+                    _is_main_thread = (
+                        _threading.current_thread() is _threading.main_thread()
+                    )
+
                     # Extract page text locally (Ultra Fast pypdf primary with pdfplumber fallback)
                     extracted_chunk_text_lines = []
                     try:
                         from pypdf import PdfReader
-                        local_reader = PdfReader(file_path, strict=False)
-                        if getattr(local_reader, 'is_encrypted', False) and pdf_password:
-                            try: local_reader.decrypt(pdf_password)
-                            except: pass
+
+                        # Sequential path: reuse shared reader (Bank statements).
+                        # Parallel path: open a fresh reader per worker thread (Sales/Purchases).
+                        if shared_pdf_reader is not None and _is_main_thread:
+                            local_reader = shared_pdf_reader
+                        else:
+                            local_reader = PdfReader(file_path, strict=False)
+                            if (
+                                getattr(local_reader, "is_encrypted", False)
+                                and pdf_password
+                            ):
+                                try:
+                                    local_reader.decrypt(pdf_password)
+                                except:
+                                    pass
                         page_indices = list(range(start_page_idx, end_page_idx + 1))
                         if chronology == "reverse":
                             page_indices.reverse()
@@ -2086,12 +3272,17 @@ Return the extracted data EXACTLY following this JSON schema. Do not output anyt
                             if idx < len(local_reader.pages):
                                 txt = local_reader.pages[idx].extract_text() or ""
                                 import re
-                                txt = re.sub(r'(\d{4}-)\s*\n\s*(\d{2}-\d{2})', r'\1\2', txt)
-                                txt = re.sub(r'(\d{2}-\d{2})\s*\n\s*(\d{4}-)', r'\2\1', txt)
+
+                                txt = re.sub(
+                                    r"(\d{4}-)\s*\n\s*(\d{2}-\d{2})", r"\1\2", txt
+                                )
+                                txt = re.sub(
+                                    r"(\d{2}-\d{2})\s*\n\s*(\d{4}-)", r"\2\1", txt
+                                )
                                 if chronology == "reverse":
-                                    lines = [l for l in txt.split('\n') if l.strip()]
+                                    lines = [l for l in txt.split("\n") if l.strip()]
                                     lines.reverse()
-                                    txt = '\n'.join(lines)
+                                    txt = "\n".join(lines)
                                 if txt.strip():
                                     extracted_chunk_text_lines.append(txt)
                     except Exception:
@@ -2100,31 +3291,51 @@ Return the extracted data EXACTLY following this JSON schema. Do not output anyt
                     if not extracted_chunk_text_lines:
                         try:
                             import pdfplumber
-                            open_kwargs = {"password": pdf_password} if pdf_password else {}
+
+                            open_kwargs = (
+                                {"password": pdf_password} if pdf_password else {}
+                            )
                             with pdfplumber.open(file_path, **open_kwargs) as pdf:
-                                page_indices = list(range(start_page_idx, end_page_idx + 1))
+                                page_indices = list(
+                                    range(start_page_idx, end_page_idx + 1)
+                                )
                                 if chronology == "reverse":
                                     page_indices.reverse()
                                 for idx in page_indices:
                                     if idx < len(pdf.pages):
                                         txt = pdf.pages[idx].extract_text() or ""
                                         import re
-                                        txt = re.sub(r'(\d{4}-)\s*\n\s*(\d{2}-\d{2})', r'\1\2', txt)
-                                        txt = re.sub(r'(\d{2}-\d{2})\s*\n\s*(\d{4}-)', r'\2\1', txt)
+
+                                        txt = re.sub(
+                                            r"(\d{4}-)\s*\n\s*(\d{2}-\d{2})",
+                                            r"\1\2",
+                                            txt,
+                                        )
+                                        txt = re.sub(
+                                            r"(\d{2}-\d{2})\s*\n\s*(\d{4}-)",
+                                            r"\2\1",
+                                            txt,
+                                        )
                                         if chronology == "reverse":
-                                            lines = [l for l in txt.split('\n') if l.strip()]
+                                            lines = [
+                                                l for l in txt.split("\n") if l.strip()
+                                            ]
                                             lines.reverse()
-                                            txt = '\n'.join(lines)
+                                            txt = "\n".join(lines)
                                         extracted_chunk_text_lines.append(txt)
                         except Exception as pe:
-                            print(f"⚠️ pdfplumber text extraction failed during chunking: {pe}")
+                            print(
+                                f"⚠️ pdfplumber text extraction failed during chunking: {pe}"
+                            )
 
-                    total_chars = sum(len(txt.strip()) for txt in extracted_chunk_text_lines)
+                    total_chars = sum(
+                        len(txt.strip()) for txt in extracted_chunk_text_lines
+                    )
                     is_scanned_pdf = total_chars < (10 * pages_count)
-                    
+
                     msg = f"Reading Part: Pages {start_p} to {end_p} (File: {base_filename})"
                     self._update_status(base_filename, start_p, total_pages, msg)
-                    
+
                     # Construct chunk prompt context
                     chunk_context = (
                         f"\n\n--- CHUNK FILE CONTEXT ---\n"
@@ -2140,22 +3351,31 @@ Return the extracted data EXACTLY following this JSON schema. Do not output anyt
                             f"PREVIOUS BALANCE CONTEXT: The running bank balance right before this chunk starts was {prev_bal_str}. "
                             f"Use this to correctly determine the transaction type (Receipt/Payment) of the first transaction in this chunk.\n"
                         )
-                    
+
                     res = None
                     uploaded_file = None
                     temp_chunk_path = None
-                    
+
                     if is_scanned_pdf:
-                        print(f"📷 [Scanned PDF Detected] Pages {start_p} to {end_p} contain minimal selectable text ({total_chars} chars). Using Gemini File API visual upload fallback...")
+                        print(
+                            f"📷 [Scanned PDF Detected] Pages {start_p} to {end_p} contain minimal selectable text ({total_chars} chars). Using Gemini File API visual upload fallback..."
+                        )
                         try:
                             import tempfile
+                            import gc as _gc
                             from pypdf import PdfReader, PdfWriter
-                            
+
                             # Write chunk pages to a temp PDF file
                             fd, temp_chunk_path = tempfile.mkstemp(suffix=".pdf")
                             os.close(fd)
-                            
-                            reader_local = PdfReader(file_path, strict=False)
+
+                            # Use shared reader if available (sequential bank path) else open fresh
+                            if shared_pdf_reader is not None and (
+                                _threading.current_thread() is _threading.main_thread()
+                            ):
+                                reader_local = shared_pdf_reader
+                            else:
+                                reader_local = PdfReader(file_path, strict=False)
                             writer = PdfWriter()
                             page_indices = list(range(start_page_idx, end_page_idx + 1))
                             if chronology == "reverse":
@@ -2163,50 +3383,84 @@ Return the extracted data EXACTLY following this JSON schema. Do not output anyt
                             for idx in page_indices:
                                 if idx < len(reader_local.pages):
                                     writer.add_page(reader_local.pages[idx])
-                            
+
                             with open(temp_chunk_path, "wb") as f:
                                 writer.write(f)
-                                
+
+                            # ── P4: Release writer & local reader BEFORE upload ──────────
+                            # Frees all page byte buffers from memory before the network transfer.
+                            del writer
+                            if reader_local is not shared_pdf_reader:
+                                del reader_local
+                            _gc.collect()
+
                             uploaded_file = client.files.upload(file=temp_chunk_path)
-                            chunk_prompt = prompt + chunk_context + f"\n\nHere is a chunk of pages from the scanned bank statement. Parse this tabular statement data perfectly according to the rules."
+                            chunk_prompt = (
+                                prompt
+                                + chunk_context
+                                + f"\n\nHere is a chunk of pages from the scanned bank statement. Parse this tabular statement data perfectly according to the rules."
+                            )
                             if feedback_msg:
                                 chunk_prompt += f"\n\n⚠️ IMPORTANT FEEDBACK FROM PREVIOUS ATTEMPT:\n{feedback_msg}\nPlease correct this mistake in your new output and make sure no entries are missing or hallucinated."
-                            
-                            res = self._extract_single_content(client, [uploaded_file, chunk_prompt])
+
+                            res = self._extract_single_content(
+                                client, [uploaded_file, chunk_prompt]
+                            )
                         except Exception as err:
-                            print(f"❌ Error processing scanned PDF range {start_p}-{end_p}: {err}")
+                            print(
+                                f"❌ Error processing scanned PDF range {start_p}-{end_p}: {err}"
+                            )
                             raise err
                         finally:
                             if temp_chunk_path and os.path.exists(temp_chunk_path):
-                                try: os.remove(temp_chunk_path)
-                                except: pass
+                                try:
+                                    os.remove(temp_chunk_path)
+                                except:
+                                    pass
                             if uploaded_file:
                                 try:
                                     if uploaded_file.name:
                                         client.files.delete(name=uploaded_file.name)
                                 except Exception as del_err:
-                                    print(f"⚠️ Non-critical: Failed to delete temp chunk file from Gemini: {del_err}")
+                                    print(
+                                        f"⚠️ Non-critical: Failed to delete temp chunk file from Gemini: {del_err}"
+                                    )
                             import gc
+
                             gc.collect()
                     else:
-                        print(f"  [Recursive Text Extract] Pages {start_p} to {end_p} (Size: {pages_count} page(s), Trial: {trial})")
+                        print(
+                            f"  [Recursive Text Extract] Pages {start_p} to {end_p} (Size: {pages_count} page(s), Trial: {trial})"
+                        )
                         raw_chunk_text = ""
                         for idx, txt in enumerate(extracted_chunk_text_lines):
                             p_num = start_p + idx
                             raw_chunk_text += f"\n--- START PAGE {p_num} ---\n{txt}\n--- END PAGE {p_num} ---\n"
-                            
-                        chunk_prompt = prompt + chunk_context + f"\n\nHere is the raw text content extracted from the statement page(s) {start_p} to {end_p}:\n{raw_chunk_text}\n\nParse this tabular statement data perfectly according to the rules."
+
+                        chunk_prompt = (
+                            prompt
+                            + chunk_context
+                            + f"\n\nHere is the raw text content extracted from the statement page(s) {start_p} to {end_p}:\n{raw_chunk_text}\n\nParse this tabular statement data perfectly according to the rules."
+                        )
                         if feedback_msg:
                             chunk_prompt += f"\n\n⚠️ IMPORTANT FEEDBACK FROM PREVIOUS ATTEMPT:\n{feedback_msg}\nPlease correct this mistake in your new output and make sure no entries are missing or hallucinated."
                         try:
-                            res = self._extract_single_content(client, [chunk_prompt], start_key_offset=chunk_offset)
+                            res = self._extract_single_content(
+                                client, [chunk_prompt], start_key_offset=chunk_offset
+                            )
                         except Exception as err:
-                            print(f"❌ Error processing PDF text range {start_p}-{end_p}: {err}")
+                            print(
+                                f"❌ Error processing PDF text range {start_p}-{end_p}: {err}"
+                            )
                             raise err
-                            
+
                     # 2. Math validation
-                    extracted_data = res.get("extracted_data", []) if isinstance(res, dict) else []
-                    extracted_data = normalize_extracted_chunk_chronology(extracted_data, prev_balance)
+                    extracted_data = (
+                        res.get("extracted_data", []) if isinstance(res, dict) else []
+                    )
+                    extracted_data = normalize_extracted_chunk_chronology(
+                        extracted_data, prev_balance
+                    )
                     op_balance = prev_balance
                     if not op_balance and isinstance(res, dict):
                         op_balance = res.get("opening_balance", 0.0)
@@ -2214,138 +3468,181 @@ Return the extracted data EXACTLY following this JSON schema. Do not output anyt
                             first_row = extracted_data[0]
                             first_bal = first_row.get("running_balance")
                             first_amt = first_row.get("amount", 0.0)
-                            first_type = str(first_row.get("transaction_type", "")).strip().capitalize()
+                            first_type = (
+                                str(first_row.get("transaction_type", ""))
+                                .strip()
+                                .capitalize()
+                            )
                             if first_bal and first_amt:
                                 first_bal = float(first_bal)
                                 first_amt = float(first_amt)
-                                op_balance = first_bal - first_amt if first_type == "Receipt" else first_bal + first_amt
-                                
+                                op_balance = (
+                                    first_bal - first_amt
+                                    if first_type == "Receipt"
+                                    else first_bal + first_amt
+                                )
+
                     is_valid = True
                     feedback_msg = ""
                     if not extracted_data:
                         has_table = True
                         if not is_scanned_pdf:
-                            text_to_check = "\n".join(extracted_chunk_text_lines).upper()
-                            has_table = any(k in text_to_check for k in ["DATE", "PARTICULARS", "BALANCE", "WITHDRAWAL", "DEPOSIT", "REF NO"])
+                            text_to_check = "\n".join(
+                                extracted_chunk_text_lines
+                            ).upper()
+                            has_table = any(
+                                k in text_to_check
+                                for k in [
+                                    "DATE",
+                                    "PARTICULARS",
+                                    "BALANCE",
+                                    "WITHDRAWAL",
+                                    "DEPOSIT",
+                                    "REF NO",
+                                ]
+                            )
                         if has_table:
                             is_valid = False
                             feedback_msg = "Gemini returned zero transactions for this page chunk, but a statement table appears to be present. Please extract all rows."
                     elif op_balance:
-                        is_valid, feedback_msg = verify_chunk_math(extracted_data, op_balance, pages_count=pages_count)
-                        
+                        is_valid, feedback_msg = verify_chunk_math(
+                            extracted_data, op_balance, pages_count=pages_count
+                        )
+
                     # If math check fails on small/medium chunks (pages <= 10), RETRY Trial 2 first with feedback & key rotation!
                     if not is_valid and trial < 2 and pages_count <= 10:
-                        print(f"⚠️ [Recursive Extract] Math check failed for Pages {start_p}-{end_p} (Size: {pages_count} pgs). Retrying Trial {trial + 1} with feedback & key rotation before splitting...")
-                        return extract_pdf_pages_recursive(
-                            start_page_idx, end_page_idx, prev_balance, 
-                            trial=trial + 1, feedback_msg=feedback_msg, chunk_offset=chunk_offset + 1
+                        print(
+                            f"⚠️ [Recursive Extract] Math check failed for Pages {start_p}-{end_p} (Size: {pages_count} pgs). Retrying Trial {trial + 1} with feedback & key rotation before splitting..."
                         )
-                        
+                        return extract_pdf_pages_recursive(
+                            start_page_idx,
+                            end_page_idx,
+                            prev_balance,
+                            trial=trial + 1,
+                            feedback_msg=feedback_msg,
+                            chunk_offset=chunk_offset + 1,
+                        )
+
                     # If math check STILL fails after Trial 2 (or for large chunks > 10 pages), split range in half
                     elif not is_valid and pages_count > 1:
-                        print(f"⚠️ [Recursive Extract] Math check failed for Pages {start_p}-{end_p} after Trial {trial}. Splitting page range in half...")
+                        print(
+                            f"⚠️ [Recursive Extract] Math check failed for Pages {start_p}-{end_p} after Trial {trial}. Splitting page range in half..."
+                        )
                         mid = (start_page_idx + end_page_idx) // 2
-                        
-                        res_first = extract_pdf_pages_recursive(start_page_idx, mid, prev_balance, trial=1, chunk_offset=chunk_offset)
-                        
+
+                        res_first = extract_pdf_pages_recursive(
+                            start_page_idx,
+                            mid,
+                            prev_balance,
+                            trial=1,
+                            chunk_offset=chunk_offset,
+                        )
+
                         first_extracted = res_first.get("extracted_data", [])
                         end_balance_first = prev_balance
                         if first_extracted:
-                            last_rows = [r for r in first_extracted if r.get("running_balance")]
+                            last_rows = [
+                                r for r in first_extracted if r.get("running_balance")
+                            ]
                             if last_rows:
-                                end_balance_first = float(last_rows[-1].get("running_balance", 0))
-                                
-                        res_second = extract_pdf_pages_recursive(mid + 1, end_page_idx, end_balance_first, trial=1, chunk_offset=chunk_offset + 1)
-                        
+                                end_balance_first = float(
+                                    last_rows[-1].get("running_balance", 0)
+                                )
+
+                        res_second = extract_pdf_pages_recursive(
+                            mid + 1,
+                            end_page_idx,
+                            end_balance_first,
+                            trial=1,
+                            chunk_offset=chunk_offset + 1,
+                        )
+
                         combined_res = {
-                          "status": "success",
-                          "bank_name": res_first.get("bank_name") or res_second.get("bank_name"),
-                          "opening_balance": res_first.get("opening_balance") or res_second.get("opening_balance") or op_balance,
-                          "extracted_data": first_extracted + res_second.get("extracted_data", [])
+                            "status": "success",
+                            "bank_name": res_first.get("bank_name")
+                            or res_second.get("bank_name"),
+                            "opening_balance": res_first.get("opening_balance")
+                            or res_second.get("opening_balance")
+                            or op_balance,
+                            "extracted_data": first_extracted
+                            + res_second.get("extracted_data", []),
                         }
                         return combined_res
-                        
+
                     # If math check fails on single page after Trial 2, retry Trial 3
                     elif not is_valid and pages_count == 1 and trial < 3:
-                        print(f"⚠️ [Recursive Extract] Math check failed for single Page {start_p}. Retrying (Attempt {trial + 1})...")
-                        return extract_pdf_pages_recursive(
-                            start_page_idx, end_page_idx, prev_balance, 
-                            trial=trial + 1, feedback_msg=feedback_msg, chunk_offset=chunk_offset + 1
+                        print(
+                            f"⚠️ [Recursive Extract] Math check failed for single Page {start_p}. Retrying (Attempt {trial + 1})..."
                         )
-                        
+                        return extract_pdf_pages_recursive(
+                            start_page_idx,
+                            end_page_idx,
+                            prev_balance,
+                            trial=trial + 1,
+                            feedback_msg=feedback_msg,
+                            chunk_offset=chunk_offset + 1,
+                        )
+
                     return res
 
                 # Walk through chunks (Sequential for Bank, Parallel across 10 API keys for Sales/Purchase)
                 current_balance = ""
-                self._update_status(base_filename, 0, num_chunks, "Initializing PDF splitting...")
-                
-                if module in ["Bank Statements", "Cash Entries"]:
-                    # Bank Statements require sequential flow to pass running balances across chunk boundaries
-                    for chunk_idx, (start_idx, end_idx) in enumerate(chunk_ranges):
-                        self._update_status(base_filename, chunk_idx + 1, num_chunks, f"Extracting bank pages {start_idx+1}-{end_idx+1}...")
-                        res = extract_pdf_pages_recursive(start_idx, end_idx, current_balance)
-                        
-                        # Inter-Chunk Boundary Balance Recovery Check
-                        if current_balance and isinstance(res, dict) and res.get("extracted_data"):
-                            first_rows = [r for r in res["extracted_data"] if r.get("running_balance")]
-                            if first_rows:
-                                first_row = first_rows[0]
-                                f_bal = float(first_row.get("running_balance", 0))
-                                f_amt = float(first_row.get("amount", 0))
-                                f_type = str(first_row.get("transaction_type", "")).strip().capitalize()
-                                expected_start_bal = f_bal - f_amt if f_type == "Receipt" else f_bal + f_amt
-                                
-                                delta = abs(expected_start_bal - float(current_balance))
-                                if delta > 1.0:
-                                    print(f"⚠️ [Boundary Gap Detected] Discrepancy between Chunk {chunk_idx} and Chunk {chunk_idx+1}: expected start {expected_start_bal:.2f}, got prev balance {current_balance:.2f} (delta = {delta:.2f})")
-                                    if start_idx > 0:
-                                        boundary_page_idx = start_idx - 1
-                                        print(f"🔧 [Boundary Recovery] Auto-extracting missing boundary Page {boundary_page_idx + 1}...")
-                                        b_res = extract_pdf_pages_recursive(boundary_page_idx, boundary_page_idx, current_balance)
-                                        if b_res and isinstance(b_res, dict) and b_res.get("extracted_data"):
-                                            results_array.append(b_res)
-                                            b_last_rows = [r for r in b_res["extracted_data"] if r.get("running_balance")]
-                                            if b_last_rows:
-                                                current_balance = float(b_last_rows[-1].get("running_balance", 0))
+                self._update_status(
+                    base_filename, 0, num_chunks, "Initializing PDF splitting..."
+                )
 
-                        results_array.append(res)
-                        
-                        if isinstance(res, dict) and res.get("extracted_data"):
-                            last_rows = [r for r in res["extracted_data"] if r.get("running_balance")]
-                            if last_rows:
-                                current_balance = float(last_rows[-1].get("running_balance", 0))
-                else:
-                    # Sales / Purchase: Chunks are independent — extract concurrently across 10 API keys!
-                    from concurrent.futures import ThreadPoolExecutor, as_completed
-                    pool_len = len(self.api_keys_pool) if hasattr(self, 'api_keys_pool') and self.api_keys_pool else 1
-                    max_workers = max(1, min(pool_len, num_chunks))
-                    print(f"⚡ [Parallel PDF Extraction] Processing {num_chunks} PDF chunk(s) across {max_workers} concurrent API Key worker(s)...")
-                    
-                    future_to_idx = {}
-                    with ThreadPoolExecutor(max_workers=max_workers) as executor:
-                        for chunk_idx, (start_idx, end_idx) in enumerate(chunk_ranges):
-                            future = executor.submit(extract_pdf_pages_recursive, start_idx, end_idx, "", 1, "", chunk_idx)
-                            future_to_idx[future] = chunk_idx
-                            
-                    ordered_results = [None] * num_chunks
-                    for future in as_completed(future_to_idx):
-                        idx = future_to_idx[future]
-                        try:
-                            ordered_results[idx] = future.result()
-                        except Exception as pe:
-                            print(f"❌ Parallel PDF chunk {idx} failed: {pe}")
-                            ordered_results[idx] = {"status": "error", "extracted_data": []}
-                            
-                    results_array.extend([r for r in ordered_results if r is not None])
-                        
+                # High-Speed Parallel Extraction: Extract all PDF chunks concurrently across rotating API key pool!
+                from concurrent.futures import ThreadPoolExecutor, as_completed
+
+                pool_len = (
+                    len(self.api_keys_pool)
+                    if hasattr(self, "api_keys_pool") and self.api_keys_pool
+                    else 1
+                )
+                # Max 5 parallel worker threads across 11 API keys
+                max_workers = min(5, max(1, min(pool_len, num_chunks)))
+                print(
+                    f"⚡ [High-Speed Parallel PDF Extraction] Processing {num_chunks} PDF chunk(s) across {max_workers} worker thread(s) (Rotating Pool: {pool_len} API Keys)..."
+                )
+
+                future_to_idx = {}
+                with ThreadPoolExecutor(max_workers=max_workers) as executor:
+                    for chunk_idx, (start_idx, end_idx) in enumerate(chunk_ranges):
+                        future = executor.submit(
+                            extract_pdf_pages_recursive,
+                            start_idx,
+                            end_idx,
+                            "",
+                            1,
+                            "",
+                            chunk_idx,
+                        )
+                        future_to_idx[future] = chunk_idx
+
+                ordered_results = [None] * num_chunks
+                for future in as_completed(future_to_idx):
+                    idx = future_to_idx[future]
+                    try:
+                        ordered_results[idx] = future.result()
+                    except Exception as pe:
+                        print(f"❌ Parallel PDF chunk {idx} failed: {pe}")
+                        ordered_results[idx] = {
+                            "status": "error",
+                            "extracted_data": [],
+                        }
+
+                results_array.extend([r for r in ordered_results if r is not None])
+
             elif ext in [".png", ".jpg", ".jpeg"]:
                 print(f"Uploading {file_path} to Gemini File API...")
                 uploaded_file = client.files.upload(file=file_path)
                 uploaded_files_to_delete.append(uploaded_file)
-                results_array.append(self._extract_single_content(client, [uploaded_file, prompt]))
+                results_array.append(
+                    self._extract_single_content(client, [uploaded_file, prompt])
+                )
             else:
                 raise ValueError(f"Unsupported file type for invoice extraction: {ext}")
-            
+
             # Combine all results
             final_result = {"status": "success", "extracted_data": []}
             for res in results_array:
@@ -2355,17 +3652,36 @@ Return the extracted data EXACTLY following this JSON schema. Do not output anyt
                     if module == "Bank Statements":
                         if "bank_name" in res and res["bank_name"]:
                             final_result["bank_name"] = res["bank_name"]
-                        if "opening_balance" in res and res.get("opening_balance") not in (None, 0.0) and ("opening_balance" not in final_result or final_result["opening_balance"] == 0.0):
+                        if (
+                            "opening_balance" in res
+                            and res.get("opening_balance") not in (None, 0.0)
+                            and (
+                                "opening_balance" not in final_result
+                                or final_result["opening_balance"] == 0.0
+                            )
+                        ):
                             final_result["opening_balance"] = res["opening_balance"]
-                    if "extracted_data" in res and isinstance(res["extracted_data"], list):
+                    if "extracted_data" in res and isinstance(
+                        res["extracted_data"], list
+                    ):
                         final_result["extracted_data"].extend(res["extracted_data"])
-            
-            print(f"✅ Deep Extraction successful! Found {len(final_result.get('extracted_data', []))} records in total.")
-            
+
+            print(
+                f"✅ Deep Extraction successful! Found {len(final_result.get('extracted_data', []))} records in total."
+            )
+
             # 🗓️ CRITICAL: Normalize all extracted dates to YYYY-MM-DD (Indian day-first format)
             # This catches any dates Gemini returns as "26/06/25", "01-07-25", etc.
             from datetime import datetime as _dt
-            _date_fmts = ("%Y-%m-%d", "%d/%m/%Y", "%d/%m/%y", "%d-%m-%Y", "%d-%m-%y", "%Y/%m/%d")
+
+            _date_fmts = (
+                "%Y-%m-%d",
+                "%d/%m/%Y",
+                "%d/%m/%y",
+                "%d-%m-%Y",
+                "%d-%m-%y",
+                "%Y/%m/%d",
+            )
             for row in final_result.get("extracted_data", []):
                 raw_date = str(row.get("date", "")).strip()
                 if raw_date and raw_date != "None":
@@ -2373,18 +3689,21 @@ Return the extracted data EXACTLY following this JSON schema. Do not output anyt
                     if not (len(raw_date) >= 10 and raw_date[4] == "-"):
                         for _fmt in _date_fmts:
                             try:
-                                row["date"] = _dt.strptime(raw_date, _fmt).strftime("%Y-%m-%d")
+                                row["date"] = _dt.strptime(raw_date, _fmt).strftime(
+                                    "%Y-%m-%d"
+                                )
                                 break
                             except ValueError:
                                 pass
-            
+
             # 🔧 CRITICAL: Run mathematical balance validation to auto-correct any Receipt/Payment swaps
             if module == "Bank Statements":
                 final_result = self.validate_and_fix_transaction_types(final_result)
-            
+
             # 🔍 FINAL GLOBAL AUDIT: Scan all combined rows for date gaps > 28 days (residual month-skip detection)
             if module in ["Bank Statements", "Cash Entries"]:
                 from datetime import datetime as _ddt2
+
                 all_rows = final_result.get("extracted_data", [])
                 _prev_audit_date = None
                 _prev_audit_idx = 0
@@ -2393,19 +3712,24 @@ Return the extracted data EXACTLY following this JSON schema. Do not output anyt
                     _acur = None
                     for _afmt in ("%Y-%m-%d", "%d/%m/%Y", "%d/%m/%y"):
                         try:
-                            _acur = _ddt2.strptime(_adate_str[:10], _afmt); break
-                        except: pass
+                            _acur = _ddt2.strptime(_adate_str[:10], _afmt)
+                            break
+                        except:
+                            pass
                     if _acur and _prev_audit_date:
                         _gap = abs((_acur - _prev_audit_date).days)
                         if _gap > 28:
-                            print(f"⚠️ [GLOBAL DATE-GAP AUDIT] Row {_prev_audit_idx}→{_ai}: {_prev_audit_date.date()} to {_acur.date()} = {_gap} days gap. Possible missing month in final output!")
+                            print(
+                                f"⚠️ [GLOBAL DATE-GAP AUDIT] Row {_prev_audit_idx}→{_ai}: {_prev_audit_date.date()} to {_acur.date()} = {_gap} days gap. Possible missing month in final output!"
+                            )
                     if _acur:
                         _prev_audit_date = _acur
                         _prev_audit_idx = _ai
-            
+
             # 📅 CRITICAL: Sort all bank statement transactions in FORWARD CHRONOLOGICAL ORDER (Month Start 1st of month first)
             if module in ["Bank Statements", "Cash Entries"]:
                 from datetime import datetime as _s_dt
+
                 def _parse_row_sort_date(r):
                     d_str = str(r.get("date", "")).strip()
                     for _f in ("%Y-%m-%d", "%d/%m/%Y", "%d/%m/%y", "%d-%m-%Y"):
@@ -2416,9 +3740,13 @@ Return the extracted data EXACTLY following this JSON schema. Do not output anyt
                     return _s_dt.min
 
                 final_result["extracted_data"].sort(key=_parse_row_sort_date)
-                print("📅 [Month Start Order] Sorted all bank statement entries in Forward Chronological Order (1st of month first).")
-            
-            return self.apply_product_mappings(final_result, client_memory, module, instruction)
+                print(
+                    "📅 [Month Start Order] Sorted all bank statement entries in Forward Chronological Order (1st of month first)."
+                )
+
+            return self.apply_product_mappings(
+                final_result, client_memory, module, instruction
+            )
 
         except Exception as e:
             print(f"❌ Gemini extraction failed: {e}")
@@ -2430,8 +3758,21 @@ Return the extracted data EXACTLY following this JSON schema. Do not output anyt
                     client.files.delete(name=f.name)
                 except:
                     pass
+            # ── P5: Release shared PDF reader and trigger GC ─────────────────
+            # shared_pdf_reader may not be defined if the PDF branch was never entered
+            # (e.g. Excel or image uploads), so guard with a try/except.
+            try:
+                if shared_pdf_reader is not None:  # type: ignore[name-defined]
+                    del shared_pdf_reader
+            except NameError:
+                pass
+            import gc as _gc_final
 
-    def apply_ai_formatting(self, extracted_data: dict, client_memory: dict, module: str) -> dict:
+            _gc_final.collect()
+
+    def apply_ai_formatting(
+        self, extracted_data: dict, client_memory: dict, module: str
+    ) -> dict:
         """
         Applies 'Deep AI Business Brain' custom formatting rules (from client_memory['business_profile'])
         to the deterministic Excel data. This safely reformats text fields (like bill_no) without
@@ -2440,19 +3781,25 @@ Return the extracted data EXACTLY following this JSON schema. Do not output anyt
         business_profile = client_memory.get("business_profile", "")
         if not business_profile or not self.api_key:
             return extracted_data
-            
+
         data_list = extracted_data.get("extracted_data", [])
         if not data_list:
             return extracted_data
-            
+
         print("🤖 AI Formatting Pass: Evaluating Deep AI Business Brain rules...")
-        
+
         # 1. Collect unique party names to compile rules for
-        unique_parties = list(set(str(row.get("party_name", "")).strip() for row in data_list if str(row.get("party_name", "")).strip()))
-        
+        unique_parties = list(
+            set(
+                str(row.get("party_name", "")).strip()
+                for row in data_list
+                if str(row.get("party_name", "")).strip()
+            )
+        )
+
         if not unique_parties:
             return extracted_data
-            
+
         # 2. Ask Gemini to compile the rules into format strings
         prompt = f"""You are an expert rule-engine compiler AI.
 The client has provided the following "Deep AI Business Brain" formatting rules:
@@ -2484,32 +3831,35 @@ Return ONLY valid JSON.
             from google.genai import types
             import difflib
             import re
-            
+
             client = self._get_client()
             response = self._generate_content_with_retry(
                 client=client,
                 model=self.model_name or "gemini-3.1-flash-lite",
                 contents=prompt,
-                config=make_config("application/json")
+                config=make_config("application/json"),
             )
-            
+
             result_text = response.text.strip() if response and response.text else ""
-            if result_text.startswith("```json"): result_text = result_text[7:]
-            if result_text.startswith("```"): result_text = result_text[3:]
-            if result_text.endswith("```"): result_text = result_text[:-3]
-            
+            if result_text.startswith("```json"):
+                result_text = result_text[7:]
+            if result_text.startswith("```"):
+                result_text = result_text[3:]
+            if result_text.endswith("```"):
+                result_text = result_text[:-3]
+
             ai_rules = json.loads(result_text.strip())
             print(f"🤖 AI Formatting Compiled Rules: {json.dumps(ai_rules)}")
-            
+
             # Map of normalized to raw keys
             rule_keys = list(ai_rules.keys())
-            
+
             # 3. Apply the compiled rules purely deterministically in Python (with safe fuzzy fallback)
             formatted_count = 0
             for row in data_list:
                 b_no = str(row.get("bill_no", "")).strip()
                 p_name = str(row.get("party_name", "")).strip()
-                
+
                 if b_no:
                     # Find closest match for party_name in ai_rules keys
                     matched_party = None
@@ -2531,48 +3881,135 @@ Return ONLY valid JSON.
                                     break
                         # Fuzzy close matches check
                         if not matched_party:
-                            matches = difflib.get_close_matches(p_name.lower(), [k.lower() for k in rule_keys], n=1, cutoff=0.7)
+                            matches = difflib.get_close_matches(
+                                p_name.lower(),
+                                [k.lower() for k in rule_keys],
+                                n=1,
+                                cutoff=0.7,
+                            )
                             if matches:
-                                matched_party = next((k for k in rule_keys if k.lower() == matches[0]), None)
-                                
+                                matched_party = next(
+                                    (k for k in rule_keys if k.lower() == matches[0]),
+                                    None,
+                                )
+
                     if matched_party:
                         clean_bill = b_no
                         if clean_bill.endswith(".0"):
                             clean_bill = clean_bill[:-2]
-                            
+
                         format_str = ai_rules[matched_party]
-                        
+
                         # Prevent double prefixing (e.g. format_str="CR/{clean_bill}" and clean_bill="CR/2026-27/395")
-                        prefix_match = re.match(r'^([A-Za-z0-9_\-\/]+)\{clean_bill\}', format_str)
+                        prefix_match = re.match(
+                            r"^([A-Za-z0-9_\-\/]+)\{clean_bill\}", format_str
+                        )
                         if prefix_match:
                             pfx = prefix_match.group(1)
                             if clean_bill.upper().startswith(pfx.upper()):
-                                clean_bill = clean_bill[len(pfx):]
-                                
+                                clean_bill = clean_bill[len(pfx) :]
+
                         try:
-                            row["bill_no"] = format_str.format(clean_bill=clean_bill, raw_bill=b_no)
+                            row["bill_no"] = format_str.format(
+                                clean_bill=clean_bill, raw_bill=b_no
+                            )
                             formatted_count += 1
                         except KeyError:
-                            row["bill_no"] = format_str.replace("{clean_bill}", clean_bill).replace("{raw_bill}", b_no)
+                            row["bill_no"] = format_str.replace(
+                                "{clean_bill}", clean_bill
+                            ).replace("{raw_bill}", b_no)
                             formatted_count += 1
-                        
-            print(f"✅ AI Formatting Applied to {formatted_count} rows deterministically.")
-            
+
+            print(
+                f"✅ AI Formatting Applied to {formatted_count} rows deterministically."
+            )
+
         except Exception as e:
-            print(f"⚠️ Warning: AI formatting pass failed, returning original deterministic data. Error: {e}")
-            
+            print(
+                f"⚠️ Warning: AI formatting pass failed, returning original deterministic data. Error: {e}"
+            )
+
         return extracted_data
 
-    def parse_excel_to_json(self, file_path: str, company_state_code: str = '24', instruction: str = '') -> dict:
+    def parse_excel_to_json(
+        self, file_path: str, company_state_code: str = "24", instruction: str = ""
+    ) -> dict:
         """Parses the Sales/Purchases Excel spreadsheet into standard JSON using dynamic column normalization."""
         from core.excel_parser import parse_excel_to_json as _parser
-        return _parser(file_path, company_state_code=company_state_code, instruction=instruction)
 
+        return _parser(
+            file_path, company_state_code=company_state_code, instruction=instruction
+        )
 
+    @staticmethod
+    def calculate_dynamic_accounting_confidence(
+        narration: str,
+        mapped_ledger: str,
+        match_stage: str,
+        ledger_lookup: dict,
+        clean_memory: dict,
+        tx_type: str = "Payment",
+        amount: float = 0.0
+    ) -> int:
+        """
+        Calculates a dynamic, real-logic multi-factor accounting confidence score (0-100).
+        Factors:
+          - Stage base score (User rule: 98, Memory exact: 95, Master exact: 90, Keyword: 85, Substring: 80, Party extract: 75, Fuzzy: 65, Suspense/None: 40)
+          - Master Ledger existence (+5 pts)
+          - Nature Guard Audit penalty (-40 pts for illegal mappings)
+          - Candidate quality penalty (-25 pts for short/numeric noise)
+        """
+        if not mapped_ledger or mapped_ledger.upper() in ("SUSPENSE ACCOUNT", "SUSPENSE A/C", "UNMAPPED"):
+            return 40
 
+        stage_str = str(match_stage or "")
+        if "S-UserInstruction" in stage_str:
+            base_score = 98
+        elif "S0-ExactMem" in stage_str:
+            base_score = 95
+        elif "S1-PartyExact" in stage_str or "S4-PartyExact" in stage_str:
+            base_score = 90
+        elif "S0-FuzzyMem" in stage_str or "S3-Keyword" in stage_str:
+            base_score = 85
+        elif "S2a-DirectSub" in stage_str or "S2b-LetterSub" in stage_str or "S4-PartyToken" in stage_str:
+            base_score = 80
+        elif "Clean Party Auto-Extraction" in stage_str:
+            base_score = 75
+        elif "Fuzzy" in stage_str:
+            base_score = 65
+        else:
+            base_score = 70
 
+        score = base_score
 
-    def map_ledgers_for_statement(self, extracted_data: dict, client_memory: dict, module: str = "Bank Statements", instruction: str = "") -> dict:
+        # Master Ledger existence boost
+        if mapped_ledger.upper() in ledger_lookup:
+            score += 5
+
+        # Nature Guard Audit Penalty (Income Tax Sec 37(1) / ICAI rules)
+        try:
+            from ai_memory import AIMemoryVault
+            clean_k = AIMemoryVault.clean_mapping_key(narration)
+            if AIMemoryVault.is_illegal_nature_mapping(clean_k, mapped_ledger):
+                score -= 40
+        except Exception:
+            pass
+
+        # Candidate Quality Penalties (short / numeric noise)
+        import re
+        clean_cand = re.sub(r'[^A-Za-z0-9]', '', str(mapped_ledger))
+        if len(clean_cand) < 3 or re.match(r'^\d+$', clean_cand):
+            score -= 25
+
+        return max(0, min(100, score))
+
+    def map_ledgers_for_statement(
+        self,
+        extracted_data: dict,
+        client_memory: dict,
+        module: str = "Bank Statements",
+        instruction: str = "",
+    ) -> dict:
         """
         AUTOMATED INTELLIGENCE LEDGER MAPPING ENGINE — v2 (6-Stage Pipeline).
         Maps 100% of transaction narrations to official Miracle Ledgers.
@@ -2601,23 +4038,61 @@ Return ONLY valid JSON.
         # Determine the statement's own bank brand to exclude from party lookups
         stmt_bank_name = extracted_data.get("bank_name", "")
         KNOWN_BANK_BRANDS = [
-            'HDFC', 'ICICI', 'SBI', 'STATE BANK', 'AXIS', 'KOTAK', 'CANARA', 'UNION',
-            'BANK OF BARODA', 'BOB', 'PNB', 'PUNJAB NATIONAL', 'IDBI', 'YES BANK',
-            'FEDERAL', 'INDUSIND', 'BANDHAN', 'UCO', 'CENTRAL BANK', 'INDIAN BANK',
-            'BANK OF INDIA', 'BOI'
+            "HDFC",
+            "ICICI",
+            "SBI",
+            "STATE BANK",
+            "AXIS",
+            "KOTAK",
+            "CANARA",
+            "UNION",
+            "BANK OF BARODA",
+            "BOB",
+            "PNB",
+            "PUNJAB NATIONAL",
+            "IDBI",
+            "YES BANK",
+            "FEDERAL",
+            "INDUSIND",
+            "BANDHAN",
+            "UCO",
+            "CENTRAL BANK",
+            "INDIAN BANK",
+            "BANK OF INDIA",
+            "BOI",
         ]
+
         def get_brand(name: str) -> str:
             n = name.upper()
             for brand in KNOWN_BANK_BRANDS:
                 if brand in n:
                     return brand
             return ""
+
         stmt_brand = get_brand(stmt_bank_name)
 
         RESERVED_GENERIC_WORDS = {
-            "REMARK", "REMARKS", "BANK", "CASH", "SUSPENSE", "PAYMENT", "RECEIPT",
-            "TRANSFER", "NEFT", "RTGS", "UPI", "CHQ", "CHEQUE", "CHARGES", "FEE",
-            "EXPENSE", "INCOME", "DEBTOR", "DEBTORS", "CREDITOR", "CREDITORS"
+            "REMARK",
+            "REMARKS",
+            "BANK",
+            "CASH",
+            "SUSPENSE",
+            "PAYMENT",
+            "RECEIPT",
+            "TRANSFER",
+            "NEFT",
+            "RTGS",
+            "UPI",
+            "CHQ",
+            "CHEQUE",
+            "CHARGES",
+            "FEE",
+            "EXPENSE",
+            "INCOME",
+            "DEBTOR",
+            "DEBTORS",
+            "CREDITOR",
+            "CREDITORS",
         }
 
         ledger_group_map = {}  # UPPER -> Exact Group Name from Miracle DBF
@@ -2633,13 +4108,38 @@ Return ONLY valid JSON.
                 name_up = name.upper()
 
                 # Exclude statement's own bank or any Bank Account ledger from party matching
-                if 'BANK' in group_name.upper() or (stmt_brand and stmt_brand in name_up and ('BANK' in name_up or 'A/C' in name_up or name_up == stmt_bank_name.upper())):
-                    print(f"🛡️ [Python Guard] Excluding bank ledger '{name}' from party lookup.")
+                if "BANK" in group_name.upper() or (
+                    stmt_brand
+                    and stmt_brand in name_up
+                    and (
+                        "BANK" in name_up
+                        or "A/C" in name_up
+                        or name_up == stmt_bank_name.upper()
+                    )
+                ):
+                    print(
+                        f"🛡️ [Python Guard] Excluding bank ledger '{name}' from party lookup."
+                    )
                     continue
 
                 # Sanitize dirty historical DBF ledger names into clean Title Case
                 display_name = name
-                if any(h in name_up for h in ["OKAXIS", "OKICICI", "KHDFCBANK", "OKHDFCBANK", "OKSBI", "PTYES", "NAVIAXIS", "SENT USING PAYTM", "OKHD FCBANK", "FCBANK", "KAXIS"]):
+                if any(
+                    h in name_up
+                    for h in [
+                        "OKAXIS",
+                        "OKICICI",
+                        "KHDFCBANK",
+                        "OKHDFCBANK",
+                        "OKSBI",
+                        "PTYES",
+                        "NAVIAXIS",
+                        "SENT USING PAYTM",
+                        "OKHD FCBANK",
+                        "FCBANK",
+                        "KAXIS",
+                    ]
+                ):
                     sanitized_name = self.extract_clean_party_from_narration(name)
                     if sanitized_name and len(sanitized_name) >= 2:
                         display_name = sanitized_name
@@ -2652,7 +4152,12 @@ Return ONLY valid JSON.
                     ledger_group_map[display_name.upper()] = group_name
 
         if not ledger_names:
-            ledger_names = ["UPI Debtors", "UPI Creditors", "Suspense Account", "Cash Account"]
+            ledger_names = [
+                "UPI Debtors",
+                "UPI Creditors",
+                "Suspense Account",
+                "Cash Account",
+            ]
             for n in ledger_names:
                 ledger_lookup[n.upper()] = n
 
@@ -2660,12 +4165,17 @@ Return ONLY valid JSON.
         import re
 
         def clean_to_letters(s):
-            return re.sub(r'[^A-Z]', '', str(s).upper())
+            return re.sub(r"[^A-Z]", "", str(s).upper())
 
-        ledger_letter_map = {clean_to_letters(n): n for n in ledger_names if len(clean_to_letters(n)) >= 6 and n.upper() not in RESERVED_GENERIC_WORDS}
+        ledger_letter_map = {
+            clean_to_letters(n): n
+            for n in ledger_names
+            if len(clean_to_letters(n)) >= 6 and n.upper() not in RESERVED_GENERIC_WORDS
+        }
 
         # Pre-build clean keys for all expense_mappings for Stage 0 fast lookup
         from ai_memory import AIMemoryVault as _MemVault
+
         clean_memory = {}
         for k, v in expense_mappings.items():
             ck = _MemVault.clean_mapping_key(k)
@@ -2675,149 +4185,403 @@ Return ONLY valid JSON.
         # ── STAGE -1: User Guidelines Engine (Highest Priority) ──────────────
         user_guideline_rules = []
         if instruction and instruction.strip():
-            print(f"🎯 [User Guidelines Engine] Parsing custom prompt guidelines: '{instruction.strip()}'...")
-            raw_lines = re.split(r'[\r\n;.]+', instruction)
+            print(
+                f"🎯 [User Guidelines Engine] Parsing custom prompt guidelines: '{instruction.strip()}'..."
+            )
+            raw_lines = re.split(r"[\r\n;.]+", instruction)
             for line_item in raw_lines:
                 item_s = line_item.strip()
                 if not item_s:
                     continue
                 tx_type_req = None
-                if re.search(r'\b(deposit|receipt|money in|cr|credit)\b', item_s, re.IGNORECASE):
+                if re.search(
+                    r"\b(deposit|receipt|money in|cr|credit)\b", item_s, re.IGNORECASE
+                ):
                     tx_type_req = "Receipt"
-                elif re.search(r'\b(withdrawal|payment|money out|dr|debit)\b', item_s, re.IGNORECASE):
+                elif re.search(
+                    r"\b(withdrawal|payment|money out|dr|debit)\b",
+                    item_s,
+                    re.IGNORECASE,
+                ):
                     tx_type_req = "Payment"
 
                 m_rule = re.search(
-                    r'(?:map|if|when|narration|amount)?\s*([a-zA-Z0-9_\-\s&/]+?)\s*'
-                    r'(?:->|:|=|map to|mapped to|mapping to|map with|mapped with|mapping with|put in|put into|send to|set as|assign to|to|with)\s*'
-                    r'([a-zA-Z0-9_\-\s&/]+)',
-                    item_s, re.IGNORECASE
+                    r"(?:map|if|when|narration|amount)?\s*([a-zA-Z0-9_\-\s&/]+?)\s*"
+                    r"(?:->|:|=|map to|mapped to|mapping to|map with|mapped with|mapping with|put in|put into|send to|set as|assign to|to|with)\s*"
+                    r"([a-zA-Z0-9_\-\s&/]+)",
+                    item_s,
+                    re.IGNORECASE,
                 )
                 if m_rule:
                     src_kw = m_rule.group(1).strip()
                     tgt_name = m_rule.group(2).strip()
-                    src_kw_clean = re.sub(r'\b(if|when|narration|contains|is|has|all|any|deposit|withdrawal|payment|receipt|come|first|then|amount|site)\b', '', src_kw, flags=re.IGNORECASE)
+                    src_kw_clean = re.sub(
+                        r"\b(if|when|narration|contains|is|has|all|any|deposit|withdrawal|payment|receipt|come|first|then|amount|site)\b",
+                        "",
+                        src_kw,
+                        flags=re.IGNORECASE,
+                    )
                     src_kw_clean = " ".join(src_kw_clean.split()).upper()
-                    tgt_clean = re.sub(r'\b(account|ac|a/c)\b', '', tgt_name, flags=re.IGNORECASE).strip()
+                    tgt_clean = re.sub(
+                        r"\b(account|ac|a/c)\b", "", tgt_name, flags=re.IGNORECASE
+                    ).strip()
                     tgt_clean = " ".join(tgt_clean.split())
                     if src_kw_clean and tgt_clean:
                         resolved_tgt = ledger_lookup.get(tgt_clean.upper(), tgt_clean)
-                        user_guideline_rules.append((src_kw_clean, resolved_tgt, tx_type_req))
-                        print(f"  📌 Registered User Guideline: '{src_kw_clean}' → '{resolved_tgt}' (Filter: {tx_type_req or 'All'})")
+                        user_guideline_rules.append(
+                            (src_kw_clean, resolved_tgt, tx_type_req)
+                        )
+                        print(
+                            f"  📌 Registered User Guideline: '{src_kw_clean}' → '{resolved_tgt}' (Filter: {tx_type_req or 'All'})"
+                        )
 
         # ── Expanded Banking Keyword Intelligence (25 categories) ─────────────
         KEYWORD_RULES = [
-            # Fuel & Transport
-            (["PETROL", "DIESEL", "FUEL", "PETROLEUM", "HP PETROL", "SHELL", "BPCL", "IOC", "IOCL", "HPCL", "ESSAR OIL"],
-             ["PETROL-DIESEL EXPENSE", "PETROL DIESEL EXPENSE", "FUEL EXPENSE", "PETROL EXPENSE", "PETROL"]),
-
-            (["TRANSPORT", "FREIGHT", "LOGISTICS", "COURIER", "CARGO", "TRUCKING", "LORRY", "VEHICLE HIRE",
-              "LOADING", "UNLOADING", "OCTOROI", "OCTROI"],
-             ["TRANSPORT EXP", "FREIGHT EXP", "LOADING EXPENSE", "TRANSPORT EXPENSE", "TRANSPORT"]),
-
+            (
+                [
+                    "PETROL",
+                    "DIESEL",
+                    "FUEL",
+                    "PETROLEUM",
+                    "HP PETROL",
+                    "SHELL",
+                    "BPCL",
+                    "IOC",
+                    "IOCL",
+                    "HPCL",
+                    "ESSAR OIL",
+                ],
+                [
+                    "PETROL-DIESEL EXPENSE",
+                    "PETROL DIESEL EXPENSE",
+                    "FUEL EXPENSE",
+                    "PETROL EXPENSE",
+                    "PETROL",
+                ],
+            ),
+            (
+                [
+                    "TRANSPORT",
+                    "FREIGHT",
+                    "LOGISTICS",
+                    "COURIER",
+                    "CARGO",
+                    "TRUCKING",
+                    "LORRY",
+                    "VEHICLE HIRE",
+                    "LOADING",
+                    "UNLOADING",
+                    "OCTOROI",
+                    "OCTROI",
+                ],
+                [
+                    "TRANSPORT EXP",
+                    "FREIGHT EXP",
+                    "LOADING EXPENSE",
+                    "TRANSPORT EXPENSE",
+                    "TRANSPORT",
+                ],
+            ),
             # Salary & Labour
-            (["SALARY", "SALARIES", "WAGES", "STAFF PAY", "LABOUR", "LABOR", "MANPOWER", "PAYROLL"],
-             ["SALARY EXP", "SALARY EXPENSE", "SALARY", "WAGES EXPENSE", "WAGES"]),
-
+            (
+                [
+                    "SALARY",
+                    "SALARIES",
+                    "WAGES",
+                    "STAFF PAY",
+                    "LABOUR",
+                    "LABOR",
+                    "MANPOWER",
+                    "PAYROLL",
+                ],
+                ["SALARY EXP", "SALARY EXPENSE", "SALARY", "WAGES EXPENSE", "WAGES"],
+            ),
             # Rent & Office
-            (["RENT", "LEASE", "SHOP RENT", "OFFICE RENT", "GODOWN RENT", "STORE RENT"],
-             ["RENT", "RENT A/C", "RENT EXPENSE", "OFFICE RENT"]),
-
+            (
+                [
+                    "RENT",
+                    "LEASE",
+                    "SHOP RENT",
+                    "OFFICE RENT",
+                    "GODOWN RENT",
+                    "STORE RENT",
+                ],
+                ["RENT", "RENT A/C", "RENT EXPENSE", "OFFICE RENT"],
+            ),
             # Electricity & Utilities
-            (["ELECTRICITY", "ELECTRIC", "POWER BILL", "PGVCL", "DGVCL", "MGVCL", "UGVCL",
-              "TORRENT POWER", "BESCOM", "MSEDCL", "TNEB", "BIJLI"],
-             ["ELECTRICITY EXP", "ELECTRICITY EXPENSE", "ELECTRICITY", "ELECTICITY EXP"]),
-
-            (["WATER", "DRINKING WATER", "WATER CHARGES", "WATER BILL", "WATER SUPPLY", "JALNIGAM"],
-             ["WATER EXPENSE", "WATER EXP", "WATER"]),
-
-            (["GAS", "LPG", "CNG", "NATURAL GAS", "INDANE", "HP GAS", "BHARAT GAS"],
-             ["GAS EXP", "GAS EXPENSE", "GAS"]),
-
+            (
+                [
+                    "ELECTRICITY",
+                    "ELECTRIC",
+                    "POWER BILL",
+                    "PGVCL",
+                    "DGVCL",
+                    "MGVCL",
+                    "UGVCL",
+                    "TORRENT POWER",
+                    "BESCOM",
+                    "MSEDCL",
+                    "TNEB",
+                    "BIJLI",
+                ],
+                [
+                    "ELECTRICITY EXP",
+                    "ELECTRICITY EXPENSE",
+                    "ELECTRICITY",
+                    "ELECTICITY EXP",
+                ],
+            ),
+            (
+                [
+                    "WATER",
+                    "DRINKING WATER",
+                    "WATER CHARGES",
+                    "WATER BILL",
+                    "WATER SUPPLY",
+                    "JALNIGAM",
+                ],
+                ["WATER EXPENSE", "WATER EXP", "WATER"],
+            ),
+            (
+                ["GAS", "LPG", "CNG", "NATURAL GAS", "INDANE", "HP GAS", "BHARAT GAS"],
+                ["GAS EXP", "GAS EXPENSE", "GAS"],
+            ),
             # Communication
-            (["MOBILE", "PHONE", "TELEPHONE", "JIOTEL", "AIRTEL", "VODAFONE", "BSNL", "TATA SKY",
-              "IDEA", "VI", "JIO", "BROADBAND", "INTERNET", "TATA DOCOMO"],
-             ["TELEPHONE EXP", "TELEPHONE EXPENSE", "MOBILE EXP", "TELEPHONE"]),
-
+            (
+                [
+                    "MOBILE",
+                    "PHONE",
+                    "TELEPHONE",
+                    "JIOTEL",
+                    "AIRTEL",
+                    "VODAFONE",
+                    "BSNL",
+                    "TATA SKY",
+                    "IDEA",
+                    "VI",
+                    "JIO",
+                    "BROADBAND",
+                    "INTERNET",
+                    "TATA DOCOMO",
+                ],
+                ["TELEPHONE EXP", "TELEPHONE EXPENSE", "MOBILE EXP", "TELEPHONE"],
+            ),
             # Bank & Financial
-            (["BANK CHARGE", "MDR RCVRY", "SMS CHARGE", "CHQ DEP RET", "LOCKER CHARGE",
-              "SERVICE CHARGE", "BANK SERVICE", "ATM CHARGE", "ANNUAL FEE"],
-             ["BANK CHARGES", "BANK CHARGE"]),
-
-            (["INTEREST", "INT CHARGED", "INTEREST ON OD", "INTEREST ON LOAN", "LOAN INTEREST",
-              "CC INTEREST", "INTEREST EXPENSE"],
-             ["INTEREST EXP", "INTEREST EXPENSE", "BANK INTEREST", "BANK INTEREST & CHARGES"]),
-
-            (["FD", "FIXED DEPOSIT", "FD MATURITY", "FD PROCEEDS", "FD INVESTMENT", "RD", "RECURRING DEPOSIT"],
-             ["FD INVESTMENT", "FIXED DEPOSIT", "FD"]),
-
-            (["REV SWEEP", "SWEEP FROM", "AUTO SWEEP", "REVERSE SWEEP"],
-             ["FD INVESTMENT", "FD", "FIXED DEPOSIT"]),
-
-            (["FD INTEREST", "FD INT", "INTEREST ON FD", "INT ON FD", "FD PROCEEDS"],
-             ["FD INTEREST", "INTEREST ON FD"]),
-
+            (
+                [
+                    "BANK CHARGE",
+                    "MDR RCVRY",
+                    "SMS CHARGE",
+                    "CHQ DEP RET",
+                    "LOCKER CHARGE",
+                    "SERVICE CHARGE",
+                    "BANK SERVICE",
+                    "ATM CHARGE",
+                    "ANNUAL FEE",
+                ],
+                ["BANK CHARGES", "BANK CHARGE"],
+            ),
+            (
+                [
+                    "INTEREST",
+                    "INT CHARGED",
+                    "INTEREST ON OD",
+                    "INTEREST ON LOAN",
+                    "LOAN INTEREST",
+                    "CC INTEREST",
+                    "INTEREST EXPENSE",
+                ],
+                [
+                    "INTEREST EXP",
+                    "INTEREST EXPENSE",
+                    "BANK INTEREST",
+                    "BANK INTEREST & CHARGES",
+                ],
+            ),
+            (
+                [
+                    "FD",
+                    "FIXED DEPOSIT",
+                    "FD MATURITY",
+                    "FD PROCEEDS",
+                    "FD INVESTMENT",
+                    "RD",
+                    "RECURRING DEPOSIT",
+                ],
+                ["FD INVESTMENT", "FIXED DEPOSIT", "FD"],
+            ),
+            (
+                ["REV SWEEP", "SWEEP FROM", "AUTO SWEEP", "REVERSE SWEEP"],
+                ["FD INVESTMENT", "FD", "FIXED DEPOSIT"],
+            ),
+            (
+                ["FD INTEREST", "FD INT", "INTEREST ON FD", "INT ON FD", "FD PROCEEDS"],
+                ["FD INTEREST", "INTEREST ON FD"],
+            ),
             # Tax & Government
-            (["GST PAYMENT", "GST PAID", "GSTIN", "GST CHALLAN", "IGST", "CGST", "SGST", "E-CHALLAN GST"],
-             ["GST PAYABLE", "GST EXPENSE", "GST PAYMENT"]),
-
-            (["TDS", "TDS PAYMENT", "TDS CHALLAN", "TAX DEDUCTED", "INCOME TAX", "ADVANCE TAX", "SELF ASSESSMENT"],
-             ["TDS PAYABLE", "TDS EXPENSE", "INCOME TAX"]),
-
-            (["PROFESSIONAL TAX", "P TAX", "PTAX", "PT CHALLAN"],
-             ["PROFESSIONAL TAX", "P.TAX EXP"]),
-
+            (
+                [
+                    "GST PAYMENT",
+                    "GST PAID",
+                    "GSTIN",
+                    "GST CHALLAN",
+                    "IGST",
+                    "CGST",
+                    "SGST",
+                    "E-CHALLAN GST",
+                ],
+                ["GST PAYABLE", "GST EXPENSE", "GST PAYMENT"],
+            ),
+            (
+                [
+                    "TDS",
+                    "TDS PAYMENT",
+                    "TDS CHALLAN",
+                    "TAX DEDUCTED",
+                    "INCOME TAX",
+                    "ADVANCE TAX",
+                    "SELF ASSESSMENT",
+                ],
+                ["TDS PAYABLE", "TDS EXPENSE", "INCOME TAX"],
+            ),
+            (
+                ["PROFESSIONAL TAX", "P TAX", "PTAX", "PT CHALLAN"],
+                ["PROFESSIONAL TAX", "P.TAX EXP"],
+            ),
             # Insurance
-            (["INSURANCE", "INSUR", "LIFE INSURANCE", "LIC", "VEHICLE INSURANCE", "HEALTH INSURANCE",
-              "FIRE INSURANCE", "GIC", "NATIONAL INSURANCE", "NEW INDIA INSURANCE"],
-             ["INSURANCE EXP", "INSURANCE EXPENSE", "INSURANCE"]),
-
+            (
+                [
+                    "INSURANCE",
+                    "INSUR",
+                    "LIFE INSURANCE",
+                    "LIC",
+                    "VEHICLE INSURANCE",
+                    "HEALTH INSURANCE",
+                    "FIRE INSURANCE",
+                    "GIC",
+                    "NATIONAL INSURANCE",
+                    "NEW INDIA INSURANCE",
+                ],
+                ["INSURANCE EXP", "INSURANCE EXPENSE", "INSURANCE"],
+            ),
             # Materials & Purchases (common)
-            (["WEIGHTBRIDGE", "WEIGHT BRIDGE", "WEIGHBRIDGE"],
-             ["WEIGHTBRIDGE CHARGES", "WEIGHT BRIDGE EXP", "LOADING EXPENSE"]),
-
+            (
+                ["WEIGHTBRIDGE", "WEIGHT BRIDGE", "WEIGHBRIDGE"],
+                ["WEIGHTBRIDGE CHARGES", "WEIGHT BRIDGE EXP", "LOADING EXPENSE"],
+            ),
             # Cutting Tools / Equipment
-            (["CUTTING TOOLS", "CUTTINGTOOLS", "CUTTING EQUIPMENT", "CUTTING EQUIPMENTS",
-              "CUTTING TOOL", "HSS CUTTING", "TOOL PURCHASE"],
-             ["CUTTING EQUIPMENTS", "CUTTING TOOLS EXP", "TOOLS EXP"]),
-
+            (
+                [
+                    "CUTTING TOOLS",
+                    "CUTTINGTOOLS",
+                    "CUTTING EQUIPMENT",
+                    "CUTTING EQUIPMENTS",
+                    "CUTTING TOOL",
+                    "HSS CUTTING",
+                    "TOOL PURCHASE",
+                ],
+                ["CUTTING EQUIPMENTS", "CUTTING TOOLS EXP", "TOOLS EXP"],
+            ),
             # Repairs & Maintenance
-            (["REPAIR", "MAINTENANCE", "SERVICING", "AMC", "ANNUAL MAINTENANCE", "SERVICE CONTRACT"],
-             ["REPAIR & MAINTENANCE", "REPAIRS EXP", "MAINTENANCE EXP"]),
-
+            (
+                [
+                    "REPAIR",
+                    "MAINTENANCE",
+                    "SERVICING",
+                    "AMC",
+                    "ANNUAL MAINTENANCE",
+                    "SERVICE CONTRACT",
+                ],
+                ["REPAIR & MAINTENANCE", "REPAIRS EXP", "MAINTENANCE EXP"],
+            ),
             # Printing & Stationery
-            (["PRINTING", "STATIONERY", "PHOTOCOPY", "XEROX"],
-             ["PRINTING & STATIONERY", "STATIONERY EXP"]),
-
+            (
+                ["PRINTING", "STATIONERY", "PHOTOCOPY", "XEROX"],
+                ["PRINTING & STATIONERY", "STATIONERY EXP"],
+            ),
             # Advertising & Marketing
-            (["ADVERTISING", "ADVERTISEMENT", "MARKETING", "PROMO", "DIGITAL MARKETING", "SEO"],
-             ["ADVERTISEMENT EXP", "ADVERTISING EXP"]),
-
+            (
+                [
+                    "ADVERTISING",
+                    "ADVERTISEMENT",
+                    "MARKETING",
+                    "PROMO",
+                    "DIGITAL MARKETING",
+                    "SEO",
+                ],
+                ["ADVERTISEMENT EXP", "ADVERTISING EXP"],
+            ),
             # Food & Entertainment
-            (["SWIGGY", "ZOMATO", "FOOD", "RESTAURANT", "CANTEEN", "TEA", "SNACKS", "CATERING",
-              "STAFF WELFARE", "HOTEL", "DINNER", "LUNCH"],
-             ["STAFF WELFARE", "FOOD EXP", "ENTERTAINMENT EXP"]),
-
+            (
+                [
+                    "SWIGGY",
+                    "ZOMATO",
+                    "FOOD",
+                    "RESTAURANT",
+                    "CANTEEN",
+                    "TEA",
+                    "SNACKS",
+                    "CATERING",
+                    "STAFF WELFARE",
+                    "HOTEL",
+                    "DINNER",
+                    "LUNCH",
+                ],
+                ["STAFF WELFARE", "FOOD EXP", "ENTERTAINMENT EXP"],
+            ),
             # Capital & Investments
-            (["SHARE", "STOCK", "MUTUAL FUND", "EQUITY", "DIVIDEND", "BOND", "ZERODHA", "GROWW",
-              "ANGEL ONE", "HDFC SECURITIES", "NSDL"],
-             ["INVESTMENTS", "SHARE CAPITAL", "INVESTMENT"]),
-
+            (
+                [
+                    "SHARE",
+                    "STOCK",
+                    "MUTUAL FUND",
+                    "EQUITY",
+                    "DIVIDEND",
+                    "BOND",
+                    "ZERODHA",
+                    "GROWW",
+                    "ANGEL ONE",
+                    "HDFC SECURITIES",
+                    "NSDL",
+                ],
+                ["INVESTMENTS", "SHARE CAPITAL", "INVESTMENT"],
+            ),
             # Cash movements
-            (["CASH DEPOSIT", "CASH DEPO", "ATM DEPOSIT"],
-             ["CASH ACCOUNT", "CASH A/C", "CASH ON HAND"]),
-
-            (["CASH WITHDRAWAL", "CASH WITHDR", "ATM WITHDRAWAL", "ATM CASH"],
-             ["CASH ACCOUNT", "CASH A/C", "CASH ON HAND"]),
+            (
+                [
+                    "CASH RECEIVED",
+                    "CASH DEPOSIT",
+                    "CASH DEPO",
+                    "ATM DEPOSIT",
+                    "CASH REC",
+                    "CASH RECVD",
+                    "CASH RECIEVED",
+                    "CASH PAID",
+                    "CASH CHQ",
+                    "CASH CHEQUE",
+                    "CASH WITHDRAWAL",
+                    "CASH WITHDR",
+                    "ATM WITHDRAWAL",
+                    "ATM CASH",
+                    "BY CASH",
+                    "TO CASH",
+                ],
+                ["CASH ACCOUNT", "CASH A/C", "CASH", "CASH IN HAND", "CASH ON HAND"],
+            ),
         ]
 
         def find_best_keyword_match(narr_upper: str) -> str | None:
             """Returns the best ledger from keyword rules using strict word boundaries, excluding gateway noise."""
             # Pre-strip payment gateway noise so words like 'PHONEPE' do not trigger 'PHONE' -> 'TELEPHONE EXP'
-            narr_clean_kw = re.sub(r'\b(PHONEPE|PAYTM|GPAY|BHIM|AMAZONPAY|PAYU|RAZORPAY|BILLDESK)\b', '', narr_upper, flags=re.IGNORECASE)
+            narr_clean_kw = re.sub(
+                r"\b(PHONEPE|PAYTM|GPAY|BHIM|AMAZONPAY|PAYU|RAZORPAY|BILLDESK)\b",
+                "",
+                narr_upper,
+                flags=re.IGNORECASE,
+            )
             for keywords, target_options in KEYWORD_RULES:
                 for kw in keywords:
-                    if re.search(rf'\b{re.escape(kw.upper())}\b', narr_clean_kw):
+                    if re.search(rf"\b{re.escape(kw.upper())}\b", narr_clean_kw):
                         for target in target_options:
                             if target.upper() in ledger_lookup:
                                 return ledger_lookup[target.upper()]
@@ -2826,16 +4590,21 @@ Return ONLY valid JSON.
 
         # ── Per-row mapping ────────────────────────────────────────────────────
         import time
+
         t_start_map = time.time()
         total_rows_count = len(rows)
         silent_mode = total_rows_count >= 25
         mapped_count = 0
 
         if silent_mode:
-            print(f"⚡ [Memory Engine] Matching {total_rows_count} transactions using local Memory Vault...")
+            print(
+                f"⚡ [Memory Engine] Matching {total_rows_count} transactions using local Memory Vault..."
+            )
 
         for idx, row in enumerate(rows):
-            narr = str(row.get("narration") or row.get("narr") or row.get("description") or "").strip()
+            narr = str(
+                row.get("narration") or row.get("narr") or row.get("description") or ""
+            ).strip()
             tx_type = str(row.get("transaction_type", "Payment")).strip().capitalize()
             if not narr:
                 continue
@@ -2847,7 +4616,7 @@ Return ONLY valid JSON.
             for src_kw, tgt_ledger, req_type in user_guideline_rules:
                 if req_type and req_type != tx_type:
                     continue
-                if re.search(rf'\b{re.escape(src_kw)}\b', narr.upper()):
+                if re.search(rf"\b{re.escape(src_kw)}\b", narr.upper()):
                     matched_ledger = tgt_ledger
                     match_stage = "S-UserInstruction"
                     break
@@ -2864,26 +4633,50 @@ Return ONLY valid JSON.
             # ── STAGE 0b: Memory Vault Check (Multi-Token Overlap Match) ─────
             if not matched_ledger and clean_memory:
                 from ai_memory import AIMemoryVault as _MV0
+
                 narr_clean_key = _MV0.clean_mapping_key(narr)
-                narr_tokens = set(w for w in narr_clean_key.split() if len(w) >= 3 and w not in ('NAGAR', 'EAST', 'WEST', 'NORTH', 'SOUTH', 'ROAD', 'STREET'))
+                narr_tokens = set(
+                    w
+                    for w in narr_clean_key.split()
+                    if len(w) >= 3
+                    and w
+                    not in ("NAGAR", "EAST", "WEST", "NORTH", "SOUTH", "ROAD", "STREET")
+                )
                 best_score = 0.0
-                best_val   = None
+                best_val = None
                 best_match_token_count = 0
 
                 if narr_tokens:
                     for clean_k, ledger_val in clean_memory.items():
-                        key_tokens = set(w for w in clean_k.split() if len(w) >= 3 and w not in ('NAGAR', 'EAST', 'WEST', 'NORTH', 'SOUTH', 'ROAD', 'STREET'))
+                        key_tokens = set(
+                            w
+                            for w in clean_k.split()
+                            if len(w) >= 3
+                            and w
+                            not in (
+                                "NAGAR",
+                                "EAST",
+                                "WEST",
+                                "NORTH",
+                                "SOUTH",
+                                "ROAD",
+                                "STREET",
+                            )
+                        )
                         if not key_tokens:
                             continue
                         intersection = narr_tokens & key_tokens
                         if not intersection:
                             continue
                         score = len(intersection) / len(narr_tokens | key_tokens)
-                        if clean_k in narr_clean_key.upper() or narr_clean_key.upper() in clean_k:
+                        if (
+                            clean_k in narr_clean_key.upper()
+                            or narr_clean_key.upper() in clean_k
+                        ):
                             score += 0.3
                         if score > best_score:
                             best_score = score
-                            best_val   = ledger_val
+                            best_val = ledger_val
                             best_match_token_count = len(intersection)
 
                 if best_val and (best_score >= 0.45 or best_match_token_count >= 2):
@@ -2907,7 +4700,7 @@ Return ONLY valid JSON.
             if not matched_ledger:
                 for l_upper, l_exact in ledger_lookup.items():
                     if len(l_upper) >= 3 and l_upper not in RESERVED_GENERIC_WORDS:
-                        if re.search(rf'\b{re.escape(l_upper)}\b', narr_upper):
+                        if re.search(rf"\b{re.escape(l_upper)}\b", narr_upper):
                             matched_ledger = l_exact
                             match_stage = "S2a-DirectSub"
                             break
@@ -2916,7 +4709,10 @@ Return ONLY valid JSON.
             if not matched_ledger:
                 narr_letters = clean_to_letters(narr)
                 for l_letters, l_exact in ledger_letter_map.items():
-                    if l_letters not in RESERVED_GENERIC_WORDS and l_exact.upper() not in RESERVED_GENERIC_WORDS:
+                    if (
+                        l_letters not in RESERVED_GENERIC_WORDS
+                        and l_exact.upper() not in RESERVED_GENERIC_WORDS
+                    ):
                         if l_letters in narr_letters:
                             matched_ledger = l_exact
                             match_stage = "S2b-LetterSub"
@@ -2944,112 +4740,153 @@ Return ONLY valid JSON.
                                 match_stage = "S4-PartyToken"
                                 break
                         if not matched_ledger:
-                            fm = difflib.get_close_matches(ext_party_up, list(ledger_lookup.keys()), n=1, cutoff=0.72)
+                            fm = difflib.get_close_matches(
+                                ext_party_up,
+                                list(ledger_lookup.keys()),
+                                n=1,
+                                cutoff=0.72,
+                            )
                             if fm:
                                 matched_ledger = ledger_lookup[fm[0]]
                                 match_stage = "S4-PartyFuzzy"
 
             # ── STAGE 5: Full fuzzy match (last resort) ────────────────────────
             if not matched_ledger:
-                clean_tokens = [w for w in re.split(r'[\s\-\/@._]+', narr) if len(w) >= 3 and not w.isdigit()]
+                clean_tokens = [
+                    w
+                    for w in re.split(r"[\s\-\/@._]+", narr)
+                    if len(w) >= 3 and not w.isdigit()
+                ]
                 if clean_tokens:
                     clean_tok_narr = " ".join(clean_tokens).upper()
-                    matches = difflib.get_close_matches(clean_tok_narr, list(ledger_lookup.keys()), n=1, cutoff=0.70)
+                    matches = difflib.get_close_matches(
+                        clean_tok_narr, list(ledger_lookup.keys()), n=1, cutoff=0.70
+                    )
                     if matches:
                         matched_ledger = ledger_lookup[matches[0]]
                         match_stage = "S5-FuzzyFull"
                     else:
                         for tok in clean_tokens:
                             if len(tok) >= 4:
-                                tok_matches = difflib.get_close_matches(tok.upper(), list(ledger_lookup.keys()), n=1, cutoff=0.75)
+                                tok_matches = difflib.get_close_matches(
+                                    tok.upper(),
+                                    list(ledger_lookup.keys()),
+                                    n=1,
+                                    cutoff=0.75,
+                                )
                                 if tok_matches:
                                     matched_ledger = ledger_lookup[tok_matches[0]]
                                     match_stage = "S5-FuzzyToken"
                                     break
 
-            # ── Apply result ──────────────────────────────────────────────────
+            # ── Apply result & calculate Dynamic Confidence Score ───────────────
             if matched_ledger and matched_ledger.upper() in RESERVED_GENERIC_WORDS:
                 if not silent_mode:
-                    print(f"🛡️ [Python Guard] Rejecting generic filler word '{matched_ledger}' as mapped ledger. Forcing Suspense fallback.")
+                    print(
+                        f"🛡️ [Python Guard] Rejecting generic filler word '{matched_ledger}' as mapped ledger. Forcing Suspense fallback."
+                    )
                 matched_ledger = None
+                match_stage = "Suspense-GenericWord"
 
-            if matched_ledger:
+            if not matched_ledger:
+                extracted_party = self.extract_clean_party_from_narration(narr)
+                if extracted_party and len(extracted_party) >= 2:
+                    matched_ledger = extracted_party
+                    match_stage = "Clean Party Auto-Extraction"
+                else:
+                    matched_ledger = ledger_lookup.get("SUSPENSE ACCOUNT", "Suspense Account")
+                    match_stage = "Suspense-Fallback"
+
+            # Calculate Dynamic Accounting Confidence Score
+            dyn_score = self.calculate_dynamic_accounting_confidence(
+                narration=narr,
+                mapped_ledger=matched_ledger,
+                match_stage=match_stage or "",
+                ledger_lookup=ledger_lookup,
+                clean_memory=clean_memory,
+                tx_type=tx_type,
+                amount=float(row.get("amount", 0) or 0)
+            )
+
+            # Route low confidence entries (< 60) or unmapped items to Suspense Account
+            if dyn_score < 60 or matched_ledger.upper() in ("SUSPENSE ACCOUNT", "SUSPENSE A/C"):
+                resolved_suspense = ledger_lookup.get("SUSPENSE ACCOUNT", "Suspense Account")
+                row["mapped_ledger"] = resolved_suspense
+                row["party_name"] = resolved_suspense
+                row["party"] = resolved_suspense
+                row["group_hint"] = "Suspense Account"
+                row["confidence_score"] = dyn_score
+                if "Low Confidence - Suspense Account" not in row.get("flags", []):
+                    row.setdefault("flags", []).append("Low Confidence - Suspense Account")
+                if not silent_mode:
+                    print(f"  ⚠️ [Suspense Account Fallback (Score: {dyn_score})] '{narr[:50]}' → '{resolved_suspense}'")
+            else:
                 mapped_count += 1
-                m_up = matched_ledger.upper().strip()
-                is_raw_narr = (m_up == narr.upper().strip()) or any(m_up.startswith(p) for p in ["UPI", "NEFT", "IMPS", "ACH", "RTGS", "TPT", "INB", "CHQ", "POS"]) or any(h in m_up for h in ["OKAXIS", "OKICICI", "KHDFCBANK", "OKHDFCBANK", "OKSBI", "PTYES", "NAVIAXIS", "KOTAK", "YBL", "@"])
-                if is_raw_narr:
-                    clean_sanitized = self.extract_clean_party_from_narration(matched_ledger)
-                    if clean_sanitized and len(clean_sanitized) >= 2:
-                        matched_ledger = clean_sanitized
-
                 row["mapped_ledger"] = matched_ledger
                 row["party_name"] = matched_ledger
                 row["party"] = matched_ledger
                 master_group = ledger_group_map.get(matched_ledger.upper())
                 if master_group:
                     row["group_hint"] = master_group
-                if "S-UserInstruction" in match_stage:
-                    row["confidence_score"] = 98
-                    if not master_group:
-                        if tx_type == "Receipt":
-                            row["group_hint"] = "Sundry Debtors" if "DEBT" in matched_ledger.upper() else "Indirect Income"
-                        else:
-                            row["group_hint"] = "Sundry Creditors" if "CRED" in matched_ledger.upper() else "Indirect Expenses"
-                    if row.get("flags"):
-                        row["flags"] = [f for f in row["flags"] if f not in ("Suspense Mapping", "Unmapped Ledger")]
-                    if not silent_mode:
-                        print(f"  🎯 [{match_stage}] '{narr[:50]}' → '{matched_ledger}' (User Rule Applied)")
                 else:
-                    if "S5-Fuzzy" in match_stage:
-                        row["confidence_score"] = min(row.get("confidence_score", 80), 72)
-                        if "Low Confidence" not in row.get("flags", []):
-                            row.setdefault("flags", []).append("Low Confidence")
-                    print(f"  ✅ [{match_stage}] '{narr[:50]}' → '{matched_ledger}'")
-            else:
-                # Deterministic fallback — Extract clean party name, NEVER output generic group name
-                extracted_party = self.extract_clean_party_from_narration(narr)
-                if extracted_party and len(extracted_party) >= 2:
-                    target_group = self.classify_transaction_nature(
-                        narr, extracted_party, tx_type,
-                        amount=float(row.get("amount", 0) or 0)
+                    row["group_hint"] = self.classify_transaction_nature(
+                        narr, matched_ledger, tx_type, amount=float(row.get("amount", 0) or 0)
                     )
 
-                    row["mapped_ledger"] = extracted_party
-                    row["party_name"] = extracted_party
-                    row["party"] = extracted_party
-                    row["group_hint"] = target_group
-                    row["confidence_score"] = 85
-                    if row.get("flags"):
-                        row["flags"] = [f for f in row["flags"] if f not in ("Suspense Mapping", "Unmapped Ledger")]
-                    if not silent_mode:
-                        print(f"  ✅ [Clean Party Auto-Extraction] '{narr[:50]}' → '{extracted_party}' ({target_group})")
-                else:
-                    resolved_name = ledger_lookup.get("SUSPENSE ACCOUNT", "Suspense Account")
-                    row["mapped_ledger"] = resolved_name
-                    row["party_name"] = resolved_name
-                    row["party"] = resolved_name
-                    row["group_hint"] = "Suspense Account"
-                    row["confidence_score"] = 75
-                    if not silent_mode:
-                        print(f"  ⚠️ [Suspense] '{narr[:50]}' → '{resolved_name}'")
+                # Strict Accounting Group Guard: Block Bank Accounts (G0000004) from counterparty auto-creation
+                gh_upper = str(row.get("group_hint", "")).upper()
+                if "BANK" in gh_upper and not any(b in matched_ledger.upper() for b in ["HDFC", "ICICI", "SBI", "AXIS", "KOTAK", "CANARA", "UNION", "BARODA", "PNB", "IDBI", "FEDERAL", "INDUSIND", "BANK OF"]):
+                    row["group_hint"] = "Sundry Creditors" if tx_type == "Payment" else "Sundry Debtors"
+
+                # Cash Accounting Guard: Force Cash in Hand for cash deposits/withdrawals/received
+                if any(k in narr.upper() for k in ["CASH RECEIVED", "CASH DEPOSIT", "CASH WITHDRAWAL", "CASH RECVD", "BY CASH", "TO CASH"]) or matched_ledger.upper() in ("CASH", "CASH RECEIVED", "CASH ACCOUNT", "CASH A/C", "CASH IN HAND"):
+                    target_cash_name = ledger_lookup.get("CASH ACCOUNT") or ledger_lookup.get("CASH") or ledger_lookup.get("CASH A/C") or "Cash Account"
+                    row["mapped_ledger"] = target_cash_name
+                    row["party_name"] = target_cash_name
+                    row["party"] = target_cash_name
+                    row["group_hint"] = "Cash in Hand"
+
+                row["confidence_score"] = dyn_score
+                if row.get("flags"):
+                    row["flags"] = [f for f in row["flags"] if f not in ("Suspense Mapping", "Unmapped Ledger")]
+
+                if dyn_score < 80 and "Low Confidence" not in row.get("flags", []):
+                    row.setdefault("flags", []).append("Low Confidence")
+
+                if not silent_mode:
+                    print(f"  ✅ [{match_stage} | Score: {dyn_score}] '{narr[:50]}' → '{row.get('mapped_ledger')}' ({row.get('group_hint')})")
 
             if silent_mode:
                 if (idx + 1) % 100 == 0 or (idx + 1) == total_rows_count:
                     pct = int(((idx + 1) / total_rows_count) * 100)
                     filled = int((pct / 100) * 20)
-                    bar = '█' * filled + '░' * (20 - filled)
-                    print(f"  [Memory Engine] [{bar}] {idx + 1}/{total_rows_count} ({pct}% Completed)", end='\r' if (idx + 1) < total_rows_count else '\n')
+                    bar = "█" * filled + "░" * (20 - filled)
+                    print(
+                        f"  [Memory Engine] [{bar}] {idx + 1}/{total_rows_count} ({pct}% Completed)",
+                        end="\r" if (idx + 1) < total_rows_count else "\n",
+                    )
 
         if silent_mode:
             t_end_map = time.time()
             elapsed_map = max(0.001, t_end_map - t_start_map)
-            local_pct = (mapped_count / total_rows_count * 100) if total_rows_count > 0 else 100.0
-            print(f"✅ [Memory Engine Complete] Mapped {mapped_count}/{total_rows_count} bank transactions in {elapsed_map:.2f}s ({local_pct:.1f}% matched locally).")
+            local_pct = (
+                (mapped_count / total_rows_count * 100)
+                if total_rows_count > 0
+                else 100.0
+            )
+            print(
+                f"✅ [Memory Engine Complete] Mapped {mapped_count}/{total_rows_count} bank transactions in {elapsed_map:.2f}s ({local_pct:.1f}% matched locally)."
+            )
 
         return extracted_data
 
-
-    def apply_product_mappings(self, result_json: dict, client_memory: dict, module: str = "Sales", instruction: str = "") -> dict:
+    def apply_product_mappings(
+        self,
+        result_json: dict,
+        client_memory: dict,
+        module: str = "Sales",
+        instruction: str = "",
+    ) -> dict:
         """Applies rule-based product mappings (keyword-based and GST-based) from client memory
         to the extracted items to automatically match them to Miracle products."""
         if isinstance(result_json, list):
@@ -3059,72 +4896,129 @@ Return ONLY valid JSON.
 
         # --- Route to Decoupled Module Parsers ---
         import sys
+
         sys.path.append(os.path.join(os.path.dirname(__file__), "core"))
         sys.path.append(os.path.join(os.path.dirname(__file__), "modules"))
-        
+
         if module == "Sales":
             from modules.sales.parser import SalesParser
+
             sp = SalesParser(self.api_key, self.model_name)
-            result_json = sp.clean_invoice_data(result_json, client_memory, module=module)
+            result_json = sp.clean_invoice_data(
+                result_json, client_memory, module=module
+            )
         elif module == "Purchases":
             from modules.purchases.parser import PurchaseParser
+
             pp = PurchaseParser(self.api_key, self.model_name)
-            result_json = pp.clean_invoice_data(result_json, client_memory, module=module)
+            result_json = pp.clean_invoice_data(
+                result_json, client_memory, module=module
+            )
 
         if module in ["Bank Statements", "Cash Entries"]:
-            result_json = self.map_ledgers_for_statement(result_json, client_memory, module=module, instruction=instruction)
+            result_json = self.map_ledgers_for_statement(
+                result_json, client_memory, module=module, instruction=instruction
+            )
             # Ask Gemini to assist with any remaining Suspense Account mappings
-            result_json = self.ai_assist_suspense_mappings(result_json, client_memory, module=module, instruction=instruction)
-            
+            result_json = self.ai_assist_suspense_mappings(
+                result_json, client_memory, module=module, instruction=instruction
+            )
+
             # ── LEDGER NAME ALIGNMENT GUARD ─────────────────────────────────────
             # Align similar ledger names (like 'Salary Expenses' vs 'SALARY') to prevent duplicate creations
-            if result_json.get("status") == "success" and "extracted_data" in result_json:
+            if (
+                result_json.get("status") == "success"
+                and "extracted_data" in result_json
+            ):
                 existing_ledgers = client_memory.get("existing_ledgers", [])
-                
+
                 def find_aligned_ledger(resolved_name: str, existing_list: list) -> str:
                     res_up = resolved_name.upper().strip()
-                    
+
                     # 1. Salary alignment
-                    salary_variations = ["SALARY", "SALARY EXPENSES", "SALARY A/C", "SALARY PAYMENT", "STAFF SALARY", "SALARIES", "SALARY EXPENSE"]
+                    salary_variations = [
+                        "SALARY",
+                        "SALARY EXPENSES",
+                        "SALARY A/C",
+                        "SALARY PAYMENT",
+                        "STAFF SALARY",
+                        "SALARIES",
+                        "SALARY EXPENSE",
+                    ]
                     if any(v in res_up for v in ["SALARY", "SALARIES"]):
                         for leg in existing_list:
-                            leg_name = leg.get("name", "").strip() if isinstance(leg, dict) else str(leg).strip()
+                            leg_name = (
+                                leg.get("name", "").strip()
+                                if isinstance(leg, dict)
+                                else str(leg).strip()
+                            )
                             leg_name_up = leg_name.upper().strip()
                             if leg_name_up in salary_variations:
                                 return leg_name
-                                
+
                     # 2. Rent alignment
-                    rent_variations = ["RENT", "RENT EXPENSES", "RENT A/C", "RENT PAYMENT", "OFFICE RENT", "SHOP RENT", "RENT EXPENSE"]
+                    rent_variations = [
+                        "RENT",
+                        "RENT EXPENSES",
+                        "RENT A/C",
+                        "RENT PAYMENT",
+                        "OFFICE RENT",
+                        "SHOP RENT",
+                        "RENT EXPENSE",
+                    ]
                     if "RENT" in res_up:
                         for leg in existing_list:
-                            leg_name = leg.get("name", "").strip() if isinstance(leg, dict) else str(leg).strip()
+                            leg_name = (
+                                leg.get("name", "").strip()
+                                if isinstance(leg, dict)
+                                else str(leg).strip()
+                            )
                             leg_name_up = leg_name.upper().strip()
                             if leg_name_up in rent_variations:
                                 return leg_name
-                                
+
                     # 3. Bank Charges alignment
-                    charges_variations = ["BANK CHARGES", "BANK CHARGE", "BANK CHARGES A/C", "BANK SERVICE CHARGES", "BANK INTEREST & CHARGES", "BANK INTEREST AND CHARGES"]
+                    charges_variations = [
+                        "BANK CHARGES",
+                        "BANK CHARGE",
+                        "BANK CHARGES A/C",
+                        "BANK SERVICE CHARGES",
+                        "BANK INTEREST & CHARGES",
+                        "BANK INTEREST AND CHARGES",
+                    ]
                     if any(v in res_up for v in ["BANK CHARGE", "BANK SERVICE"]):
                         for leg in existing_list:
-                            leg_name = leg.get("name", "").strip() if isinstance(leg, dict) else str(leg).strip()
+                            leg_name = (
+                                leg.get("name", "").strip()
+                                if isinstance(leg, dict)
+                                else str(leg).strip()
+                            )
                             leg_name_up = leg_name.upper().strip()
                             if leg_name_up in charges_variations:
                                 return leg_name
-                                
+
                     return ""
 
                 for row in result_json["extracted_data"]:
                     mapped = str(row.get("mapped_ledger") or "").strip()
                     if mapped:
                         aligned = find_aligned_ledger(mapped, existing_ledgers)
-                        if aligned and aligned.upper().strip() != mapped.upper().strip():
-                            print(f"🔗 [Ledger Alignment] Aligning '{mapped}' to existing ledger '{aligned}'.")
+                        if (
+                            aligned
+                            and aligned.upper().strip() != mapped.upper().strip()
+                        ):
+                            print(
+                                f"🔗 [Ledger Alignment] Aligning '{mapped}' to existing ledger '{aligned}'."
+                            )
                             row["mapped_ledger"] = aligned
                             row["party_name"] = aligned
                             row["party"] = aligned
-            
+
             # Post-AI Fallback: If still mapped to Suspense or generic group, run clean party auto-extraction first
-            if result_json.get("status") == "success" and "extracted_data" in result_json:
+            if (
+                result_json.get("status") == "success"
+                and "extracted_data" in result_json
+            ):
                 existing_ledgers = client_memory.get("existing_ledgers", [])
                 ledger_lookup = {}
                 for leg in existing_ledgers:
@@ -3138,18 +5032,62 @@ Return ONLY valid JSON.
                         ledger_lookup[name.upper()] = name
                 for row in result_json["extracted_data"]:
                     mapped = str(row.get("mapped_ledger") or "").strip().upper()
-                    if mapped in ("SUSPENSE ACCOUNT", "SUSPENSE A/C", "UPI DEBTORS", "UPI CREDITORS"):
+                    if mapped in (
+                        "SUSPENSE ACCOUNT",
+                        "SUSPENSE A/C",
+                        "UPI DEBTORS",
+                        "UPI CREDITORS",
+                    ):
                         narr = str(row.get("narration") or "").strip()
-                        tx_type = str(row.get("transaction_type", "")).strip().capitalize()
+                        tx_type = (
+                            str(row.get("transaction_type", "")).strip().capitalize()
+                        )
                         clean_party = self.extract_clean_party_from_narration(narr)
                         if clean_party and len(clean_party) >= 2:
                             upper_party = clean_party.upper()
-                            target_group = "Sundry Debtors" if tx_type == "Receipt" else "Sundry Creditors"
-                            if any(k in upper_party for k in ['TAX', 'PROFESSIONAL TAX', 'GST', 'TDS', 'DUTY']):
-                                target_group = "Duties & Taxes" if "TAX" in upper_party else "Indirect Expenses"
-                            elif any(k in upper_party for k in ['EXPENSE', 'EXP', 'RENT', 'SALARY', 'MAINTENANCE', 'ELECTRICITY', 'TELEPHONE', 'CHARGES', 'FEE', 'COMMISSION', 'INTERNET', 'RECHARGE', 'PETROL']):
+                            target_group = (
+                                "Sundry Debtors"
+                                if tx_type == "Receipt"
+                                else "Sundry Creditors"
+                            )
+                            if any(
+                                k in upper_party
+                                for k in [
+                                    "TAX",
+                                    "PROFESSIONAL TAX",
+                                    "GST",
+                                    "TDS",
+                                    "DUTY",
+                                ]
+                            ):
+                                target_group = (
+                                    "Duties & Taxes"
+                                    if "TAX" in upper_party
+                                    else "Indirect Expenses"
+                                )
+                            elif any(
+                                k in upper_party
+                                for k in [
+                                    "EXPENSE",
+                                    "EXP",
+                                    "RENT",
+                                    "SALARY",
+                                    "MAINTENANCE",
+                                    "ELECTRICITY",
+                                    "TELEPHONE",
+                                    "CHARGES",
+                                    "FEE",
+                                    "COMMISSION",
+                                    "INTERNET",
+                                    "RECHARGE",
+                                    "PETROL",
+                                ]
+                            ):
                                 target_group = "Indirect Expenses"
-                            elif any(k in upper_party for k in ['BANK CHARGES', 'MDR RCVRY', 'INSTAALERT']):
+                            elif any(
+                                k in upper_party
+                                for k in ["BANK CHARGES", "MDR RCVRY", "INSTAALERT"]
+                            ):
                                 target_group = "Indirect Expenses"
                             elif "CASH" in upper_party:
                                 target_group = "Cash-in-Hand"
@@ -3159,40 +5097,58 @@ Return ONLY valid JSON.
                             row["party"] = clean_party
                             row["group_hint"] = target_group
                         else:
-                            default_upi = "Sundry Debtors" if tx_type == "Receipt" else "Sundry Creditors"
-                            row["mapped_ledger"] = ledger_lookup.get(default_upi.upper(), default_upi)
+                            default_upi = (
+                                "Sundry Debtors"
+                                if tx_type == "Receipt"
+                                else "Sundry Creditors"
+                            )
+                            row["mapped_ledger"] = ledger_lookup.get(
+                                default_upi.upper(), default_upi
+                            )
                             row["party_name"] = row["mapped_ledger"]
                             row["party"] = row["mapped_ledger"]
             # Apply date range filtering from user instructions if specified
-            if result_json.get("status") == "success" and "extracted_data" in result_json:
-                start_date, end_date = self.parse_date_range_from_instruction(instruction)
+            if (
+                result_json.get("status") == "success"
+                and "extracted_data" in result_json
+            ):
+                start_date, end_date = self.parse_date_range_from_instruction(
+                    instruction
+                )
                 if start_date or end_date:
                     from datetime import datetime
-                    print(f"🎯 [Date Filter] Filtering entries between {start_date} and {end_date} from instruction...")
-                    
+
+                    print(
+                        f"🎯 [Date Filter] Filtering entries between {start_date} and {end_date} from instruction..."
+                    )
+
                     original_rows = result_json["extracted_data"]
                     filtered_rows = []
                     for row in original_rows:
                         dt_str = row.get("date", "")
                         if dt_str:
                             try:
-                                row_dt = datetime.strptime(dt_str[:10], "%Y-%m-%d").date()
+                                row_dt = datetime.strptime(
+                                    dt_str[:10], "%Y-%m-%d"
+                                ).date()
                                 if start_date and row_dt < start_date:
                                     continue
                                 if end_date and row_dt > end_date:
                                     continue
                             except Exception as parse_err:
-                                print(f"  [Date Filter] Warning: failed to parse row date '{dt_str}': {parse_err}")
+                                print(
+                                    f"  [Date Filter] Warning: failed to parse row date '{dt_str}': {parse_err}"
+                                )
                                 pass
                         filtered_rows.append(row)
-                    
+
                     # Recalculate opening balance if we removed rows from the beginning
                     if filtered_rows and len(filtered_rows) < len(original_rows):
                         first_row = filtered_rows[0]
                         first_bal = first_row.get("running_balance")
                         first_amt = first_row.get("amount", 0.0)
                         first_type = first_row.get("transaction_type", "Receipt")
-                        
+
                         if first_bal is not None and first_bal != "":
                             try:
                                 first_bal_val = float(first_bal)
@@ -3202,59 +5158,83 @@ Return ONLY valid JSON.
                                 else:
                                     new_op = round(first_bal_val + first_amt_val, 2)
                                 result_json["opening_balance"] = new_op
-                                print(f"🎯 [Date Filter] Adjusted Opening Balance to {new_op} based on first transaction.")
+                                print(
+                                    f"🎯 [Date Filter] Adjusted Opening Balance to {new_op} based on first transaction."
+                                )
                             except:
                                 pass
-                    
+
                     result_json["extracted_data"] = filtered_rows
-                    print(f"🎯 [Date Filter] Keep {len(filtered_rows)} / {len(original_rows)} transactions.")
+                    print(
+                        f"🎯 [Date Filter] Keep {len(filtered_rows)} / {len(original_rows)} transactions."
+                    )
             return result_json
-            
-        INVALID_ITEM_WORDS = {"sale", "sales", "purchase", "purchases", "creditnote", "debitnote", "credit", "debit", "journal", "receipt", "payment", "voucher"}
-        
+
+        INVALID_ITEM_WORDS = {
+            "sale",
+            "sales",
+            "purchase",
+            "purchases",
+            "creditnote",
+            "debitnote",
+            "credit",
+            "debit",
+            "journal",
+            "receipt",
+            "payment",
+            "voucher",
+        }
+
         extracted_data = result_json.get("extracted_data", [])
         for voucher in extracted_data:
             party_name = str(voucher.get("party_name", "")).strip().upper()
             items = voucher.get("items", [])
             valid_items = []
-            
+
             for item in items:
                 item_name = str(item.get("name", "")).strip()
-                item_norm = item_name.lower().replace(" ", "").replace(".", "").replace("_", "")
-                
+                item_norm = (
+                    item_name.lower().replace(" ", "").replace(".", "").replace("_", "")
+                )
+
                 # Check if item name is invalid (e.g. same as party name or is a transaction type word)
                 is_invalid = False
                 if item_norm in INVALID_ITEM_WORDS:
                     is_invalid = True
                 elif len(item_name) < 2:
                     is_invalid = True
-                    
+
                 if is_invalid:
-                    print(f"⚠️ Filtering out invalid extracted product name: '{item_name}' (party: {party_name})")
+                    print(
+                        f"⚠️ Filtering out invalid extracted product name: '{item_name}' (party: {party_name})"
+                    )
                     continue
                 valid_items.append(item)
-                
+
             # Fallback if all items were invalid
             if not valid_items and items:
                 default_name = "SALES" if module == "Sales" else "PURCHASES"
                 first_item = items[0]
                 first_item["name"] = default_name
                 valid_items.append(first_item)
-                print(f"⚠️ All extracted products were invalid. Defaulted item name to '{default_name}'")
-                
+                print(
+                    f"⚠️ All extracted products were invalid. Defaulted item name to '{default_name}'"
+                )
+
             voucher["items"] = valid_items
 
         product_mappings = client_memory.get("product_mappings", {})
         if not product_mappings:
             return result_json
-            
+
         keyword_rules = product_mappings.get("keyword_rules", {})
         gst_rules = product_mappings.get("gst_rules", {})
-        
+
         # Load active client products from DBF dynamically for 100-client compatibility
         client_products = []
         try:
             from dbf_handler import MiracleDBFHandler
+
             settings_path = "settings.json"
             if not os.path.exists(settings_path):
                 settings_path = os.path.join(os.path.dirname(__file__), "settings.json")
@@ -3269,70 +5249,127 @@ Return ONLY valid JSON.
         except Exception as e:
             print(f"⚠️ Could not load active client products for dynamic mapping: {e}")
 
-        def find_dynamic_product_for_gst(c_products: list, g_pct: float, mod: str = "Sales") -> str:
+        def find_dynamic_product_for_gst(
+            c_products: list, g_pct: float, mod: str = "Sales"
+        ) -> str:
             g_int = str(int(g_pct))
             if c_products:
                 # 1. Match product name containing GST percentage string (e.g. "5%", "GST 5", "GST5", "(5%)")
                 for prod in c_products:
                     p_name = prod.get("name", "").strip()
                     p_up = p_name.upper()
-                    if f"{g_int}%" in p_up or f"GST {g_int}" in p_up or f"GST{g_int}" in p_up or f" {g_int}%" in p_up or f"({g_int}%)" in p_up:
+                    if (
+                        f"{g_int}%" in p_up
+                        or f"GST {g_int}" in p_up
+                        or f"GST{g_int}" in p_up
+                        or f" {g_int}%" in p_up
+                        or f"({g_int}%)" in p_up
+                    ):
                         return p_name
                 # 2. Match product by commodity code corresponding to g_pct (e.g. C002 for 5%, C004 for 18%)
-                expected_comm = "CNGT" if g_pct <= 0 else ("C002" if g_pct <= 5 else ("C003" if g_pct <= 12 else ("C004" if g_pct <= 18 else "C005")))
+                expected_comm = (
+                    "CNGT"
+                    if g_pct <= 0
+                    else (
+                        "C002"
+                        if g_pct <= 5
+                        else (
+                            "C003"
+                            if g_pct <= 12
+                            else ("C004" if g_pct <= 18 else "C005")
+                        )
+                    )
+                )
                 for prod in c_products:
-                    comm = str(prod.get("commodity") or prod.get("commodity_code") or prod.get("M21F27") or "").strip().upper()
+                    comm = (
+                        str(
+                            prod.get("commodity")
+                            or prod.get("commodity_code")
+                            or prod.get("M21F27")
+                            or ""
+                        )
+                        .strip()
+                        .upper()
+                    )
                     if comm == expected_comm:
                         p_name = prod.get("name", "").strip()
-                        if p_name: return p_name
+                        if p_name:
+                            return p_name
             default_base = "SALES" if mod == "Sales" else "PURCHASES"
-            return f"{default_base} GST {int(g_pct)}%" if g_pct > 0 else f"{default_base} EXEMPT"
+            return (
+                f"{default_base} GST {int(g_pct)}%"
+                if g_pct > 0
+                else f"{default_base} EXEMPT"
+            )
 
         extracted_data = result_json.get("extracted_data", [])
         for voucher in extracted_data:
             party_name_raw = str(voucher.get("party_name", "")).strip()
-            party_clean = re.sub(r'^(dr|mr|mrs|ms|cmf)\.?\s+', '', party_name_raw.lower()).strip()
+            party_clean = re.sub(
+                r"^(dr|mr|mrs|ms|cmf)\.?\s+", "", party_name_raw.lower()
+            ).strip()
             items = voucher.get("items", [])
             for item in items:
                 item_name = str(item.get("name", "")).strip()
                 gst_pct = float(item.get("gst_pct", 18.0))
-                item_clean = re.sub(r'^(dr|mr|mrs|ms|cmf)\.?\s+', '', item_name.lower()).strip()
-                
+                item_clean = re.sub(
+                    r"^(dr|mr|mrs|ms|cmf)\.?\s+", "", item_name.lower()
+                ).strip()
+
                 mapped = False
-                
+
                 # 1. Apply keyword-based rules (case-insensitive)
                 for kw, target_prod in keyword_rules.items():
                     if kw.lower() in item_name.lower():
-                        print(f"Mapping product '{item_name}' to '{target_prod}' (matched keyword '{kw}')")
+                        print(
+                            f"Mapping product '{item_name}' to '{target_prod}' (matched keyword '{kw}')"
+                        )
                         item["name"] = target_prod
                         mapped = True
                         break
-                        
+
                 # 2. Check exact or substring match against active Client DBF Products Catalog
                 if not mapped and client_products:
                     item_upper = item_name.upper().strip()
                     for prod in client_products:
                         p_name = prod.get("name", "").strip()
                         if p_name and p_name.upper() == item_upper:
-                            print(f"✅ Exact DBF Catalog Match: '{item_name}' -> '{p_name}'")
+                            print(
+                                f"✅ Exact DBF Catalog Match: '{item_name}' -> '{p_name}'"
+                            )
                             item["name"] = p_name
                             mapped = True
                             break
                     if not mapped:
                         for prod in client_products:
                             p_name = prod.get("name", "").strip()
-                            if p_name and len(item_upper) >= 4 and not re.search(r'^(cmf|dr|mr|mrs|ms)\.?\s+', item_name.lower()):
-                                if item_upper in p_name.upper() or p_name.upper() in item_upper:
-                                    print(f"✅ Substring DBF Catalog Match: '{item_name}' -> '{p_name}'")
+                            if (
+                                p_name
+                                and len(item_upper) >= 4
+                                and not re.search(
+                                    r"^(cmf|dr|mr|mrs|ms)\.?\s+", item_name.lower()
+                                )
+                            ):
+                                if (
+                                    item_upper in p_name.upper()
+                                    or p_name.upper() in item_upper
+                                ):
+                                    print(
+                                        f"✅ Substring DBF Catalog Match: '{item_name}' -> '{p_name}'"
+                                    )
                                     item["name"] = p_name
                                     mapped = True
                                     break
 
                 # 3. Patient / Customer / Job Item Guard: Auto-map patient names & custom job items to DBF GST rate product
                 is_patient_or_job_item = False
-                if re.search(r'^(cmf|dr|mr|mrs|ms)\.?\s+', item_name.lower()):
+                if re.search(r"^(cmf|dr|mr|mrs|ms)\.?\s+", item_name.lower()):
                     is_patient_or_job_item = True
-                elif len(item_clean) >= 3 and (item_clean == party_clean or item_clean in party_clean or party_clean in item_clean):
+                elif len(item_clean) >= 3 and (
+                    item_clean == party_clean
+                    or item_clean in party_clean
+                    or party_clean in item_clean
+                ):
                     is_patient_or_job_item = True
                 elif module == "Purchases" and not mapped:
                     # In Purchases, unmapped job items/patient names from suppliers map to GST rate product
@@ -3341,12 +5378,24 @@ Return ONLY valid JSON.
                 if not mapped and is_patient_or_job_item:
                     gst_str = str(gst_pct)
                     gst_int_str = str(int(gst_pct))
-                    default_prod_key = "default_purchase_product" if module == "Purchases" else "default_sales_product"
-                    target_prod = gst_rules.get(gst_str) or gst_rules.get(gst_int_str) or product_mappings.get(default_prod_key)
+                    default_prod_key = (
+                        "default_purchase_product"
+                        if module == "Purchases"
+                        else "default_sales_product"
+                    )
+                    target_prod = (
+                        gst_rules.get(gst_str)
+                        or gst_rules.get(gst_int_str)
+                        or product_mappings.get(default_prod_key)
+                    )
                     if not target_prod:
-                        target_prod = find_dynamic_product_for_gst(client_products, gst_pct, module)
+                        target_prod = find_dynamic_product_for_gst(
+                            client_products, gst_pct, module
+                        )
                     if target_prod:
-                        print(f"🤖 Patient/Job Item Guard ({module}): Auto-mapped item '{item_name}' (party: '{party_name_raw}') -> '{target_prod}'")
+                        print(
+                            f"🤖 Patient/Job Item Guard ({module}): Auto-mapped item '{item_name}' (party: '{party_name_raw}') -> '{target_prod}'"
+                        )
                         item["name"] = target_prod
                         mapped = True
 
@@ -3354,10 +5403,12 @@ Return ONLY valid JSON.
                 if not mapped and gst_rules:
                     gst_str = str(gst_pct)
                     gst_int_str = str(int(gst_pct))
-                    
+
                     target_prod = gst_rules.get(gst_str) or gst_rules.get(gst_int_str)
                     if target_prod:
-                        print(f"Mapping product '{item_name}' to '{target_prod}' (matched GST {gst_pct}%)")
+                        print(
+                            f"Mapping product '{item_name}' to '{target_prod}' (matched GST {gst_pct}%)"
+                        )
                         item["name"] = target_prod
                         mapped = True
 
@@ -3382,26 +5433,35 @@ Return ONLY valid JSON.
                         if item_name.upper() not in existing_names_codes:
                             if item_name not in seen_unmapped_names:
                                 seen_unmapped_names.add(item_name)
-                                unmapped_items_info.append({
-                                    "name": item_name,
-                                    "gst_pct": item.get("gst_pct", 18.0),
-                                    "hsn_code": item.get("hsn_code", "")
-                                })
+                                unmapped_items_info.append(
+                                    {
+                                        "name": item_name,
+                                        "gst_pct": item.get("gst_pct", 18.0),
+                                        "hsn_code": item.get("hsn_code", ""),
+                                    }
+                                )
 
                 if unmapped_items_info:
-                    print(f"🤖 Found {len(unmapped_items_info)} unmapped items. Resolving via Gemini semantic mapping...")
-                    
+                    print(
+                        f"🤖 Found {len(unmapped_items_info)} unmapped items. Resolving via Gemini semantic mapping..."
+                    )
+
                     # Simplify products list to reduce tokens and focus the model
                     simplified_products = [
                         {
                             "name": prod.get("name"),
                             "code": prod.get("code"),
-                            "hsn_code": prod.get("hsn_code")
-                        } for prod in client_products
+                            "hsn_code": prod.get("hsn_code"),
+                        }
+                        for prod in client_products
                     ]
-                    
-                    custom_instructions = product_mappings.get("instructions") or product_mappings.get("ai_instructions") or ""
-                    
+
+                    custom_instructions = (
+                        product_mappings.get("instructions")
+                        or product_mappings.get("ai_instructions")
+                        or ""
+                    )
+
                     prompt = f"""You are an expert AI accountant. Your task is to map extracted invoice item names to the official Miracle accounting software product list.
                     
 Here is the official client product list:
@@ -3433,12 +5493,18 @@ Example Output:
                             contents=prompt,
                             config=types.GenerateContentConfig(
                                 response_mime_type="application/json"
-                            )
+                            ),
                         )
-                        
-                        ai_mappings = json.loads(response.text.strip() if response and response.text else "{}")
-                        print(f"🤖 Gemini resolved AI mappings: {json.dumps(ai_mappings, indent=2)}")
-                        
+
+                        ai_mappings = json.loads(
+                            response.text.strip()
+                            if response and response.text
+                            else "{}"
+                        )
+                        print(
+                            f"🤖 Gemini resolved AI mappings: {json.dumps(ai_mappings, indent=2)}"
+                        )
+
                         # Apply the resolved mappings
                         for voucher in extracted_data:
                             items = voucher.get("items", [])
@@ -3448,10 +5514,14 @@ Example Output:
                                     target_val = ai_mappings[item_name]
                                     if target_val != "AUTO_CREATE_PRODUCT":
                                         if target_val.upper() in existing_names_codes:
-                                            print(f"🤖 AI Mapped product '{item_name}' -> '{target_val}'")
+                                            print(
+                                                f"🤖 AI Mapped product '{item_name}' -> '{target_val}'"
+                                            )
                                             item["name"] = target_val
                                     else:
-                                        print(f"🤖 AI marked product '{item_name}' as AUTO_CREATE_PRODUCT")
+                                        print(
+                                            f"🤖 AI marked product '{item_name}' as AUTO_CREATE_PRODUCT"
+                                        )
                     except Exception as ex:
                         print(f"⚠️ Error during AI semantic mapping: {ex}")
         return result_json
@@ -3484,7 +5554,9 @@ Example Output:
         found_dates = []
 
         # 1. Match YYYY-MM-DD
-        for match in re.finditer(r'\b(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})\b', instr_clean):
+        for match in re.finditer(
+            r"\b(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})\b", instr_clean
+        ):
             try:
                 y = int(match.group(1))
                 m = int(match.group(2))
@@ -3496,7 +5568,9 @@ Example Output:
                 pass
 
         # 2. Match DD/MM/YYYY or DD/MM/YY
-        for match in re.finditer(r'\b(\d{1,2})[-/.](\d{1,2})[-/.](\d{2,4})\b', instr_clean):
+        for match in re.finditer(
+            r"\b(\d{1,2})[-/.](\d{1,2})[-/.](\d{2,4})\b", instr_clean
+        ):
             try:
                 d = int(match.group(1))
                 m = int(match.group(2))
@@ -3516,28 +5590,39 @@ Example Output:
 
         # 3. Match Month + Year keyword, e.g. "April 2026" or "Apr 26"
         months_map = {
-            'jan': 1, 'january': 1,
-            'feb': 2, 'february': 2,
-            'mar': 3, 'march': 3,
-            'apr': 4, 'april': 4,
-            'may': 5,
-            'jun': 6, 'june': 6,
-            'jul': 7, 'july': 7,
-            'aug': 8, 'august': 8,
-            'sep': 9, 'september': 9,
-            'oct': 10, 'october': 10,
-            'nov': 11, 'november': 11,
-            'dec': 12, 'december': 12
+            "jan": 1,
+            "january": 1,
+            "feb": 2,
+            "february": 2,
+            "mar": 3,
+            "march": 3,
+            "apr": 4,
+            "april": 4,
+            "may": 5,
+            "jun": 6,
+            "june": 6,
+            "jul": 7,
+            "july": 7,
+            "aug": 8,
+            "august": 8,
+            "sep": 9,
+            "september": 9,
+            "oct": 10,
+            "october": 10,
+            "nov": 11,
+            "november": 11,
+            "dec": 12,
+            "december": 12,
         }
 
         month_val = None
         for m_name, m_num in months_map.items():
-            if re.search(r'\b' + m_name + r'\b', instr_lower):
+            if re.search(r"\b" + m_name + r"\b", instr_lower):
                 month_val = m_num
                 break
 
         if month_val:
-            year_match = re.search(r'\b(20\d{2}|\d{2})\b', instr_clean)
+            year_match = re.search(r"\b(20\d{2}|\d{2})\b", instr_clean)
             if year_match:
                 yr_str = year_match.group(1)
                 yr = int(yr_str)
@@ -3548,14 +5633,21 @@ Example Output:
 
         if len(found_dates) == 1:
             single_date = found_dates[0]
-            if any(w in instr_lower for w in ["from", "after", "start", "starting", "since"]):
+            if any(
+                w in instr_lower
+                for w in ["from", "after", "start", "starting", "since"]
+            ):
                 return single_date, None
-            if any(w in instr_lower for w in ["to", "before", "end", "ending", "until"]):
+            if any(
+                w in instr_lower for w in ["to", "before", "end", "ending", "until"]
+            ):
                 return None, single_date
 
         return None, None
 
-    def ai_assist_suspense_mappings(self, result_json: dict, client_memory: dict, module: str, instruction: str = "") -> dict:
+    def ai_assist_suspense_mappings(
+        self, result_json: dict, client_memory: dict, module: str, instruction: str = ""
+    ) -> dict:
         """
         Sends unmapped/suspense narrations to Gemini in a single text request
         to resolve them using the client's business profile and existing ledgers.
@@ -3578,15 +5670,28 @@ Example Output:
         # Identify unique narrations mapped to Suspense Account or unmapped generic groups
         suspense_rows = []
         unique_susp_narrs = {}  # narration -> (tx_type, group_hint)
-        
+
         for r in rows:
             mapped = str(r.get("mapped_ledger") or "").strip().upper()
             is_suspense = (
-                not mapped or
-                mapped in ("SUSPENSE ACCOUNT", "SUSPENSE A/C", "SUNDRY DEBTORS", "SUNDRY CREDITORS", "UPI DEBTORS", "UPI CREDITORS", "DIRECT EXPENSES", "INDIRECT EXPENSES") or
-                mapped.startswith("UNKNOWN_") or
-                (existing_names_upper and mapped not in existing_names_upper) or
-                (not existing_names_upper and (len(mapped) > 15 or bool(re.search(r'\d{4,}', mapped))))
+                not mapped
+                or mapped
+                in (
+                    "SUSPENSE ACCOUNT",
+                    "SUSPENSE A/C",
+                    "SUNDRY DEBTORS",
+                    "SUNDRY CREDITORS",
+                    "UPI DEBTORS",
+                    "UPI CREDITORS",
+                    "DIRECT EXPENSES",
+                    "INDIRECT EXPENSES",
+                )
+                or mapped.startswith("UNKNOWN_")
+                or (existing_names_upper and mapped not in existing_names_upper)
+                or (
+                    not existing_names_upper
+                    and (len(mapped) > 15 or bool(re.search(r"\d{4,}", mapped)))
+                )
             )
             if is_suspense:
                 narr = str(r.get("narration") or "").strip()
@@ -3594,20 +5699,26 @@ Example Output:
                     unique_susp_narrs[narr] = {
                         "transaction_type": r.get("transaction_type", "Receipt"),
                         "group_hint": r.get("group_hint", ""),
-                        "current_mapped": r.get("mapped_ledger", "")
+                        "current_mapped": r.get("mapped_ledger", ""),
                     }
                     suspense_rows.append(r)
 
         if not unique_susp_narrs:
             return result_json
 
-        print(f"🔮 [AI Mapping Assist] Found {len(unique_susp_narrs)} unique unmapped/suspense narrations. Asking Gemini to resolve them...")
+        print(
+            f"🔮 [AI Mapping Assist] Found {len(unique_susp_narrs)} unique unmapped/suspense narrations. Asking Gemini to resolve them..."
+        )
 
         existing_ledgers = client_memory.get("existing_ledgers", [])
         business_profile = client_memory.get("business_profile", "")
         specifications = client_memory.get("specifications", "")
-        
-        user_instruction = f"\nUSER PROVIDED EXTRA GUIDELINES (MUST FOLLOW HIGHEST PRIORITY):\n{instruction}\n" if instruction else ""
+
+        user_instruction = (
+            f"\nUSER PROVIDED EXTRA GUIDELINES (MUST FOLLOW HIGHEST PRIORITY):\n{instruction}\n"
+            if instruction
+            else ""
+        )
 
         # Build clean list of existing ledger names
         ledgers_list = []
@@ -3616,7 +5727,17 @@ Example Output:
             if name:
                 ledgers_list.append(name)
 
-        prompt = f"""You are an expert AI accountant.
+        # Chunk unmapped narrations into batches of max 30 to guarantee 0 JSON output truncation
+        narr_keys = list(unique_susp_narrs.keys())
+        batch_size = 30
+        narr_batches = [
+            narr_keys[i : i + batch_size]
+            for i in range(0, len(narr_keys), batch_size)
+        ]
+        resolved_mappings = {}
+
+        def process_narr_batch(batch_narrs, batch_idx):
+            prompt = f"""You are an expert AI accountant.
 The user is importing a bank statement or cashbook. Some transactions could not be mapped to any ledger and fell back to the 'Suspense Account'.
 Your job is to analyze the following list of unmapped narrations and map them to the most appropriate ledger from the client's existing ledger list, or propose a clean party name.
 
@@ -3631,11 +5752,12 @@ LIST OF EXISTING LEDGER ACCOUNTS IN MIRACLE:
 {json.dumps(ledgers_list, indent=2)}
 
 UNMAPPED TRANSACTIONS:
-{json.dumps(unique_susp_narrs, indent=2)}
+{json.dumps(batch_narrs, indent=2)}
 
 INSTRUCTIONS:
 1. For each narration, try to map it to an existing ledger account from the list above. Use semantic matching and spelling variations.
 2. ACCOUNT GROUP INFERENCE (ICAI / Ind AS Rules):
+   - Cash Movements / Cash Deposits / Withdrawals / Cash Received -> mapped_ledger: 'Cash' (or 'Cash Account'), group_hint: 'Cash in Hand'
    - Investments / Share Brokers (Groww, Zerodha, Upstox, Nextbillion, Clearing Corp) -> group_hint: 'Investments'
    - Credit Card Payment / Gateways (CRED, Razorpay, BillDesk) -> group_hint: 'Indirect Expenses'
    - Banks & Finance (IDFC First Bank, HDFC, ICICI, SBI) -> group_hint: 'Bank Accounts' or 'Unsecured Loans'
@@ -3655,56 +5777,88 @@ INSTRUCTIONS:
   }}
 }}
 """
-        resolved_mappings = {}
-        try:
-            client = self._get_client()
-            response = self._generate_content_with_retry(
-                client=client,
-                model=self.model_name or "gemini-2.5-flash",
-                contents=prompt,
-                config=make_config("application/json")
-            )
-            
-            result_text = ""
-            if response:
-                try:
-                    result_text = response.text.strip() if hasattr(response, "text") and response.text else ""
-                except Exception:
-                    result_text = ""
-                    
-            if result_text.startswith("```json"): result_text = result_text[7:]
-            if result_text.startswith("```"): result_text = result_text[3:]
-            if result_text.endswith("```"): result_text = result_text[:-3]
-            result_text = result_text.strip()
-            
-            if result_text:
-                try:
-                    resolved_mappings = json.loads(result_text)
-                    print(f"🔮 [AI Mapping Assist] Gemini resolved mappings: {json.dumps(resolved_mappings, indent=2)}")
-                except Exception as json_err:
-                    print(f"⚠️ Warning: AI mapping assistance response could not be parsed as JSON: {json_err}. Using deterministic clean party fallback.")
-        except Exception as e:
-            print(f"⚠️ Warning: AI mapping assistance pass failed ({e}). Using deterministic clean party fallback.")
+            try:
+                client = self._get_client()
+                response = self._generate_content_with_retry(
+                    client=client,
+                    model=self.model_name or "gemini-2.5-flash",
+                    contents=prompt,
+                    config=make_config("application/json"),
+                    start_key_offset=batch_idx,
+                )
+
+                result_text = ""
+                if response:
+                    try:
+                        result_text = (
+                            response.text.strip()
+                            if hasattr(response, "text") and response.text
+                            else ""
+                        )
+                    except Exception:
+                        result_text = ""
+
+                result_text = self.repair_json_string(result_text)
+                if result_text:
+                    parsed = json.loads(result_text)
+                    if isinstance(parsed, dict):
+                        return parsed
+            except Exception as batch_err:
+                print(f"⚠️ [AI Mapping Batch {batch_idx+1}] Error: {batch_err}")
+            return {}
+
+        from concurrent.futures import ThreadPoolExecutor, as_completed
+
+        pool_len = (
+            len(self.api_keys_pool)
+            if hasattr(self, "api_keys_pool") and self.api_keys_pool
+            else 1
+        )
+        max_workers = min(5, max(1, min(pool_len, len(narr_batches))))
+
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            future_to_batch = {
+                executor.submit(process_narr_batch, batch, idx): idx
+                for idx, batch in enumerate(narr_batches)
+            }
+            for future in as_completed(future_to_batch):
+                batch_res = future.result()
+                if isinstance(batch_res, dict):
+                    resolved_mappings.update(batch_res)
 
         # Apply resolved mappings back to rows with 65% CA confidence safeguard
         applied_count = 0
         for r in rows:
             mapped = str(r.get("mapped_ledger") or "").strip().upper()
             is_suspense_row = (
-                not mapped or
-                mapped in ("SUSPENSE ACCOUNT", "SUSPENSE A/C", "SUNDRY DEBTORS", "SUNDRY CREDITORS", "UPI DEBTORS", "UPI CREDITORS") or
-                mapped.startswith("UNKNOWN_") or
-                (existing_names_upper and mapped not in existing_names_upper)
+                not mapped
+                or mapped
+                in (
+                    "SUSPENSE ACCOUNT",
+                    "SUSPENSE A/C",
+                    "SUNDRY DEBTORS",
+                    "SUNDRY CREDITORS",
+                    "UPI DEBTORS",
+                    "UPI CREDITORS",
+                )
+                or mapped.startswith("UNKNOWN_")
+                or (existing_names_upper and mapped not in existing_names_upper)
             )
             if is_suspense_row:
                 narr = str(r.get("narration") or "").strip()
                 tx_type = str(r.get("type") or "Receipt").strip()
-                
+
                 # Build map of existing master ledgers to their Miracle DBF groups
                 ledger_group_map = {}
                 for leg in existing_ledgers:
-                    if isinstance(leg, dict) and leg.get("name") and leg.get("group_name"):
-                        ledger_group_map[leg["name"].strip().upper()] = str(leg["group_name"]).strip()
+                    if (
+                        isinstance(leg, dict)
+                        and leg.get("name")
+                        and leg.get("group_name")
+                    ):
+                        ledger_group_map[leg["name"].strip().upper()] = str(
+                            leg["group_name"]
+                        ).strip()
 
                 # 1. First try Gemini AI resolved mapping with strict 75% CA Confidence Safeguard
                 mapped_success = False
@@ -3713,21 +5867,33 @@ INSTRUCTIONS:
                     raw_target = str(res.get("mapped_ledger") or "").strip()
                     conf = int(res.get("confidence_score", 80) or 80)
 
-                    # CA SAFEGUARD: If confidence < 75%, force Suspense Account for human review
-                    if conf < 75:
+                    # CA SAFEGUARD: If confidence < 70%, force Suspense Account for human review
+                    if conf < 70:
                         r["mapped_ledger"] = "Suspense Account"
                         r["party_name"] = "Suspense Account"
                         r["party"] = "Suspense Account"
                         r["group_hint"] = "Suspense Account"
-                        r["confidence_score"] = conf
-                        r["flags"] = ["Low Confidence (< 75%)", "Human Review Required"]
+                        r["confidence_score"] = 0
+                        r["flags"] = ["Low Confidence (< 70%)", "Human Review Required"]
                         mapped_success = True
-                        print(f"  🛡️ [CA Safeguard] Confidence {conf}% < 75% for '{narr}'. Forcing fallback to Suspense Account for human review.")
-                    elif raw_target and raw_target.upper() not in ("SUSPENSE ACCOUNT", "SUSPENSE A/C"):
+                        print(
+                            f"  🛡️ [CA Safeguard] Confidence {conf}% < 70% for '{narr}'. Forcing fallback to Suspense Account for human review."
+                        )
+                    elif raw_target and raw_target.upper() not in (
+                        "SUSPENSE ACCOUNT",
+                        "SUSPENSE A/C",
+                        "SUSPENSE",
+                        "UNKNOWN",
+                    ):
                         # Sanitize party name formatting for new ledger entities
                         target_leg = raw_target
-                        if existing_names_upper and raw_target.upper() not in existing_names_upper:
-                            sanitized = self.extract_clean_party_from_narration(raw_target)
+                        if (
+                            existing_names_upper
+                            and raw_target.upper() not in existing_names_upper
+                        ):
+                            sanitized = self.extract_clean_party_from_narration(
+                                raw_target
+                            )
                             if sanitized and len(sanitized) >= 2:
                                 target_leg = sanitized
 
@@ -3743,19 +5909,33 @@ INSTRUCTIONS:
                                 r["group_hint"] = res["group_hint"]
                             applied_count += 1
                             mapped_success = True
-                            print(f"  🔮 [AI Mapping Resolved] '{narr}' → '{target_leg}' ({r.get('group_hint', '')}) [Conf: {conf}%]")
+                            print(
+                                f"  🔮 [AI Mapping Resolved] '{narr}' → '{target_leg}' ({r.get('group_hint', '')}) [Conf: {conf}%]"
+                            )
                         else:
-                            print(f"  ⚠️ [AI Assist Guard] Rejected AI suspense mapping '{target_leg}' for narration '{narr}' (word mismatch).")
-                
+                            print(
+                                f"  ⚠️ [AI Assist Guard] Rejected AI suspense mapping '{target_leg}' for narration '{narr}' (word mismatch)."
+                            )
+
                 # 2. Deterministic Clean Party Extraction Fallback
                 if not mapped_success:
                     extracted_party = self.extract_clean_party_from_narration(narr)
                     # CA Safeguard: Require at least 3 letters and valid name structure for clean party creation
-                    if extracted_party and len(extracted_party) >= 3 and not extracted_party.isdigit():
+                    if (
+                        extracted_party
+                        and len(extracted_party) >= 3
+                        and not extracted_party.isdigit()
+                    ):
                         master_grp = ledger_group_map.get(extracted_party.upper())
-                        target_group = master_grp if master_grp else self.classify_transaction_nature(
-                            narr, extracted_party, tx_type,
-                            amount=float(r.get("amount", 0) or 0)
+                        target_group = (
+                            master_grp
+                            if master_grp
+                            else self.classify_transaction_nature(
+                                narr,
+                                extracted_party,
+                                tx_type,
+                                amount=float(r.get("amount", 0) or 0),
+                            )
                         )
                         r["mapped_ledger"] = extracted_party
                         r["party_name"] = extracted_party
@@ -3763,18 +5943,28 @@ INSTRUCTIONS:
                         r["group_hint"] = target_group
                         r["confidence_score"] = 80
                         if r.get("flags"):
-                            r["flags"] = [f for f in r["flags"] if f not in ("Suspense Mapping", "Unmapped Ledger")]
-                        print(f"  ✅ [Clean Party Auto-Extraction] '{narr}' → '{extracted_party}' ({target_group})")
+                            r["flags"] = [
+                                f
+                                for f in r["flags"]
+                                if f not in ("Suspense Mapping", "Unmapped Ledger")
+                            ]
+                        print(
+                            f"  ✅ [Clean Party Auto-Extraction] '{narr}' → '{extracted_party}' ({target_group})"
+                        )
                     else:
                         r["mapped_ledger"] = "Suspense Account"
                         r["party_name"] = "Suspense Account"
                         r["party"] = "Suspense Account"
                         r["group_hint"] = "Suspense Account"
-                        r["confidence_score"] = 40
-                        r["flags"] = ["Low Confidence (< 75%)", "Human Review Required"]
-                        print(f"  🛡️ [CA Safeguard] Ambiguous clean party for '{narr}'. Maintained in Suspense Account for human review.")
+                        r["confidence_score"] = 0
+                        r["flags"] = ["Low Confidence (< 100%)", "Human Review Required"]
+                        print(
+                            f"  🛡️ [CA Safeguard] Ambiguous clean party for '{narr}'. Maintained in Suspense Account for human review."
+                        )
 
-        print(f"🔮 [AI Mapping Assist] Finished processing suspense entries ({applied_count} AI resolved).")
+        print(
+            f"🔮 [AI Mapping Assist] Finished processing suspense entries ({applied_count} AI resolved)."
+        )
         return result_json
 
     def extract_opening_balances(self, file_path: str, existing_ledgers: list) -> dict:
@@ -3784,10 +5974,10 @@ INSTRUCTIONS:
         ext = os.path.splitext(file_path)[1].lower()
         if not self.api_key:
             raise ValueError("Gemini API Key is not configured.")
-            
+
         client = self._get_client()
         print(f"Extracting opening balances from {file_path} using Gemini API...")
-        
+
         schema_str = """{
     "status": "success",
     "extracted_data": [
@@ -3821,15 +6011,20 @@ Return your response strictly in the following JSON format matching this schema:
 
         doc_file = None
         try:
-            if ext == '.pdf':
+            if ext == ".pdf":
                 doc_file = client.files.upload(file=file_path)
                 contents = [doc_file, prompt]
-            elif ext in ['.xlsx', '.xls', '.csv']:
+            elif ext in [".xlsx", ".xls", ".csv"]:
                 import pandas as pd
-                df = pd.read_excel(file_path) if ext in ['.xlsx', '.xls'] else pd.read_csv(file_path)
+
+                df = (
+                    pd.read_excel(file_path)
+                    if ext in [".xlsx", ".xls"]
+                    else pd.read_csv(file_path)
+                )
                 csv_data = df.to_csv(index=False)
                 contents = [f"SPREADSHEET DATA:\n{csv_data}", prompt]
-            elif ext in ['.jpg', '.jpeg', '.png']:
+            elif ext in [".jpg", ".jpeg", ".png"]:
                 doc_file = client.files.upload(file=file_path)
                 contents = [doc_file, prompt]
             else:
@@ -3839,7 +6034,7 @@ Return your response strictly in the following JSON format matching this schema:
                 client=client,
                 model=self.model_name or "gemini-3.1-flash-lite",
                 contents=contents,
-                config=make_config("application/json")
+                config=make_config("application/json"),
             )
 
             result_text = response.text.strip() if response and response.text else ""
@@ -3868,27 +6063,28 @@ Return your response strictly in the following JSON format matching this schema:
         """
         CRITICAL POST-PROCESSING: Mathematically validates and auto-corrects
         Receipt/Payment type swaps that Gemini commonly makes.
-        
+
         Algorithm:
         1. Sort extracted transactions by date to get chronological order.
         2. Walk through each transaction using the running_balance field.
         3. If balance INCREASED → must be a Receipt (deposit). If Gemini said Payment → FIX IT.
         4. If balance DECREASED → must be a Payment (withdrawal). If Gemini said Receipt → FIX IT.
         5. Also corrects the amount if it doesn't match the balance delta.
-        
+
         This is deterministic and 100% reliable as it uses actual bank balance math,
         not AI guesswork about which column an amount belongs to.
         """
         extracted = result_json.get("extracted_data", [])
         if not extracted:
             return result_json
-        
+
         fixes_applied = 0
         amount_fixes = 0
-        
+
         # Determine original chronological direction (newest on top vs oldest on top)
         # using first and last valid dates.
         from datetime import datetime
+
         valid_dates = []
         for r in extracted:
             dt_str = r.get("date", "")
@@ -3898,12 +6094,12 @@ Return your response strictly in the following JSON format matching this schema:
                     valid_dates.append(dt)
                 except:
                     pass
-                    
+
         is_reverse = False
         if len(valid_dates) >= 2:
             if valid_dates[0] > valid_dates[-1]:
                 is_reverse = True
-                
+
         # To validate mathematically:
         # We need the transactions in ascending chronological order (oldest on top)
         # so that running_balance increases on Receipt and decreases on Payment.
@@ -3911,106 +6107,159 @@ Return your response strictly in the following JSON format matching this schema:
         # This keeps same-day transactions in their correct relative order.
         working_data = list(extracted)
         if is_reverse:
-            print("🔄 [Math Validator] Detected reverse chronological statement. Reversing for validation...")
+            print(
+                "🔄 [Math Validator] Detected reverse chronological statement. Reversing for validation..."
+            )
             working_data.reverse()
-            
+
         prev_balance = None
         for i, row in enumerate(working_data):
             try:
                 running_bal_raw = row.get("running_balance")
                 amount_raw = row.get("amount", 0.0)
                 tx_type = str(row.get("transaction_type", "")).strip().capitalize()
-                
+
                 if running_bal_raw is None or str(running_bal_raw).strip() == "":
                     prev_balance = None
                     continue
-                    
-                bal_clean = str(running_bal_raw).replace(",", "").replace("Cr", "").replace("Dr", "").replace("cr", "").replace("dr", "").strip()
+
+                bal_clean = (
+                    str(running_bal_raw)
+                    .replace(",", "")
+                    .replace("Cr", "")
+                    .replace("Dr", "")
+                    .replace("cr", "")
+                    .replace("dr", "")
+                    .strip()
+                )
                 try:
                     running_bal = float(bal_clean)
                 except ValueError:
                     prev_balance = None
                     continue
-                    
+
                 if running_bal == 0.0:
                     prev_balance = None
                     continue
-                    
-                amt_clean = str(amount_raw or 0.0).replace(",", "").replace("Cr", "").replace("Dr", "").replace("cr", "").replace("dr", "").strip()
+
+                amt_clean = (
+                    str(amount_raw or 0.0)
+                    .replace(",", "")
+                    .replace("Cr", "")
+                    .replace("Dr", "")
+                    .replace("cr", "")
+                    .replace("dr", "")
+                    .strip()
+                )
                 try:
                     amount_val = float(amt_clean)
                 except ValueError:
                     amount_val = 0.0
-                    
+
                 if prev_balance is not None:
                     delta = round(running_bal - prev_balance, 2)
-                    
+
                     if delta > 0:
                         # Balance INCREASED → this MUST be a Receipt (deposit)
                         if tx_type != "Receipt":
                             old_type = tx_type
                             row["transaction_type"] = "Receipt"
                             fixes_applied += 1
-                            print(f"🔧 TX_TYPE FIX row {i}: '{old_type}' → 'Receipt' (balance ↑ {prev_balance:.2f} → {running_bal:.2f})")
-                            
+                            print(
+                                f"🔧 TX_TYPE FIX row {i}: '{old_type}' → 'Receipt' (balance ↑ {prev_balance:.2f} → {running_bal:.2f})"
+                            )
+
                         # Fix amount if it doesn't match the delta
                         if amount_val > 0 and abs(amount_val - delta) > 1.0:
                             if abs(amount_val - delta) > 5.0:
                                 row["status"] = "Review"
-                                if "discrepancy" not in str(row.get("narration", "")).lower():
-                                    row["narration"] = f"[DISCREPANCY: Balance delta is {delta:.2f} but amount is {amount_val:.2f}] " + row.get("narration", "")
+                                if (
+                                    "discrepancy"
+                                    not in str(row.get("narration", "")).lower()
+                                ):
+                                    row["narration"] = (
+                                        f"[DISCREPANCY: Balance delta is {delta:.2f} but amount is {amount_val:.2f}] "
+                                        + row.get("narration", "")
+                                    )
                                 warn_msg = f"⚠️ Balance Discrepancy Alert at Row {i+1} ({row.get('date')}): Running balance jump of ₹{abs(delta):,.2f} does not match transaction amount ₹{amount_val:,.2f}."
                                 warnings = result_json.setdefault("warnings", [])
                                 if warn_msg not in warnings:
                                     warnings.append(warn_msg)
-                                print(f"⚠️ Balance discrepancy at row {i}: Reconciled delta is {delta:.2f} but amount is {amount_val:.2f}. Not overwriting.")
+                                print(
+                                    f"⚠️ Balance discrepancy at row {i}: Reconciled delta is {delta:.2f} but amount is {amount_val:.2f}. Not overwriting."
+                                )
                             else:
                                 row["amount"] = round(delta, 2)
                                 amount_fixes += 1
-                                print(f"🔧 AMOUNT FIX row {i}: {amount_val:.2f} → {delta:.2f} (from balance delta)")
-                                
+                                print(
+                                    f"🔧 AMOUNT FIX row {i}: {amount_val:.2f} → {delta:.2f} (from balance delta)"
+                                )
+
                     elif delta < 0:
                         # Balance DECREASED → this MUST be a Payment (withdrawal)
                         if tx_type != "Payment":
                             old_type = tx_type
                             row["transaction_type"] = "Payment"
                             fixes_applied += 1
-                            print(f"🔧 TX_TYPE FIX row {i}: '{old_type}' → 'Payment' (balance ↓ {prev_balance:.2f} → {running_bal:.2f})")
-                            
+                            print(
+                                f"🔧 TX_TYPE FIX row {i}: '{old_type}' → 'Payment' (balance ↓ {prev_balance:.2f} → {running_bal:.2f})"
+                            )
+
                         abs_delta = abs(delta)
                         if amount_val > 0 and abs(amount_val - abs_delta) > 1.0:
                             if abs(amount_val - abs_delta) > 5.0:
                                 row["status"] = "Review"
-                                if "discrepancy" not in str(row.get("narration", "")).lower():
-                                    row["narration"] = f"[DISCREPANCY: Balance delta is {abs_delta:.2f} but amount is {amount_val:.2f}] " + row.get("narration", "")
+                                if (
+                                    "discrepancy"
+                                    not in str(row.get("narration", "")).lower()
+                                ):
+                                    row["narration"] = (
+                                        f"[DISCREPANCY: Balance delta is {abs_delta:.2f} but amount is {amount_val:.2f}] "
+                                        + row.get("narration", "")
+                                    )
                                 warn_msg = f"⚠️ Balance Discrepancy Alert at Row {i+1} ({row.get('date')}): Running balance jump of ₹{abs_delta:,.2f} does not match transaction amount ₹{amount_val:,.2f}."
                                 warnings = result_json.setdefault("warnings", [])
                                 if warn_msg not in warnings:
                                     warnings.append(warn_msg)
-                                print(f"⚠️ Balance discrepancy at row {i}: Reconciled delta is {abs_delta:.2f} but amount is {amount_val:.2f}. Not overwriting.")
+                                print(
+                                    f"⚠️ Balance discrepancy at row {i}: Reconciled delta is {abs_delta:.2f} but amount is {amount_val:.2f}. Not overwriting."
+                                )
                             else:
                                 row["amount"] = round(abs_delta, 2)
                                 amount_fixes += 1
-                                print(f"🔧 AMOUNT FIX row {i}: {amount_val:.2f} → {abs_delta:.2f} (from balance delta)")
-                                
+                                print(
+                                    f"🔧 AMOUNT FIX row {i}: {amount_val:.2f} → {abs_delta:.2f} (from balance delta)"
+                                )
+
                 prev_balance = running_bal
             except Exception as e:
                 print(f"⚠️ Validation skipped for row {i}: {e}")
                 continue
-                
+
         # Always maintain forward chronological order (Month Start 1st of month first)
         if is_reverse:
-            print("📅 Keeping validated transactions in Forward Chronological Order (1st of month first).")
-            
+            print(
+                "📅 Keeping validated transactions in Forward Chronological Order (1st of month first)."
+            )
+
         if fixes_applied > 0 or amount_fixes > 0:
-            print(f"✅ Balance Validation Complete: {fixes_applied} type fix(es), {amount_fixes} amount fix(es) auto-corrected.")
+            print(
+                f"✅ Balance Validation Complete: {fixes_applied} type fix(es), {amount_fixes} amount fix(es) auto-corrected."
+            )
         else:
-            print("✅ Balance Validation: All transaction types are mathematically correct.")
-            
+            print(
+                "✅ Balance Validation: All transaction types are mathematically correct."
+            )
+
         result_json["extracted_data"] = working_data
         return result_json
 
-    def generate_memory_rules_from_prompt(self, user_prompt: str, client_memory: dict = None, existing_ledgers: list = None) -> dict:
+    def generate_memory_rules_from_prompt(
+        self,
+        user_prompt: str,
+        client_memory: dict = None,
+        existing_ledgers: list = None,
+    ) -> dict:
         """
         Parses natural language user instructions and returns structured rules with categories,
         exact keys, target values, explanations, and concrete examples using Gemini API.
@@ -4019,12 +6268,17 @@ Return your response strictly in the following JSON format matching this schema:
             raise ValueError("Gemini API Key is not configured.")
 
         client = self._get_client()
-        
+
         ledgers_str = ""
         if existing_ledgers:
-            ledger_names = [l.get("name") if isinstance(l, dict) else str(l) for l in existing_ledgers[:100]]
-            ledgers_str = "AVAILABLE MIRACLE LEDGERS / ACCOUNTS IN DBF:\n" + "\n".join(f"- {name}" for name in ledger_names if name)
-            
+            ledger_names = [
+                l.get("name") if isinstance(l, dict) else str(l)
+                for l in existing_ledgers[:100]
+            ]
+            ledgers_str = "AVAILABLE MIRACLE LEDGERS / ACCOUNTS IN DBF:\n" + "\n".join(
+                f"- {name}" for name in ledger_names if name
+            )
+
         system_prompt = f"""You are an Expert Accounting Rule Engineer & AI Systems Architect.
 The user is an accountant or business owner providing natural language instructions/rules for their Miracle Accounting AI system.
 
@@ -4076,12 +6330,15 @@ Return ONLY a JSON object matching this schema:
                 client=client,
                 model=self.model_name,
                 contents=[system_prompt],
-                config=make_config("application/json")
+                config=make_config("application/json"),
             )
             text = response.text.strip() if response and response.text else "{}"
-            if text.startswith("```json"): text = text[7:]
-            if text.startswith("```"): text = text[3:]
-            if text.endswith("```"): text = text[:-3]
+            if text.startswith("```json"):
+                text = text[7:]
+            if text.startswith("```"):
+                text = text[3:]
+            if text.endswith("```"):
+                text = text[:-3]
             parsed = json.loads(text.strip())
             parsed["status"] = "success"
             return parsed
@@ -4090,7 +6347,7 @@ Return ONLY a JSON object matching this schema:
             return {
                 "status": "error",
                 "summary": f"Failed to generate AI rules: {e}",
-                "rules": []
+                "rules": [],
             }
 
     def optimize_and_synthesize_memory_rules(self, raw_rules: dict) -> dict:
@@ -4101,9 +6358,11 @@ Return ONLY a JSON object matching this schema:
         """
         if not raw_rules or not isinstance(raw_rules, dict):
             return raw_rules or {}
-            
+
         if not self.api_key:
-            print("⚠️ Gemini API key not configured for rule optimization, using fallback.")
+            print(
+                "⚠️ Gemini API key not configured for rule optimization, using fallback."
+            )
             return raw_rules
 
         try:
@@ -4141,51 +6400,67 @@ Example Output:
                 client=client,
                 model=self.model_name,
                 contents=[prompt],
-                config=make_config("application/json")
+                config=make_config("application/json"),
             )
             raw_text = response.text.strip() if response and response.text else "{}"
-            if raw_text.startswith("```json"): raw_text = raw_text[7:]
-            if raw_text.startswith("```"): raw_text = raw_text[3:]
-            if raw_text.endswith("```"): raw_text = raw_text[:-3]
-            
+            if raw_text.startswith("```json"):
+                raw_text = raw_text[7:]
+            if raw_text.startswith("```"):
+                raw_text = raw_text[3:]
+            if raw_text.endswith("```"):
+                raw_text = raw_text[:-3]
+
             clean_dict = json.loads(raw_text.strip())
             if isinstance(clean_dict, dict) and clean_dict:
-                print(f"✨ [Gemini AI Memory Optimization] Synthesized {len(raw_rules)} raw rules into {len(clean_dict)} clean AI Brain mappings.")
+                print(
+                    f"✨ [Gemini AI Memory Optimization] Synthesized {len(raw_rules)} raw rules into {len(clean_dict)} clean AI Brain mappings."
+                )
                 return clean_dict
         except Exception as e:
             print(f"⚠️ [Gemini AI Memory Optimization] Error: {e}")
-            
+
         return raw_rules
 
-    def parse_excel_and_map_rules(self, file_path: str, existing_ledgers: list = None) -> dict:
+    def parse_excel_and_map_rules(
+        self, file_path: str, existing_ledgers: list = None
+    ) -> dict:
         """
         Reads any Excel (.xlsx, .xls, .csv) file, uses Gemini AI to understand column headers & row content,
         and extracts structured memory rules (expense_mappings, product_catalog, supplier_catalog).
         """
         excel_text = ""
-        if file_path.endswith(('.xlsx', '.xls')):
+        if file_path.endswith((".xlsx", ".xls")):
             excel_text = self._read_excel_text_native(file_path)
-        elif file_path.endswith('.csv'):
+        elif file_path.endswith(".csv"):
             try:
-                with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
+                with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
                     excel_text = f.read()
             except Exception:
                 pass
 
         if not excel_text or len(excel_text.strip()) < 10:
             try:
-                with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
+                with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
                     excel_text = f.read()
             except Exception:
                 pass
 
         if not excel_text or len(excel_text.strip()) < 10:
-            return {"expense_mappings": {}, "product_catalog": {}, "supplier_catalog": {}}
+            return {
+                "expense_mappings": {},
+                "product_catalog": {},
+                "supplier_catalog": {},
+            }
 
         ledgers_str = ""
         if existing_ledgers:
-            ledger_names = [l.get("name") if isinstance(l, dict) else str(l) for l in existing_ledgers[:100]]
-            ledgers_str = "AVAILABLE MIRACLE LEDGERS IN DBF:\n" + "\n".join(f"- {name}" for name in ledger_names if name)
+            ledger_names = [
+                l.get("name") if isinstance(l, dict) else str(l)
+                for l in existing_ledgers[:100]
+            ]
+            ledgers_str = "AVAILABLE MIRACLE LEDGERS IN DBF:\n" + "\n".join(
+                f"- {name}" for name in ledger_names if name
+            )
 
         prompt = f"""
 You are an expert Indian CA Accountant & AI Memory Import Engine for Miracle Accounting.
@@ -4218,23 +6493,29 @@ REQUIREMENTS:
                 client=client,
                 model=self.model_name,
                 contents=[prompt],
-                config=make_config("application/json")
+                config=make_config("application/json"),
             )
             raw_text = response.text.strip() if response and response.text else "{}"
-            if raw_text.startswith("```json"): raw_text = raw_text[7:]
-            if raw_text.startswith("```"): raw_text = raw_text[3:]
-            if raw_text.endswith("```"): raw_text = raw_text[:-3]
-            
+            if raw_text.startswith("```json"):
+                raw_text = raw_text[7:]
+            if raw_text.startswith("```"):
+                raw_text = raw_text[3:]
+            if raw_text.endswith("```"):
+                raw_text = raw_text[:-3]
+
             parsed = json.loads(raw_text.strip())
             if isinstance(parsed, dict):
-                print(f"✨ [Gemini AI Excel Import] Extracted memory rules from Excel file '{os.path.basename(file_path)}'")
+                print(
+                    f"✨ [Gemini AI Excel Import] Extracted memory rules from Excel file '{os.path.basename(file_path)}'"
+                )
                 return parsed
         except Exception as e:
             print(f"❌ Error in parse_excel_and_map_rules: {e}")
 
         # Deterministic regex fallback if Gemini AI is offline
         native_mappings = self._extract_native_excel_mappings(excel_text)
-        return {"expense_mappings": native_mappings, "product_catalog": {}, "supplier_catalog": {}}
-
-
-
+        return {
+            "expense_mappings": native_mappings,
+            "product_catalog": {},
+            "supplier_catalog": {},
+        }
