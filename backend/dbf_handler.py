@@ -1,4 +1,5 @@
 import contextlib
+import logging
 import os
 import threading
 import time
@@ -6,10 +7,25 @@ from datetime import date
 import re
 from dbfread import DBF
 
+# Module-level logger — replaces all print() calls for proper log management
+# Log level can be controlled via DBF_LOG_LEVEL env var (e.g. DEBUG, INFO, WARNING)
+logger = logging.getLogger(__name__)
+_log_level = os.getenv('DBF_LOG_LEVEL', 'INFO').upper()
+logging.basicConfig(
+    level=getattr(logging, _log_level, logging.INFO),
+    format='%(asctime)s [%(levelname)s] %(name)s: %(message)s'
+)
+
+# Pre‑compiled regex patterns for performance
+_GST_REGEX = re.compile(r'GST\s*(\d{1,2})\s*%?', re.IGNORECASE)
+# Fixed: was r'^YR\\d+$' (double-backslash, never matched) → now correct single backslash
+_YEAR_REGEX = re.compile(r'^YR\d+$', re.IGNORECASE)
+
 class MiracleDBFHandler:
     _CROSS_YEAR_CACHE = {}  # {(client_path, active_year_folder): (timestamp, ledgers_list)}
     _CROSS_YEAR_CACHE_LOCK = threading.Lock()
-    _CROSS_YEAR_CACHE_TTL = 60.0  # 60 seconds TTL
+    # Cache TTL in seconds; default overridden by env var for flexibility
+    _CROSS_YEAR_CACHE_TTL = int(os.getenv('CROSS_YEAR_CACHE_TTL', '300'))  # 300 seconds default
 
     @classmethod
     def clear_cross_year_cache(cls, client_path: str = None):
@@ -173,7 +189,7 @@ class MiracleDBFHandler:
                 if k_lower in field_lengths:
                     f_len = field_lengths[k_lower]
                     if len(s_val) > f_len:
-                        print(f"⚠️ Auto-truncating DBF field '{k}' from {len(s_val)} to max DBF width {f_len} (Value: '{s_val[:f_len]}')")
+                        logger.warning(f"⚠️ Auto-truncating DBF field '{k}' from {len(s_val)} to max DBF width {f_len} (Value: '{s_val[:f_len]}')")
                         s_val = s_val[:f_len]
                 cleaned[k] = s_val
             elif isinstance(v, dict):
@@ -268,7 +284,7 @@ class MiracleDBFHandler:
                 if gstin and len(gstin) >= 2 and gstin[:2].isdigit():
                     return gstin[:2]
         except Exception as e:
-            print(f"Error reading company state code from DBF: {e}")
+            logger.error(f"Error reading company state code from DBF: {e}")
             
         return '24'  # default fallback
 
@@ -313,8 +329,17 @@ class MiracleDBFHandler:
                         't41_size': t41_size
                     })
         except Exception as e:
-            print(f"Error listing year folders in {self.client_path}: {e}")
+            logger.error(f"Error listing year folders in {self.client_path}: {e}")
         return result
+
+    # Cache miss counter for monitoring cache effectiveness
+    _CACHE_MISS_COUNT = 0
+
+    def _increment_cache_miss(self):
+        self.__class__._CACHE_MISS_COUNT += 1
+
+    def get_cache_miss_count(self) -> int:
+        return self.__class__._CACHE_MISS_COUNT
 
     def get_latest_year_folder(self) -> str:
         """
@@ -385,7 +410,7 @@ class MiracleDBFHandler:
                             "voucher_suffix": suffix
                         }
             except Exception as e:
-                print(f"Error reading RKCMPF01.DBF in {self.client_path}: {e}")
+                logger.error(f"Error reading RKCMPF01.DBF in {self.client_path}: {e}")
 
         # Fill in missing folders by inspecting RKACCT41.DBF
         available = self.get_available_year_folders()
@@ -420,7 +445,7 @@ class MiracleDBFHandler:
                                 fy_start = f"{dominant_fy}-04-01"
                                 fy_end = f"{dominant_fy + 1}-03-31"
                     except Exception as e:
-                        print(f"Error reading dates for folder {y_name}: {e}")
+                        logger.error(f"Error reading dates for folder {y_name}: {e}")
 
                 bounds[y_name] = {
                     "fy_start": fy_start,
@@ -513,7 +538,7 @@ class MiracleDBFHandler:
                             "name": r.get('FIELD02', '')
                         }
             except Exception as e:
-                print(f"⚠️ [Resolver] Error reading RKYRM45: {e}")
+                logger.error(f"⚠️ [Resolver] Error reading RKYRM45: {e}")
                 
         # Fill in missing ones using fallbacks
         for k, v in fallbacks.items():
@@ -550,7 +575,15 @@ class MiracleDBFHandler:
 
         records = []
         try:
+            # Measure DBF load time for monitoring
+            start_time = time.time()
             table = DBF(file_path, load=True, encoding='cp1252')
+            load_duration = time.time() - start_time
+            if load_duration > 5:
+                logger.warning("⚠️ DBF load for %s took %.2fs (exceeds 5s threshold)", file_path, load_duration)
+            # Increment cache miss counter when loading fresh data
+            self._increment_cache_miss()
+
             for idx, record in enumerate(table):
                 if idx >= limit:
                     break
@@ -558,6 +591,7 @@ class MiracleDBFHandler:
             return records
         except Exception as e:
             raise Exception(f"Failed to read {file_path}: {str(e)}")
+
 
     def get_all_ledgers(self, year_folder: str | None = None) -> list:
         """Helper alias for reading classified ledgers across all years."""
@@ -599,7 +633,7 @@ class MiracleDBFHandler:
                     for r in m02_table.records: # type: ignore
                         print_names[r.get('FIELD01')] = r['FIELD61']
                 except Exception as ex:
-                    print(f"Warning: Failed to load print names: {ex}")
+                    logger.error(f"Warning: Failed to load print names: {ex}")
             
             # Load Groups (m11) if available
             groups = {}
@@ -612,7 +646,7 @@ class MiracleDBFHandler:
                             'parent': r['FIELD04']
                         }
                 except Exception as ex:
-                    print(f"Warning: Failed to load account groups: {ex}")
+                    logger.error(f"Warning: Failed to load account groups: {ex}")
             
             # Classification helper walking up the group hierarchy
             def classify_group(group_code):
@@ -799,7 +833,7 @@ class MiracleDBFHandler:
 
             return list(groups_dict.values())
         except Exception as e:
-            print(f"Error reading account groups for {year_folder}: {e}")
+            logger.error(f"Error reading account groups for {year_folder}: {e}")
             return []
 
     get_account_groups = read_account_groups
@@ -832,7 +866,7 @@ class MiracleDBFHandler:
             if cache_key in MiracleDBFHandler._CROSS_YEAR_CACHE:
                 cache_time, cached_ledgers = MiracleDBFHandler._CROSS_YEAR_CACHE[cache_key]
                 if (now - cache_time) < MiracleDBFHandler._CROSS_YEAR_CACHE_TTL:
-                    print(f"⚡ [Ledger Cache HIT] Serviced {len(cached_ledgers)} ledgers from RAM in 0.0001s.")
+                    logger.info(f"⚡ [Ledger Cache HIT] Serviced {len(cached_ledgers)} ledgers from RAM in 0.0001s.")
                     return [l.copy() for l in cached_ledgers]
         
         all_folders = self.get_available_year_folders()
@@ -854,10 +888,10 @@ class MiracleDBFHandler:
                         merged[composite_key] = led  # later year overwrites earlier (active year wins)
             except Exception as e:
                 # If a year folder has no ledger file, skip it silently
-                print(f"  [cross-year] Skipped {yr}: {e}")
+                logger.info(f"  [cross-year] Skipped {yr}: {e}")
         
         result = list(merged.values())
-        print(f"[cross-year ledger merge] {len(result)} unique ledgers found across {len(folder_names)} year folders.")
+        logger.info(f"[cross-year ledger merge] {len(result)} unique ledgers found across {len(folder_names)} year folders.")
         with MiracleDBFHandler._CROSS_YEAR_CACHE_LOCK:
             MiracleDBFHandler._CROSS_YEAR_CACHE[cache_key] = (now, result)
         return result
@@ -973,7 +1007,7 @@ class MiracleDBFHandler:
                                 last_dates[code] = dt
                     t01.close()
                 except Exception as e:
-                    print(f"Error reading T01 for dates: {e}")
+                    logger.error(f"Error reading T01 for dates: {e}")
                     
         # Convert to string formats
         return {code: dt.strftime('%Y-%m-%d') for code, dt in last_dates.items()}
@@ -986,7 +1020,7 @@ class MiracleDBFHandler:
                 if keyword.upper() in led['name'].upper() or keyword.upper() in led['print_name'].upper():
                     return led['code']
         except Exception as e:
-            print(f"Error finding ledger by keyword '{keyword}': {e}")
+            logger.error(f"Error finding ledger by keyword '{keyword}': {e}")
         return ""
 
     def get_or_create_dynamic_ledger(self, keyword: str, ledger_name: str, group_code: str, parent_group: str, year_folder: str | None = None) -> str:
@@ -996,7 +1030,7 @@ class MiracleDBFHandler:
         if existing_code:
             return existing_code
             
-        print(f"Ledger for '{keyword}' not found. Creating new ledger: {ledger_name}")
+        logger.info(f"Ledger for '{keyword}' not found. Creating new ledger: {ledger_name}")
 
         if not year_folder:
             year_folder = self.get_latest_year_folder()
@@ -1111,7 +1145,7 @@ class MiracleDBFHandler:
                 })
             return products
         except Exception as e:
-            print(f"Error reading products for {year_folder}: {e}")
+            logger.error(f"Error reading products for {year_folder}: {e}")
             return []
 
     def read_products_all_years(self) -> list:
@@ -1170,7 +1204,7 @@ class MiracleDBFHandler:
                         break
                 t.close()
         except Exception as e:
-            print(f"[sync] Could not read source RKACCM01 record for {party_name}: {e}")
+            logger.warning(f"[sync] Could not read source RKACCM01 record for {party_name}: {e}")
             return
             
         try:
@@ -1185,10 +1219,10 @@ class MiracleDBFHandler:
                         break
                 t.close()
         except Exception as e:
-            print(f"[sync] Could not read source RKACCM02 record for {party_name}: {e}")
+            logger.warning(f"[sync] Could not read source RKACCM02 record for {party_name}: {e}")
         
         if not src_m01_record:
-            print(f"[sync] No M01 record found for party_code={party_code}, skipping sync.")
+            logger.warning(f"[sync] No M01 record found for party_code={party_code}, skipping sync.")
             return
         
         # Write to each other year folder
@@ -1229,7 +1263,7 @@ class MiracleDBFHandler:
                                         if 'M01F05' in src_m01_record and src_m01_record['M01F05']:
                                             kw1['M01F05'] = src_m01_record['M01F05']
                                         dbf_lib.write(r, **kw1)
-                                        print(f"[sync] Updated {party_name} ({party_code}) in {yr} RKACCM01 (Name/Group/GSTIN).")
+                                        logger.info(f"[sync] Updated {party_name} ({party_code}) in {yr} RKACCM01 (Name/Group/GSTIN).")
                                         break
                         finally:
                             t.close()
@@ -1260,7 +1294,7 @@ class MiracleDBFHandler:
                         t.open(mode=dbf_lib.READ_WRITE)
                         try:
                             t.append(self.clean_record_dict(src_m01_record, table=t))
-                            print(f"[sync] ✅ Synced {party_name} ({party_code}) M01 → {yr}")
+                            logger.info(f"[sync] ✅ Synced {party_name} ({party_code}) M01 → {yr}")
                         finally:
                             t.close()
                 
@@ -1275,7 +1309,7 @@ class MiracleDBFHandler:
                             t.close()
             except Exception as e:
                 # Non-fatal: if sync to one year fails, continue with others
-                print(f"[sync] ⚠️ Failed to sync {party_name} to {yr}: {e}")
+                logger.error(f"[sync] ⚠️ Failed to sync {party_name} to {yr}: {e}")
 
     def sync_closing_balances_to_next_year(self, source_year_folder: str, affected_ledger_codes: list | None = None):
         """
@@ -1357,12 +1391,12 @@ class MiracleDBFHandler:
                             if not dbf_lib.is_deleted(r):
                                 if str(r['FIELD01']).strip() == code:
                                     dbf_lib.write(r, FIELD08=closing_amt, FIELD09=closing_type)
-                                    print(f"[carry-forward] ✅ Updated Opening Balance for {m.get('name')} ({code}) in {next_folder} to {closing_amt} ({'DB' if closing_type=='1' else 'CR'})")
+                                    logger.info(f"[carry-forward] ✅ Updated Opening Balance for {m.get('name')} ({code}) in {next_folder} to {closing_amt} ({'DB' if closing_type=='1' else 'CR'})")
                                     break
                     finally:
                         t.close()
             except Exception as ex:
-                print(f"[carry-forward] ⚠️ Could not update opening balance in {next_folder} for {code}: {ex}")
+                logger.warning(f"[carry-forward] ⚠️ Could not update opening balance in {next_folder} for {code}: {ex}")
 
     def create_party_ledger(self, name: str, module: str, gstin: str = "", address: str = "", city: str = "", pincode: str = "", year_folder: str | None = None, transaction_type: str = "", group_hint: str = "", explicit_group_code: str = "") -> str:
         """Automatically creates a new party ledger in RKACCM01 and RKACCM02. Handles B2B and B2C based on gstin."""
@@ -1408,7 +1442,7 @@ class MiracleDBFHandler:
                     resolved_groups[g_name] = {"code": g_code, "parent": g_parent}
                     group_code_to_parent[g_code] = g_parent
             except Exception as ex:
-                print(f"Warning: Failed to load groups in create_party_ledger: {ex}")
+                logger.error(f"Warning: Failed to load groups in create_party_ledger: {ex}")
 
         def find_group_by_name(pattern_list, fallback_code, fallback_parent):
             for pattern in pattern_list:
@@ -1609,7 +1643,7 @@ class MiracleDBFHandler:
                         if rec_name == name_up:
                             existing_code = str(record['FIELD01']).strip()
                             t01.close()
-                            print(f"[create_party_ledger] Party '{name}' already exists in RKACCM01 with code {existing_code}. Returning existing code.")
+                            logger.info(f"[create_party_ledger] Party '{name}' already exists in RKACCM01 with code {existing_code}. Returning existing code.")
                             return existing_code
 
                 existing_codes = {str(r['FIELD01']).strip().upper() for r in t01}
@@ -1687,7 +1721,7 @@ class MiracleDBFHandler:
 
         # Ledger created strictly in target year_folder (selected/current year)
 
-        print(f"Auto-created new {'B2B' if is_registered else 'B2C'} ledger: {name} ({led_code}) with GSTIN {gstin}")
+        logger.info(f"Auto-created new {'B2B' if is_registered else 'B2C'} ledger: {name} ({led_code}) with GSTIN {gstin}")
         return led_code
 
     def resolve_group_code_from_hint(self, group_hint: str) -> str:
@@ -1766,7 +1800,7 @@ class MiracleDBFHandler:
                             if gstin:
                                 dbf.write(record, M01F05=gstin)
                             target_code = str(record['FIELD01']).strip()
-                            print(f"[update_party_ledger] Updated ledger '{old_name}' -> '{new_name}' ({target_code}) in RKACCM01.DBF")
+                            logger.info(f"[update_party_ledger] Updated ledger '{old_name}' -> '{new_name}' ({target_code}) in RKACCM01.DBF")
                             break
             finally:
                 t01.close()
@@ -1793,7 +1827,7 @@ class MiracleDBFHandler:
 
         if not target_code:
             # If old_name was a raw narration or uncreated party, create it as a new master ledger
-            print(f"[update_party_ledger] Ledger '{old_name}' not found in RKACCM01.DBF. Creating new ledger '{new_name}'...")
+            logger.info(f"[update_party_ledger] Ledger '{old_name}' not found in RKACCM01.DBF. Creating new ledger '{new_name}'...")
             target_code = self.create_party_ledger(
                 name=new_name,
                 module="Bank Statements",
@@ -1919,7 +1953,7 @@ class MiracleDBFHandler:
                     t01.close()
                     
         if updated_m02:
-            print(f"Dynamically updated details for party {party_code} in RKACCM02/01.")
+            logger.info(f"Dynamically updated details for party {party_code} in RKACCM02/01.")
             
     def get_or_create_gst_commodity(self, hsn: str, gst_pct: float, is_service: bool, year_folder: str | None = None) -> str:
         """
@@ -1937,7 +1971,7 @@ class MiracleDBFHandler:
         if not os.path.exists(m18_path): m18_path = self._get_table_path('rkaccm18.dbf', year_folder)
         
         if not os.path.exists(m14_path) or not os.path.exists(m18_path):
-            print("Warning: Commodity tables not found, falling back to generic commodity")
+            logger.warning("Warning: Commodity tables not found, falling back to generic commodity")
             return "CNGT" if gst_pct <= 0 else "C004"
             
         import dbf
@@ -1961,7 +1995,7 @@ class MiracleDBFHandler:
                     return code
             m14.close()
         except Exception as e:
-            print(f"Error searching RKACCM14: {e}")
+            logger.error(f"Error searching RKACCM14: {e}")
             
         # 2. Fallback to standard, fully-supported pre-existing commodity codes in Miracle.
         # This prevents invalid commodity code errors and completely eliminates red text bugs.
@@ -1979,7 +2013,7 @@ class MiracleDBFHandler:
         else:
             commodity_code = "C005"
             
-        print(f"Fallback standard GST Commodity selected for HSN {hsn_clean}: {commodity_code} (GST: {pct}%)")
+        logger.info(f"Fallback standard GST Commodity selected for HSN {hsn_clean}: {commodity_code} (GST: {pct}%)")
         return commodity_code
 
     def find_dynamic_product_for_gst(self, gst_pct: float, module: str = "Purchases", year_folder: str | None = None) -> str:
@@ -2172,15 +2206,15 @@ class MiracleDBFHandler:
                                 
                             if needs_update:
                                 dbf.write(r, **self.clean_record_dict(update_kwargs))
-                                print(f"Updated existing product '{search_name}' fields: {update_kwargs}")
+                                logger.info(f"Updated existing product '{search_name}' fields: {update_kwargs}")
                                 
                             break
                     except Exception as ex:
-                        print(f"Error processing record during M21 search: {ex}")
+                        logger.error(f"Error processing record during M21 search: {ex}")
                         continue
                 m21.close()
             except Exception as e:
-                print(f"Error searching/updating M21: {e}")
+                logger.error(f"Error searching/updating M21: {e}")
                 
         if existing_code:
             return existing_code
@@ -2245,11 +2279,11 @@ class MiracleDBFHandler:
             # Register in RKACCGID
             self._register_guid('YRM21', new_code, is_header=False)
             
-            print(f"Created new Product: {search_name} -> {new_code} (HSN: {hsn}, UOM: {short_uom}, UQC: {uqc_str}, Commodity: {commodity_code})")
+            logger.info(f"Created new Product: {search_name} -> {new_code} (HSN: {hsn}, UOM: {short_uom}, UQC: {uqc_str}, Commodity: {commodity_code})")
             return new_code
             
         except Exception as e:
-            print(f"Failed to create Product {search_name}: {e}")
+            logger.error(f"Failed to create Product {search_name}: {e}")
             return 'P0000001'
 
     def detect_format_settings(self, year_folder: str, voucher_types: list) -> dict:
@@ -2299,7 +2333,7 @@ class MiracleDBFHandler:
                                 f83_counter[f83] += 1
                     table.close()
             except Exception as e:
-                print(f"Error scanning format in {yr}: {e}")
+                logger.error(f"Error scanning format in {yr}: {e}")
 
             # If we found at least some records, stop scanning older years
             if format_counter or f83_counter:
@@ -2401,7 +2435,7 @@ class MiracleDBFHandler:
                         
                 table.close()
             except Exception as e:
-                print(f"Error scanning {yr} DBF for auto-discovery: {e}")
+                logger.error(f"Error scanning {yr} DBF for auto-discovery: {e}")
 
             if not force_separate:
                 # Stop at first year that has ANY data (original behaviour)
@@ -2449,7 +2483,7 @@ class MiracleDBFHandler:
                         continue
                 tbl2.close()
             except Exception as e2:
-                print(f"FIELD03 detection error in {yr}: {e2}")
+                logger.error(f"FIELD03 detection error in {yr}: {e2}")
 
         # Pick the most common FIELD03 setup ID for each module type
         sales_setup_id = sales_f03_counter.most_common(1)[0][0] if sales_f03_counter else 5
@@ -2479,9 +2513,12 @@ class MiracleDBFHandler:
         sales_prefix = _pick_best(sales_counter, SALES_STARTS, "SS,SS")
         purchase_prefix = _pick_best(purchase_counter, PURCHASE_STARTS, "PP,PP")
         
-        print(f"Auto-discovered: sales_prefix='{sales_prefix}' purchase_prefix='{purchase_prefix}' "
-              f"sales_setup_id={sales_setup_id} purchase_setup_id={purchase_setup_id} "
-              f"(from {sum(sales_counter.values())} sales + {sum(purchase_counter.values())} purchase records)")
+        logger.info(
+            f"Auto-discovered: sales_prefix='{sales_prefix}' purchase_prefix='{purchase_prefix}' "
+            f"sales_setup_id={sales_setup_id} purchase_setup_id={purchase_setup_id} "
+            f"(from {sum(sales_counter.values())} sales + {sum(purchase_counter.values())} purchase records)"
+        )
+
         
         return {
             "sales_prefix": sales_prefix,
@@ -2550,7 +2587,7 @@ class MiracleDBFHandler:
                 if len(sales_bills) >= 5 and len(purch_bills) >= 5:
                     break
             except Exception as e:
-                print(f"Error scanning {yr} for bill formats: {e}")
+                logger.error(f"Error scanning {yr} for bill formats: {e}")
 
         def extract_pattern(bills):
             if not bills:
@@ -2617,8 +2654,8 @@ class MiracleDBFHandler:
         sales_pattern, sales_last_no = extract_pattern(sales_bills)
         purch_pattern, purch_last_no = extract_pattern(purch_bills)
         
-        print(f"Detected Sales Bill Format: pattern='{sales_pattern}', last_no={sales_last_no}")
-        print(f"Detected Purch Bill Format: pattern='{purch_pattern}', last_no={purch_last_no}")
+        logger.info(f"Detected Sales Bill Format: pattern='{sales_pattern}', last_no={sales_last_no}")
+        logger.info(f"Detected Purch Bill Format: pattern='{purch_pattern}', last_no={purch_last_no}")
 
         return {
             "sales_bill_format": sales_pattern,
@@ -2669,7 +2706,7 @@ class MiracleDBFHandler:
                 if attempt == max_retries - 1:
                     raise e
                 delay = base_delay * (2 ** attempt)
-                print(f"⚠️ Table {table.filename} is locked by another process (Wine/Miracle). Retrying open in {delay:.2f}s... (Attempt {attempt+1}/{max_retries})")
+                logger.warning(f"⚠️ Table {table.filename} is locked by another process (Wine/Miracle). Retrying open in {delay:.2f}s... (Attempt {attempt+1}/{max_retries})")
                 time.sleep(delay)
 
     @contextlib.contextmanager
@@ -2707,10 +2744,10 @@ class MiracleDBFHandler:
                     break  # Success, exit retry loop
                 except (IOError, PermissionError) as e:
                     if attempt == max_retries - 1:
-                        print(f"❌ Failed to acquire lock for CDX flag modification on {dbf_path} after {max_retries} attempts.")
+                        logger.error(f"❌ Failed to acquire lock for CDX flag modification on {dbf_path} after {max_retries} attempts.")
                         raise RuntimeError(f"Miracle DBF table '{os.path.basename(dbf_path)}' is currently open in Miracle Accounting desktop software. Please close the company window in Miracle desktop software and try again.")
                     delay = base_delay * (2 ** attempt)
-                    print(f"⚠️ File {dbf_path} is locked by Wine/Miracle. Retrying CDX bypass in {delay:.2f}s... (Attempt {attempt + 1}/{max_retries})")
+                    logger.warning(f"⚠️ File {dbf_path} is locked by Wine/Miracle. Retrying CDX bypass in {delay:.2f}s... (Attempt {attempt + 1}/{max_retries})")
                     time.sleep(delay)
                     
         try:
@@ -2725,7 +2762,7 @@ class MiracleDBFHandler:
                         break
                     except (IOError, PermissionError) as e:
                         if attempt == max_retries - 1:
-                            print(f"❌ Failed to restore CDX flag on {dbf_path} after {max_retries} attempts. Database might require manual re-indexing.")
+                            logger.error(f"❌ Failed to restore CDX flag on {dbf_path} after {max_retries} attempts. Database might require manual re-indexing.")
                         delay = base_delay * (2 ** attempt)
                         time.sleep(delay)
 
@@ -2774,9 +2811,9 @@ class MiracleDBFHandler:
                                         fp.write(bytes([expected]))
                                         healed_count += 1
                         except Exception as e:
-                            print(f"⚠️ Could not check/heal CDX flag for {f}: {e}")
+                            logger.warning(f"⚠️ Could not check/heal CDX flag for {f}: {e}")
         if healed_count > 0:
-            print(f"✅ [CDX Flag Self-Healer] Restored active CDX index flags on {healed_count} DBF table(s).")
+            logger.info(f"✅ [CDX Flag Self-Healer] Restored active CDX index flags on {healed_count} DBF table(s).")
         return healed_count
 
     def cleanup_old_backups(self, max_days: int = 14):
@@ -2799,11 +2836,11 @@ class MiracleDBFHandler:
                                     mtime = os.path.getmtime(file_path)
                                     if (now - mtime) > max_age_seconds:
                                         os.remove(file_path)
-                                        print(f"🧹 [Auto Backup Cleanup] Deleted old backup file ({max_days}+ days): {filename}")
+                                        logger.info(f"🧹 [Auto Backup Cleanup] Deleted old backup file ({max_days}+ days): {filename}")
                             except Exception:
                                 pass
         except Exception as e:
-            print(f"⚠️ [Auto Backup Cleanup Error]: {e}")
+            logger.error(f"⚠️ [Auto Backup Cleanup Error]: {e}")
 
     @contextlib.contextmanager
     def backup_transaction_context(self, dbf_paths: list):
@@ -2825,7 +2862,7 @@ class MiracleDBFHandler:
                 shutil.copy2(path, backup_dbf)
                 backups[path] = backup_dbf
             except Exception as backup_err:
-                print(f"⚠️ [Transaction Warning] Failed to backup file '{path}': {backup_err}")
+                logger.error(f"⚠️ [Transaction Warning] Failed to backup file '{path}': {backup_err}")
             
             # Handle CDX/FPT companion files if present
             for ext in [".CDX", ".cdx", ".FPT", ".fpt"]:
@@ -2836,19 +2873,19 @@ class MiracleDBFHandler:
                         shutil.copy2(comp_path, comp_bak)
                         backups[comp_path] = comp_bak
                     except Exception as comp_err:
-                        print(f"⚠️ [Transaction Warning] Failed to backup companion file '{comp_path}': {comp_err}")
+                        logger.error(f"⚠️ [Transaction Warning] Failed to backup companion file '{comp_path}': {comp_err}")
                     
         try:
             yield
         except Exception as e:
-            print(f"⚠️ [Transaction Rollback] Error occurred during DBF write: {e}. Restoring database backups...")
+            logger.error(f"⚠️ [Transaction Rollback] Error occurred during DBF write: {e}. Restoring database backups...")
             # Restore backups
             for original, backup in backups.items():
                 try:
                     if os.path.exists(backup):
                         shutil.copy2(backup, original)
                 except Exception as restore_err:
-                    print(f"❌ Failed to restore backup from '{backup}' to '{original}': {restore_err}")
+                    logger.error(f"❌ Failed to restore backup from '{backup}' to '{original}': {restore_err}")
             raise e
         finally:
             # Clean up backup files
@@ -2891,7 +2928,7 @@ class MiracleDBFHandler:
 
             total_injected = 0
             for yr, group in grouped.items():
-                print(f"Routing {len(group)} vouchers to {yr}")
+                logger.info(f"Routing {len(group)} vouchers to {yr}")
                 total_injected += self.inject_vouchers(module, group, yr, sales_prefix, purchase_prefix, sales_setup_id, purchase_setup_id, sales_series, bill_format_pattern, last_bill_number, format_override, bank_name, target_cash_code, force_push=force_push, target_bank_code=target_bank_code)
                 last_bill_number += len(group) # roughly advance for the next year group if needed
             return total_injected
@@ -2910,12 +2947,12 @@ class MiracleDBFHandler:
         if module == 'Sales':
             sp_upper = sales_prefix.split(',')[0].strip().upper()
             if len(sp_upper) >= 2 and sp_upper[:2] in PURCHASE_STARTS and sp_upper[:2] not in SALES_STARTS:
-                print(f"🛡️ SAFETY OVERRIDE: sales_prefix '{sales_prefix}' looks like a purchase prefix. Forcing 'SS,SS'.")
+                logger.info(f"🛡️ SAFETY OVERRIDE: sales_prefix '{sales_prefix}' looks like a purchase prefix. Forcing 'SS,SS'.")
                 sales_prefix = "SS,SS"
         elif module == 'Purchases':
             pp_upper = purchase_prefix.split(',')[0].strip().upper()
             if len(pp_upper) >= 2 and pp_upper[:2] in SALES_STARTS and pp_upper[:2] not in PURCHASE_STARTS:
-                print(f"🛡️ SAFETY OVERRIDE: purchase_prefix '{purchase_prefix}' looks like a sales prefix. Forcing 'PP,PP'.")
+                logger.info(f"🛡️ SAFETY OVERRIDE: purchase_prefix '{purchase_prefix}' looks like a sales prefix. Forcing 'PP,PP'.")
                 purchase_prefix = "PP,PP"
         # ────────────────────────────────────────────────────────────────────────
         
@@ -2975,21 +3012,21 @@ class MiracleDBFHandler:
             val_an = clean_alpha_num(val_clean)
             if val_an and val_an in alpha_num_to_code:
                 matched_code = alpha_num_to_code[val_an]
-                print(f"✅ Space/Punctuation-insensitive matched party: '{val}' -> code '{matched_code}' (key: {val_an})")
+                logger.info(f"✅ Space/Punctuation-insensitive matched party: '{val}' -> code '{matched_code}' (key: {val_an})")
                 return matched_code
 
             # 3. Smart Fuzzy Match (cutoff=0.78) — uses pre-built key list (D6)
             import difflib
             matches = difflib.get_close_matches(val_clean, name_to_code_keys_list, n=1, cutoff=0.78)
             if matches:
-                print(f"✅ Fuzzy matched Sales/Purchase party: '{val}' -> '{matches[0]}'")
+                logger.info(f"✅ Fuzzy matched Sales/Purchase party: '{val}' -> '{matches[0]}'")
                 return name_to_code[matches[0]]
 
             # 4. Alphanumeric Fuzzy Match (cutoff=0.80) — uses pre-built key list (D6)
             an_matches = difflib.get_close_matches(val_an, alpha_num_to_code_keys_list, n=1, cutoff=0.80)
             if an_matches:
                 matched_code = alpha_num_to_code[an_matches[0]]
-                print(f"✅ Alphanumeric fuzzy matched party: '{val}' -> code '{matched_code}' (key: {an_matches[0]})")
+                logger.info(f"✅ Alphanumeric fuzzy matched party: '{val}' -> code '{matched_code}' (key: {an_matches[0]})")
                 return matched_code
             
             return val.strip()
@@ -3112,7 +3149,7 @@ class MiracleDBFHandler:
                     t40 = dbf.Table(t40_path)
                     self._open_table_with_retry(t40, mode=dbf.READ_WRITE)
                 except Exception as ex_t40:
-                    print(f"⚠️ Warning: Could not open RKACCT40 memo table: {ex_t40}")
+                    logger.warning(f"⚠️ Warning: Could not open RKACCT40 memo table: {ex_t40}")
                     t40 = None
             
             existing_vouchers = set()
@@ -3139,7 +3176,7 @@ class MiracleDBFHandler:
                         bill_key = (f10 or f12 or b_no).strip()
                         existing_amounts.add((amount, v_dt, p_code, bill_key))
             except Exception as e:
-                print(f"Error indexing existing vouchers: {e}")
+                logger.error(f"Error indexing existing vouchers: {e}")
                     
             # ── Format and Print Option Auto-Detection from Backdata ────────────────────
             # Scans current year and previous years to match client's exact unique formats.
@@ -3155,13 +3192,13 @@ class MiracleDBFHandler:
             # Allow manual override for FIELD14 if passed
             if format_override and format_override.strip().upper() in ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'N']:
                 resolved_format = format_override.strip().upper()
-                print(f"Using forced format_override: {resolved_format}")
+                logger.info(f"Using forced format_override: {resolved_format}")
             else:
-                print(f"Auto-detected {module} FIELD14 format: {resolved_format}, T41F83 option: {resolved_f83}")
+                logger.info(f"Auto-detected {module} FIELD14 format: {resolved_format}, T41F83 option: {resolved_f83}")
             # ─────────────────────────────────────────────────────────────────────────────
                 
             company_state = self.get_company_state_code()
-            print(f"Company state code: {company_state}")
+            logger.info(f"Company state code: {company_state}")
 
             # ── D2: Pre-build party state code map (O(1) lookup per voucher) ─────
             # Old code opened RKACCM01.DBF and scanned it linearly for EVERY voucher.
@@ -3187,9 +3224,9 @@ class MiracleDBFHandler:
                             _party_state_map[_lc] = STATE_MIRACLE_TO_GST.get(_st_val, '')
                 finally:
                     _t01_state.close()
-                print(f"[D2] Pre-built state code map for {len(_party_state_map)} ledgers (single DBF read).")
+                logger.info(f"[D2] Pre-built state code map for {len(_party_state_map)} ledgers (single DBF read).")
             except Exception as _sc_err:
-                print(f"⚠️ [D2] Could not pre-build state map: {_sc_err}. Will fall back to GSTIN.")
+                logger.warning(f"⚠️ [D2] Could not pre-build state map: {_sc_err}. Will fall back to GSTIN.")
 
             def get_party_state_code(p_code, party_gstin=''):
                 # O(1) dict lookup — no DBF open at all!
@@ -3289,7 +3326,7 @@ class MiracleDBFHandler:
                     # 2. Fallback to GSTIN lookup only if name match is missing/unmapped
                     if (not party_code or party_code.upper() not in existing_codes) and gstin and len(gstin) >= 15 and gstin in gstin_to_code:
                         party_code = gstin_to_code[gstin]
-                        print(f"✅ Matched party by GSTIN: {gstin} -> {party_code}")
+                        logger.info(f"✅ Matched party by GSTIN: {gstin} -> {party_code}")
                     
                     # Auto-create B2C/B2B ledger if missing from local database
                     is_existing_code = party_code.upper() in existing_codes
@@ -3340,7 +3377,7 @@ class MiracleDBFHandler:
                             
                     if is_exact_dup or is_fuzzy_dup:
                         dup_reason = "Exact Match (Bill No + Date + Party)" if is_exact_dup else "Fuzzy Match (Amount + Date + Party)"
-                        print(f"Skipping duplicate voucher ({dup_reason}): Bill {bill_no} for Party {party_code} on {v_date}")
+                        logger.warning(f"Skipping duplicate voucher ({dup_reason}): Bill {bill_no} for Party {party_code} on {v_date}")
                         self.audit_report["duplicates"] += 1
                         # Record full details so the UI can show which entry to find in Miracle
                         self.audit_report["duplicate_details"].append({
@@ -3374,13 +3411,13 @@ class MiracleDBFHandler:
                             igst = total_gst
                             cgst = 0.0
                             sgst = 0.0
-                            print(f"⚖️ POS Align: Converted local GST ({total_gst}) to IGST for interstate bill {bill_no}")
+                            logger.info(f"⚖️ POS Align: Converted local GST ({total_gst}) to IGST for interstate bill {bill_no}")
                     else:
                         if igst > 0 and total_gst > 0:
                             cgst = round(total_gst / 2, 2)
                             sgst = round(total_gst - cgst, 2)
                             igst = 0.0
-                            print(f"⚖️ POS Align: Split IGST ({total_gst}) to CGST/SGST for local bill {bill_no}")
+                            logger.info(f"⚖️ POS Align: Split IGST ({total_gst}) to CGST/SGST for local bill {bill_no}")
 
                     is_registered = bool(v.get('party_gstin') or '')
                     account_code = default_account_code
@@ -4301,7 +4338,7 @@ class MiracleDBFHandler:
                             self._append_record(t01, freight_rec, {'FIELD09': f"{line_idx_t01:>4}"})
                             line_idx_t01 += 1
                         else:
-                            print(f"Warning: Freight ledger not found in database. Omitted posting line.")
+                            logger.warning(f"Warning: Freight ledger not found in database. Omitted posting line.")
                             
                     if tcs > 0:
                         tcs_ledger = resolved_tcs_ledger
@@ -4330,7 +4367,7 @@ class MiracleDBFHandler:
                             self._append_record(t01, tcs_rec, {'FIELD09': f"{line_idx_t01:>4}"})
                             line_idx_t01 += 1
                         else:
-                            print(f"Warning: TCS ledger not found in database. Omitted posting line.")
+                            logger.warning(f"Warning: TCS ledger not found in database. Omitted posting line.")
 
                     if tds > 0:
                         tds_ledger = resolved_tds_ledger
@@ -4359,7 +4396,7 @@ class MiracleDBFHandler:
                             self._append_record(t01, tds_rec, {'FIELD09': f"{line_idx_t01:>4}"})
                             line_idx_t01 += 1
                         else:
-                            print(f"Warning: TDS ledger not found in database. Omitted posting line.")
+                            logger.warning(f"Warning: TDS ledger not found in database. Omitted posting line.")
 
                     # 4. Round-off line (PT)
                     if round_off != 0:
@@ -4414,7 +4451,7 @@ class MiracleDBFHandler:
         try:
             self.repair_all_voucher_narrations(year_folder)
         except Exception as e:
-            print(f"Warning: repair_all_voucher_narrations failed: {e}")
+            logger.error(f"Warning: repair_all_voucher_narrations failed: {e}")
 
         return injected_count
 
@@ -4459,7 +4496,7 @@ class MiracleDBFHandler:
 
         # 3. CASH ACCOUNT CONTRA: Only if classified as Cash/Cash-in-Hand (G0000005) or exact Cash name
         CASH_EXPACT = ('CASH ACCOUNT', 'CASH A/C', 'PETTY CASH', 'CASH IN HAND', 'CASH')
-        if party_class in ('Cash', 'Cash-in-Hand') or grp_up == 'G0000005':
+        if party_class in ('Cash', 'Cash-in-Hand') or grp_up in ('G0000005', 'CASH', 'CASH-IN-HAND', 'CASH IN HAND'):
             return True
         if name_up in CASH_EXPACT and party_class != 'Expense':
             return True
@@ -4491,7 +4528,7 @@ class MiracleDBFHandler:
         resolved_f83 = detected_cfg["f83"]
 
         # 1. Build CROSS-YEAR ledger lookup map.
-        print(f"[bank push] Building cross-year ledger lookup for duplicate prevention...")
+        logger.info(f"[bank push] Building cross-year ledger lookup for duplicate prevention...")
         all_ledgers = self.read_ledgers_all_years(active_year_folder=year_folder)
         
         KNOWN_BANK_BRANDS = [
@@ -4546,7 +4583,7 @@ class MiracleDBFHandler:
             for led in all_ledgers:
                 if (led.get('code') or '').strip().upper() == target_code_up:
                     bank_ledger_code = led['code']
-                    print(f"[bank resolve] ✅ Level 0 (exact target bank code): '{payload_bank_code}' → '{led['name']}' ({led['code']})")
+                    logger.info(f"[bank resolve] ✅ Level 0 (exact target bank code): '{payload_bank_code}' → '{led['name']}' ({led['code']})")
                     break
 
         # Level 1: Exact name match (only among bank-classified ledgers)
@@ -4554,7 +4591,7 @@ class MiracleDBFHandler:
             for led in bank_classified_ledgers:
                 if led['name'].strip().upper() == bank_name_up:
                     bank_ledger_code = led['code']
-                    print(f"[bank resolve] ✅ Level 1 (exact bank): '{bank_name}' → '{led['name']}' ({led['code']})")
+                    logger.info(f"[bank resolve] ✅ Level 1 (exact bank): '{bank_name}' → '{led['name']}' ({led['code']})")
                     break
         
         # Level 2: Substring partial match (only among bank-classified ledgers)
@@ -4563,7 +4600,7 @@ class MiracleDBFHandler:
                 led_name_up = led['name'].strip().upper()
                 if bank_name_up in led_name_up or led_name_up in bank_name_up:
                     bank_ledger_code = led['code']
-                    print(f"[bank resolve] ✅ Level 2 (substring bank): '{bank_name}' → '{led['name']}' ({led['code']})")
+                    logger.info(f"[bank resolve] ✅ Level 2 (substring bank): '{bank_name}' → '{led['name']}' ({led['code']})")
                     break
         
         # Level 3: Bank BRAND keyword match
@@ -4573,7 +4610,7 @@ class MiracleDBFHandler:
                 led_brand = extract_bank_brand(led['name'])
                 if led_brand and led_brand == input_brand:
                     bank_ledger_code = led['code']
-                    print(f"[bank resolve] ✅ Level 3 (brand keyword '{input_brand}'): '{bank_name}' → '{led['name']}' ({led['code']})")
+                    logger.info(f"[bank resolve] ✅ Level 3 (brand keyword '{input_brand}'): '{bank_name}' → '{led['name']}' ({led['code']})")
                     break
         
         # Level 4: Fuzzy string match (only among bank-classified ledgers, cutoff 0.60)
@@ -4586,7 +4623,7 @@ class MiracleDBFHandler:
                 for led in bank_classified_ledgers:
                     if led['name'].upper() == matched_name:
                         bank_ledger_code = led['code']
-                        print(f"[bank resolve] ✅ Level 4 (fuzzy 0.60): '{bank_name}' → '{led['name']}' ({led['code']})")
+                        logger.info(f"[bank resolve] ✅ Level 4 (fuzzy 0.60): '{bank_name}' → '{led['name']}' ({led['code']})")
                         break
         
         if not bank_ledger_code:
@@ -4594,9 +4631,9 @@ class MiracleDBFHandler:
             if bank_classified_ledgers:
                 first_bank = bank_classified_ledgers[0]
                 bank_ledger_code = first_bank['code']
-                print(f"[bank resolve] ⚡ Level 5 (existing bank fallback): Auto-selected primary company bank ledger '{first_bank['name']}' ({first_bank['code']})")
+                logger.info(f"[bank resolve] ⚡ Level 5 (existing bank fallback): Auto-selected primary company bank ledger '{first_bank['name']}' ({first_bank['code']})")
             else:
-                print(f"[bank resolve] ⚠️ No match found for '{bank_name}' — creating new ledger.")
+                logger.warning(f"[bank resolve] ⚠️ No match found for '{bank_name}' — creating new ledger.")
                 bank_ledger_code = self.create_party_ledger(bank_name, 'Bank Statements', year_folder=year_folder)
 
 
@@ -4711,7 +4748,7 @@ class MiracleDBFHandler:
                     t40 = dbf.Table(t40_path)
                     self._open_table_with_retry(t40, mode=dbf.READ_WRITE)
                 except Exception as ex_t40:
-                    print(f"⚠️ Warning: Could not open RKACCT40 for bank/cash write: {ex_t40}")
+                    logger.warning(f"⚠️ Warning: Could not open RKACCT40 for bank/cash write: {ex_t40}")
                     t40 = None
             
             guids_to_register = []
@@ -4745,7 +4782,7 @@ class MiracleDBFHandler:
                                 name_is_cash = led['name'].strip().upper() in CASH_ALIASES
                                 if is_cash_cls or name_is_cash:
                                     party_code = led['code']
-                                    print(f"✅ Resolved Cash Account to existing Miracle cash ledger: '{led['name']}' ({party_code})")
+                                    logger.info(f"✅ Resolved Cash Account to existing Miracle cash ledger: '{led['name']}' ({party_code})")
                                     break
                                     
                         if not party_code:
@@ -4756,7 +4793,7 @@ class MiracleDBFHandler:
                             matches = difflib.get_close_matches(party_up, list(name_to_code.keys()), n=1, cutoff=0.80)
                             if matches:
                                 party_code = name_to_code[matches[0]]
-                                print(f"✅ Fuzzy matched Bank party: {party_name} -> {matches[0]} ({party_code})")
+                                logger.info(f"✅ Fuzzy matched Bank party: {party_name} -> {matches[0]} ({party_code})")
                             else:
                                 party_code = self.create_party_ledger(party_name, 'Bank Statements', year_folder=year_folder, transaction_type=tx_type, group_hint=v.get('group_hint', ''))
                                 name_to_code[party_up] = party_code
@@ -4779,10 +4816,10 @@ class MiracleDBFHandler:
                                             exists_in_current = any(str(r['FIELD01']).strip() == party_code for r in t if not dbf.is_deleted(r))
                                             t.close()
                                     except Exception as e:
-                                        print(f"Error checking current year {year_folder} for {party_name}: {e}")
+                                        logger.error(f"Error checking current year {year_folder} for {party_name}: {e}")
                                 
                                 if not exists_in_current:
-                                    print(f"Syncing existing ledger {party_name} ({party_code}) from {src_year} to current year {year_folder}...")
+                                    logger.info(f"Syncing existing ledger {party_name} ({party_code}) from {src_year} to current year {year_folder}...")
                                     self._sync_party_to_other_years(party_name, party_code, src_year, target_year_folder=year_folder)
 
                         # USER GROUP OVERRIDE SYNC:
@@ -4795,7 +4832,7 @@ class MiracleDBFHandler:
                                 try:
                                     self.update_party_ledger(party_name, party_name, group_code=target_grp, year_folder=year_folder)
                                 except Exception as grp_err:
-                                    print(f"⚠️ Warning: Could not update group code for {party_name} ({party_code}): {grp_err}")
+                                    logger.warning(f"⚠️ Warning: Could not update group code for {party_name} ({party_code}): {grp_err}")
                     
                     if amount <= 0:
                         continue
@@ -4825,7 +4862,7 @@ class MiracleDBFHandler:
                     # ── INTRA-BATCH DEDUP: Block identical rows within the same push ──────────
                     batch_key = (str(v_date), round(amount, 2), party_name.upper(), f98, ref_no_clean, narration_clean)
                     if batch_key in intra_batch_seen:
-                        print(f"🚫 Intra-batch duplicate blocked: {party_name} {amount} {v_date}")
+                        logger.warning(f"🚫 Intra-batch duplicate blocked: {party_name} {amount} {v_date}")
                         self.audit_report["duplicates"] += 1
                         self.audit_report["duplicate_details"].append({
                             "date": str(v_date),
@@ -4933,7 +4970,7 @@ class MiracleDBFHandler:
                         'FIELD11': v_date,  # Chq/DD Date
                         'FIELD12': str(vou_no),
                         'FIELD14': 'N',
-                        'FIELD16': 'C' if f98 == 'BC' else ('R' if tx_type == 'Receipt' else 'P'),  # BC=Contra ('C'), BR=Receipt ('R'), BP=Payment ('P')
+                        'FIELD16': 'R' if tx_type == 'Receipt' else 'P',  # Header FIELD16 in T41 must be 'R' (Receipt) or 'P' (Payment)
                         'FIELD17': 'UU000001', # Matching native Miracle DBF user/unit specification
                         'FIELD18': 0.0,
                         'FIELD20': 0,
@@ -4942,7 +4979,7 @@ class MiracleDBFHandler:
                         'FIELD74': 'CB',   # Aligned with native Cash/Bank voucher type
                         'FIELD75': '0',
                         'FIELD82': self.fit_dbf_str(narration, 50), # Narration
-                        'T41F83': '9   ' if f98 == 'BC' else '1   ',     # Native Miracle Contra flag ('9   ' for Contra, '1   ' for Bank)
+                        'T41F83': '9   ' if f98 == 'BC' else resolved_f83,     # Native Miracle Contra flag ('9   ' for Contra, detected f83 for Bank)
                         'T41FVNO': str(vou_no),
                         'T41F45': year_num,
                         'T41F97': '01',
@@ -5112,7 +5149,7 @@ class MiracleDBFHandler:
             
         gid_path = self._find_gid_path()
         if not gid_path:
-            print(f"Warning: RKACCGID.DBF not found at {self.client_path}")
+            logger.warning(f"Warning: RKACCGID.DBF not found at {self.client_path}")
             return
                 
         with self.safe_cdx_context(gid_path):
@@ -5141,9 +5178,9 @@ class MiracleDBFHandler:
                         'GIDF07': '01',
                         'GIDF08': '1'
                     }, table=table))
-                print(f"Batch registered {len(records)} GUIDs in RKACCGID.DBF")
+                logger.info(f"Batch registered {len(records)} GUIDs in RKACCGID.DBF")
             except Exception as e:
-                print(f"Error in batch GUID registration: {e}")
+                logger.error(f"Error in batch GUID registration: {e}")
             finally:
                 table.close()
 
@@ -5200,11 +5237,11 @@ class MiracleDBFHandler:
                                 'GIDF07': '01',
                                 'GIDF08': '1'
                             }, table=gid_tbl))
-                        print(f"🔧 Auto-repaired {len(to_add)} missing voucher GUIDs in RKACCGID.DBF")
+                        logger.info(f"🔧 Auto-repaired {len(to_add)} missing voucher GUIDs in RKACCGID.DBF")
                 finally:
                     gid_tbl.close()
         except Exception as e:
-            print(f"Repair GUID error: {e}")
+            logger.error(f"Repair GUID error: {e}")
 
     def _register_guid(self, record_type: str, record_id: str, is_header: bool = False):
         """Registers a record in RKACCGID.DBF to prevent Miracle's parser from ignoring it."""
@@ -5213,7 +5250,7 @@ class MiracleDBFHandler:
         
         gid_path = self._find_gid_path()
         if not gid_path:
-            print(f"Warning: RKACCGID.DBF not found at {self.client_path}")
+            logger.warning(f"Warning: RKACCGID.DBF not found at {self.client_path}")
             return
                 
         guid_str = uuid.uuid4().hex.upper()
@@ -5241,9 +5278,9 @@ class MiracleDBFHandler:
                     'GIDF07': '01',
                     'GIDF08': '1'
                 }, table=table))
-                print(f"Registered GUID {guid_str} for {record_type} ID: {record_id}")
+                logger.info(f"Registered GUID {guid_str} for {record_type} ID: {record_id}")
             except Exception as e:
-                print(f"Error registering GUID for {record_id}: {e}")
+                logger.error(f"Error registering GUID for {record_id}: {e}")
             finally:
                 table.close()
 
@@ -5279,7 +5316,7 @@ class MiracleDBFHandler:
                         break
                 m21.close()
             except Exception as e:
-                print(f"Error reading RKACCM21 for GST rate: {e}")
+                logger.error(f"Error reading RKACCM21 for GST rate: {e}")
                 
         if not comm_code:
             return None
@@ -5312,7 +5349,7 @@ class MiracleDBFHandler:
                         break
                 m18.close()
             except Exception as e:
-                print(f"Error reading RKACCM18 for commodity rate: {e}")
+                logger.error(f"Error reading RKACCM18 for commodity rate: {e}")
 
         if tax_group:
             # Look up tax percentage from RKACCM13.DBF (Tax Master)
@@ -5329,7 +5366,7 @@ class MiracleDBFHandler:
                             return rate
                     m13.close()
                 except Exception as e:
-                    print(f"Error reading RKACCM13 for tax group rate: {e}")
+                    logger.error(f"Error reading RKACCM13 for tax group rate: {e}")
 
             # Fallback for standard Miracle Tax Group Codes
             tax_group_map = {
@@ -5358,7 +5395,7 @@ class MiracleDBFHandler:
             m21_path = self._get_table_path('rkaccm21.dbf', year_folder)
             
         if not os.path.exists(m14_path) or not os.path.exists(m21_path):
-            print("Warning: HSN self-healing skipped (RKACCM14 or RKACCM21 not found).")
+            logger.warning("Warning: HSN self-healing skipped (RKACCM14 or RKACCM21 not found).")
             return
             
         try:
@@ -5391,22 +5428,22 @@ class MiracleDBFHandler:
                         if hsn_curr in ['', 'XXXXXXXX'] and comm_code in comm_to_hsn:
                             hsn_new = comm_to_hsn[comm_code]
                             dbf.write(r, M21F31=hsn_new.ljust(8))
-                            print(f"Self-healed product HSN '{prod_name}': Set M21F31 to '{hsn_new}' (from commodity '{comm_code}')")
+                            logger.info(f"Self-healed product HSN '{prod_name}': Set M21F31 to '{hsn_new}' (from commodity '{comm_code}')")
                             updated_count += 1
                             
                         # Fix C001 mapped to CNGT for Non-GST
                         if comm_code == 'C001':
                             dbf.write(r, M21F27='CNGT')
-                            print(f"Self-healed product commodity for '{prod_name}': Set M21F27 to 'CNGT' (from 'C001')")
+                            logger.info(f"Self-healed product commodity for '{prod_name}': Set M21F27 to 'CNGT' (from 'C001')")
                             healed_comm_count += 1
                             
                 m21.close()
                 if updated_count > 0:
-                    print(f"HSN Self-Healing complete. Updated {updated_count} products.")
+                    logger.info(f"HSN Self-Healing complete. Updated {updated_count} products.")
                 if healed_comm_count > 0:
-                    print(f"Product Commodity Self-Healing complete. Updated {healed_comm_count} products.")
+                    logger.info(f"Product Commodity Self-Healing complete. Updated {healed_comm_count} products.")
         except Exception as e:
-            print(f"Error running HSN and Commodity self-healing: {e}")
+            logger.error(f"Error running HSN and Commodity self-healing: {e}")
 
     def repair_bank_closing_flags(self, year_folder: str | None = None):
         """Alias helper for repair_bank_entry_flags."""
@@ -5481,7 +5518,7 @@ class MiracleDBFHandler:
                             finally:
                                 t40_temp.close()
                     except Exception as e:
-                        print(f"Warning: Failed to load T40 memos for {yr}: {e}")
+                        logger.error(f"Warning: Failed to load T40 memos for {yr}: {e}")
 
                 # First open T01 read-only to load line direction mapping for T41 repair
                 line_directions = {}
@@ -5517,24 +5554,22 @@ class MiracleDBFHandler:
                                 
                             is_cv = (v_type == 'CV')
                             is_cash_contra = (v_type in ('BR', 'BP') and str(record['FIELD04']).strip() == 'ACASHACT')
+                            is_bc_bad_f16 = (v_type == 'BC' and str(record['FIELD16']).strip() not in ('R', 'P'))
                             vid = str(record['FIELD01']).strip()
                             
                             updates = {}
-                            if is_cv or is_cash_contra:
+                            if is_cv or is_cash_contra or is_bc_bad_f16:
                                 # Determine direction R/P from matching lines
                                 dr_cr_direction = 'R'
                                 if vid in line_directions:
                                     for f21, drcr in line_directions[vid]:
-                                        if f21 == 'BK':
-                                            dr_cr_direction = 'R' if drcr == 'D' else 'P'
-                                            break
-                                        elif f21 == 'CS':
+                                        if f21 in ('BK', 'CS'):
                                             dr_cr_direction = 'R' if drcr == 'D' else 'P'
                                             break
                                             
                                 updates['FIELD98'] = 'BC'
                                 updates['FIELD99'] = 'BC'
-                                updates['T41F83'] = '9'
+                                updates['T41F83'] = '9   '
                                 updates['FIELD16'] = dr_cr_direction
 
                             # Repair blank FIELD82 narration from T40 memo table
@@ -5688,7 +5723,7 @@ class MiracleDBFHandler:
                 result['repaired_headers'] += yr_repaired_h
                 result['repaired_lines'] += yr_repaired_l
                 result['skipped'] += yr_skipped
-                print(f"[repair] {yr}: repaired_headers={yr_repaired_h}, repaired_lines={yr_repaired_l}, skipped={yr_skipped}")
+                logger.info(f"[repair] {yr}: repaired_headers={yr_repaired_h}, repaired_lines={yr_repaired_l}, skipped={yr_skipped}")
                 
                 # Trigger reindex after repair
                 try:
@@ -5698,9 +5733,9 @@ class MiracleDBFHandler:
                     
             except Exception as e:
                 result['errors'].append(f"{yr}: Critical error — {e}")
-                print(f"[repair] ❌ {yr} failed: {e}")
+                logger.error(f"[repair] ❌ {yr} failed: {e}")
                 
-        print(f"[repair] Complete. Total repaired_headers={result['repaired_headers']}, repaired_lines={result['repaired_lines']}, errors={len(result['errors'])}")
+        logger.error(f"[repair] Complete. Total repaired_headers={result['repaired_headers']}, repaired_lines={result['repaired_lines']}, errors={len(result['errors'])}")
         return result
 
     def repair_all_voucher_narrations(self, year_folder: str | None = None) -> dict:
@@ -5719,7 +5754,7 @@ class MiracleDBFHandler:
             flag_res = self.repair_bank_entry_flags(year_folder=year_folder)
             result["repaired_flags"] = flag_res.get("repaired_lines", 0)
         except Exception as flag_err:
-            print(f"Warning: Flag repair in repair_all_voucher_narrations failed: {flag_err}")
+            logger.error(f"Warning: Flag repair in repair_all_voucher_narrations failed: {flag_err}")
         
         folders_to_repair = []
         if year_folder:
@@ -5753,7 +5788,7 @@ class MiracleDBFHandler:
                                 code_to_name[str(r['FIELD01']).strip()] = str(r['FIELD02']).strip()
                         t_m01.close()
                 except Exception as e:
-                    print(f"Warning: Failed to load party names for {yr}: {e}")
+                    logger.error(f"Warning: Failed to load party names for {yr}: {e}")
 
             # Load existing T40 narrations
             memos = {}
@@ -5772,7 +5807,7 @@ class MiracleDBFHandler:
                     finally:
                         t40_temp.close()
             except Exception as e:
-                print(f"Warning: Failed to load T40 memos for {yr}: {e}")
+                logger.error(f"Warning: Failed to load T40 memos for {yr}: {e}")
 
             # 1. Open T41 to repair FIELD82 and find vouchers needing T40 records
             new_memos_to_add = {}
@@ -5850,7 +5885,7 @@ class MiracleDBFHandler:
                     finally:
                         t40.close()
 
-            print(f"[repair-narrations] {yr}: repaired_headers={result['repaired_headers']}, repaired_memos={result['repaired_memos']}")
+            logger.info(f"[repair-narrations] {yr}: repaired_headers={result['repaired_headers']}, repaired_memos={result['repaired_memos']}")
                         
         return result
 
@@ -5872,7 +5907,7 @@ class MiracleDBFHandler:
         try:
             self._open_table_with_retry(table, mode=dbf.READ_WRITE)
         except Exception as e:
-            print(f"⚠️ Warning: Could not open {table_name} for compaction: {e}")
+            logger.warning(f"⚠️ Warning: Could not open {table_name} for compaction: {e}")
             return
             
         has_memos = len(table._meta.memofields) > 0
@@ -5882,7 +5917,7 @@ class MiracleDBFHandler:
             table.close()
             return
             
-        print(f"[compact] Compacting {table_name} (has_memos={has_memos}, has_deleted={has_deleted})...")
+        logger.info(f"[compact] Compacting {table_name} (has_memos={has_memos}, has_deleted={has_deleted})...")
         try:
             new_table = table.new(str(temp_file))
             self._open_table_with_retry(new_table, mode=dbf.READ_WRITE)
@@ -5910,10 +5945,10 @@ class MiracleDBFHandler:
                             except Exception: pass
                     dest_path = dbf_path.with_suffix(temp_ext_path.suffix)
                     shutil.move(str(temp_ext_path), str(dest_path))
-            print(f"[compact] Compacted {table_name} successfully, retained {copied} active records.")
+            logger.info(f"[compact] Compacted {table_name} successfully, retained {copied} active records.")
                     
         except Exception as e:
-            print(f"⚠️ Warning: Compaction failed for {table_name}: {e}")
+            logger.error(f"⚠️ Warning: Compaction failed for {table_name}: {e}")
             try: table.close()
             except: pass
             try: new_table.close()
@@ -5983,9 +6018,9 @@ ENDPROC
         try:
             with open(prg_path, "w") as f:
                 f.write(prg_content)
-            print(f"Generated reindex.prg VFP script at {prg_path}")
+            logger.info(f"Generated reindex.prg VFP script at {prg_path}")
         except Exception as e:
-            print(f"Failed to generate reindex.prg: {e}")
+            logger.error(f"Failed to generate reindex.prg: {e}")
             
         # Optional pyodbc execution
         try:
@@ -5999,10 +6034,10 @@ ENDPROC
                 except Exception:
                     pass
             cnxn.close()
-            print("Successfully reindexed via VFP pyodbc connection.")
+            logger.info("Successfully reindexed via VFP pyodbc connection.")
             return True
         except Exception as e:
-            print(f"Automated reindexing via pyodbc skipped/failed: {e}")
+            logger.error(f"Automated reindexing via pyodbc skipped/failed: {e}")
             return False
 
     def find_matching_bill(self, party_name: str, amount: float, year_folder: str | None = None) -> str:
@@ -6057,7 +6092,7 @@ ENDPROC
                         break
                 table.close()
         except Exception as e:
-            print(f"Error in find_matching_bill: {e}")
+            logger.error(f"Error in find_matching_bill: {e}")
             
         return matched_bill_no
 
@@ -6106,7 +6141,7 @@ ENDPROC
                 if dates:
                     ob_date = max(dates) # type: ignore
         except Exception as e:
-            print(f"Error determining ob_date from AMB1: {e}")
+            logger.error(f"Error determining ob_date from AMB1: {e}")
             
         if not ob_date:
             try:
@@ -6116,7 +6151,7 @@ ENDPROC
             except:
                 ob_date = datetime.date.today().replace(month=3, day=31)
 
-        print(f"Using opening balance date: {ob_date}")
+        logger.info(f"Using opening balance date: {ob_date}")
 
         processed = 0
         updated = 0
@@ -6167,7 +6202,7 @@ ENDPROC
             finally:
                 table.close()
 
-        print(f"Opening balances injected: {processed} (Updated: {updated}, Inserted: {inserted})")
+        logger.info(f"Opening balances injected: {processed} (Updated: {updated}, Inserted: {inserted})")
         return {
             "status": "success", 
             "processed": processed,
@@ -6197,7 +6232,7 @@ ENDPROC
         resolved_f83 = detected_cfg["f83"]
 
         # Build CROSS-YEAR ledger lookup map.
-        print(f"[cash push] Building cross-year ledger lookup for duplicate prevention...")
+        logger.info(f"[cash push] Building cross-year ledger lookup for duplicate prevention...")
         all_ledgers = self.read_ledgers_all_years(active_year_folder=year_folder)
         name_to_code = {led['name'].upper(): led['code'] for led in all_ledgers}
         code_to_classification = {led['code']: led.get('classification', 'Other') for led in all_ledgers}
@@ -6210,7 +6245,7 @@ ENDPROC
             for led in all_ledgers:
                 if led.get('classification') == 'Cash' or led.get('group_code') == 'G0000005' or led['name'].strip().upper() in CASH_ALIASES:
                     cash_ledger_code = led['code']
-                    print(f"✅ Auto-resolved target_cash_code: '{led['name']}' ({cash_ledger_code})")
+                    logger.info(f"✅ Auto-resolved target_cash_code: '{led['name']}' ({cash_ledger_code})")
                     break
             if not cash_ledger_code:
                 cash_ledger_code = self.create_party_ledger("Cash Account", 'Cash Entries', year_folder=year_folder)
@@ -6311,7 +6346,7 @@ ENDPROC
                             matches = difflib.get_close_matches(party_name.upper(), list(name_to_code.keys()), n=1, cutoff=0.85)
                             if matches:
                                 party_code = name_to_code[matches[0]]
-                                print(f"✅ Fuzzy matched Bank party: {party_name} -> {matches[0]} ({party_code})")
+                                logger.info(f"✅ Fuzzy matched Bank party: {party_name} -> {matches[0]} ({party_code})")
                             else:
                                 party_code = self.create_party_ledger(party_name, 'Cash Entries', year_folder=year_folder, transaction_type=tx_type, group_hint=v.get('group_hint', ''))
                                 name_to_code[party_name.upper()] = party_code
@@ -6334,10 +6369,10 @@ ENDPROC
                                             exists_in_current = any(str(r['FIELD01']).strip() == party_code for r in t if not dbf.is_deleted(r))
                                             t.close()
                                     except Exception as e:
-                                        print(f"Error checking current year {year_folder} for {party_name}: {e}")
+                                        logger.error(f"Error checking current year {year_folder} for {party_name}: {e}")
                                 
                                 if not exists_in_current:
-                                    print(f"Syncing existing ledger {party_name} ({party_code}) from {src_year} to current year {year_folder}...")
+                                    logger.info(f"Syncing existing ledger {party_name} ({party_code}) from {src_year} to current year {year_folder}...")
                                     self._sync_party_to_other_years(party_name, party_code, src_year, target_year_folder=year_folder)
 
                         # USER GROUP OVERRIDE SYNC:
@@ -6350,7 +6385,7 @@ ENDPROC
                                 try:
                                     self.update_party_ledger(party_name, party_name, group_code=target_grp, year_folder=year_folder)
                                 except Exception as grp_err:
-                                    print(f"⚠️ Warning: Could not update group code for {party_name} ({party_code}): {grp_err}")
+                                    logger.warning(f"⚠️ Warning: Could not update group code for {party_name} ({party_code}): {grp_err}")
                     
                     amount = self._parse_float(v.get('amount') or v.get('total') or 0.0)
                     narration = (v.get('narration') or v.get('narr') or v.get('description') or v.get('raw_narration') or party_name).strip()
@@ -6383,7 +6418,7 @@ ENDPROC
                     # ── INTRA-BATCH DEDUP: Block identical rows within the same push ──────────
                     batch_key = (str(v_date), round(amount, 2), party_code, cash_ledger_code, f98, ref_no_clean, narration_clean)
                     if batch_key in intra_batch_seen:
-                        print(f"🚫 Intra-batch duplicate blocked: {party_name} {amount} {v_date}")
+                        logger.warning(f"🚫 Intra-batch duplicate blocked: {party_name} {amount} {v_date}")
                         self.audit_report["duplicates"] += 1
                         self.audit_report["duplicate_details"].append({
                             "date": str(v_date),
@@ -6430,7 +6465,7 @@ ENDPROC
                         'FIELD11': v_date,  # Chq/DD Date
                         'FIELD12': str(vou_no),
                         'FIELD14': 'N',
-                        'FIELD16': 'C' if f98 == 'BC' else ('R' if tx_type == 'Receipt' else 'P'),  # BC=Contra ('C'), CR=Receipt ('R'), CP=Payment ('P')
+                        'FIELD16': 'R' if tx_type == 'Receipt' else 'P',  # Header FIELD16 in T41 must be 'R' (Receipt) or 'P' (Payment)
                         'FIELD17': 'U0000000',
                         'FIELD18': 0.0,
                         'FIELD20': 0,
@@ -6479,7 +6514,7 @@ ENDPROC
                         'FIELD12': str(vou_no),
                         'T41FVNO': str(vou_no),
                         'FIELD15': '',
-                        'FIELD16': None,
+                        'FIELD16': v_date,
                         'FIELD20': 'N',   # 'N' = Normal active line (Native Miracle requirement so amounts display in Ledger reports)
                         'FIELD21': 'CS',
                         'FIELD22': None,
@@ -6509,7 +6544,8 @@ ENDPROC
                     else:
                         resolved_f21 = 'PT'
                         
-                    party_f16_val = v_date if (is_contra or resolved_f21 == 'BK') else None
+                    party_f16_val = v_date
+                    party_f22_val = None if is_contra else v_date
                     
                     t01_rec_party = {
                         'FIELD98': f98,
@@ -6528,7 +6564,7 @@ ENDPROC
                         'FIELD16': party_f16_val,
                         'FIELD20': 'N',   # 'N' = Normal active line (Native Miracle requirement so amounts display in Ledger reports)
                         'FIELD21': resolved_f21,  # Dynamic PT/PR/CS mapping
-                        'FIELD22': None,
+                        'FIELD22': party_f22_val,
                         'FIELD26': 0.0,
                         'FIELD29': 0.0,
                         'T01F97': '01',

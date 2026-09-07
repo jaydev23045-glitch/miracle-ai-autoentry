@@ -1453,13 +1453,38 @@
 
     <!-- PRODUCT MAPPING RESOLUTION MODAL -->
     <div id="productMappingModal" class="hidden fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center">
-        <div class="bg-darkcard border border-purple-500/50 rounded-xl shadow-2xl w-[700px] overflow-hidden transform transition-all modal-animate-in">
+        <div class="bg-darkcard border border-purple-500/50 rounded-xl shadow-2xl w-[740px] max-w-[95vw] overflow-hidden transform transition-all modal-animate-in">
             <div class="px-6 py-4 border-b border-slate-800 flex justify-between items-center bg-purple-500/10">
-                <h3 class="text-lg font-bold text-white flex items-center gap-2 font-heading"><i class="fa-solid fa-layer-group text-purple-400"></i> Match Product Items</h3>
+                <h3 class="text-lg font-bold text-white flex items-center gap-2 font-heading">
+                    <i class="fa-solid fa-boxes-stacked text-purple-400"></i> Match Extracted Product Items
+                    <span id="unmappedProductCountBadge" class="bg-purple-500/20 text-purple-300 border border-purple-500/30 text-xs px-2.5 py-0.5 rounded-full font-bold">0</span>
+                </h3>
+                <div class="relative w-56">
+                    <i class="fa-solid fa-magnifying-glass absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-xs"></i>
+                    <input id="productMappingSearch" type="text" placeholder="Search items..." class="w-full bg-slate-900 border border-slate-750 rounded-xl pl-8 pr-3 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-purple-500">
+                </div>
             </div>
             <div class="p-6">
-                <p class="text-sm text-slate-350 mb-4 leading-relaxed">Select the correct product/item ledger for each item extracted from the document. The system will auto-learn these mappings.</p>
-                <div id="productMappingList" class="space-y-4 max-h-[400px] overflow-y-auto pr-2">
+                <p class="text-xs text-slate-350 mb-3 leading-relaxed">Assign target Miracle product masters to extracted line items to teach the AI permanently.</p>
+
+                <!-- Quick Bulk-Map Panel -->
+                <div class="bg-slate-950/60 border border-purple-500/30 rounded-xl p-3.5 mb-4 shadow-inner">
+                    <div class="flex items-center justify-between gap-3">
+                        <div class="w-full">
+                            <label class="block text-xs font-bold text-purple-300 uppercase tracking-wider mb-1">
+                                <i class="fa-solid fa-bolt text-amber-400 mr-1"></i> Quick Bulk-Map All Products
+                            </label>
+                            <select id="globalProductMappingSelect" class="bg-slate-900 border border-slate-700 rounded-xl py-2 px-3 text-slate-200 text-sm w-full focus:outline-none focus:border-purple-500 cursor-pointer">
+                                <!-- Populated dynamically -->
+                            </select>
+                        </div>
+                        <button id="applyGlobalProductMappingBtn" type="button" class="self-end bg-purple-600 hover:bg-purple-500 text-white px-4 py-2 rounded-xl text-xs font-bold transition whitespace-nowrap shadow-md cursor-pointer shrink-0">
+                            <i class="fa-solid fa-bolt mr-1"></i> Apply to All
+                        </button>
+                    </div>
+                </div>
+
+                <div id="productMappingList" class="space-y-3 max-h-[380px] overflow-y-auto pr-2 custom-scrollbar">
                     <!-- Dynamic List -->
                 </div>
             </div>

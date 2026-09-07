@@ -1,5 +1,64 @@
 # Miracle Auto-Entry Platform - Changelog
 
+### 184. Enhanced Product Mapping Resolution Modal UI with Real-time Search & Quick Bulk Actions
+**The Problem Resolved:**
+When processing Sales and Purchase invoices with unmapped item names (e.g. `CONSULTING SERVICE` or custom item descriptions), the Product Mapping Resolution Modal lacked a real-time search bar, unmapped item counter, and a top global bulk-map action panel, requiring manual per-group selection.
+
+**Fixes & Architecture Implemented:**
+1. **Product Mapping UI Header Upgrade ([index.html](file:///Users/jaydevnakum/Work%20Place/WORK/APP%20DETAILS/Mirracle%20Auto%20Entre%20Sale%20or%20Purchase%20or%20Bank/frontend/index.html#L1455)):**
+   - Added `unmappedProductCountBadge` to display total unmapped product count in header.
+   - Added real-time search filter input (`productMappingSearch`) to filter product item cards instantly as the user types item names, HSN codes, or GST rates.
+2. **Top Quick Bulk-Map Panel ([index.html](file:///Users/jaydevnakum/Work%20Place/WORK/APP%20DETAILS/Mirracle%20Auto%20Entre%20Sale%20or%20Purchase%20or%20Bank/frontend/index.html#L1468)):**
+   - Added `globalProductMappingSelect` and `applyGlobalProductMappingBtn` (`Apply to All`) to bulk-map all unmapped products across all GST rate groups in 1 click.
+3. **JS Event Handler Wire-up ([app.js](file:///Users/jaydevnakum/Work%20Place/WORK/APP%20DETAILS/Mirracle%20Auto%20Entre%20Sale%20or%20Purchase%20or%20Bank/frontend/app.js#L3650)):**
+   - Wired `globalProductMappingSelect` and `applyGlobalProductMappingBtn` in `showProductMappingModal()` to set all product selects dynamically.
+   - Wired real-time filtering on `#productMappingList > div` cards.
+**The Problem Resolved:**
+When processing Sales and Purchase invoices with unmapped party names or products:
+1. In `showMappingModal()`, B2B parties with GSTINs were generated with only `AUTO_CREATE_B2B` in their row dropdowns, omitting `AUTO_CREATE_B2C`. Choosing `✨ [Auto-Create All as B2C Retail Parties]` in the top global bulk dropdown and clicking `⚡ Apply to All` failed to update B2B cards because `AUTO_CREATE_B2C` was not a valid choice in those dropdowns.
+2. Product options in `generateProductOptions()` were not pre-selected by default when modal opened, requiring users to manually select dropdown options for unmapped products.
+
+**Fixes & Architecture Implemented:**
+1. **Universal B2B & B2C Options in Party Mapping ([app.js](file:///Users/jaydevnakum/Work%20Place/WORK/APP%20DETAILS/Mirracle%20Auto%20Entre%20Sale%20or%20Purchase%20or%20Bank/frontend/app.js#L2942)):**
+   - Updated `generateLedgerOptions()` to include BOTH `AUTO_CREATE_B2B` (`✨ [Auto-Create B2B Ledger (with GST)]`) and `AUTO_CREATE_B2C` (`✨ [Auto-Create B2C Ledger (No GST)]`) in every party item dropdown.
+   - Added smart pre-selection: parties with GSTIN default to `AUTO_CREATE_B2B`, and parties without GSTIN default to `AUTO_CREATE_B2C`.
+2. **Enhanced Bulk Apply to All ([app.js](file:///Users/jaydevnakum/Work%20Place/WORK/APP%20DETAILS/Mirracle%20Auto%20Entre%20Sale%20or%20Purchase%20or%20Bank/frontend/app.js#L2974)):**
+   - Added `⚡ [Smart Auto-Create: B2B with GST / B2C without GST]` to top global dropdown.
+   - Updated `applyGlobalBtn.onclick` to cleanly set all row selects to B2B, B2C, Smart, or any chosen Miracle ledger.
+3. **Smart Product Pre-Selection ([app.js](file:///Users/jaydevnakum/Work%20Place/WORK/APP%20DETAILS/Mirracle%20Auto%20Entre%20Sale%20or%20Purchase%20or%20Bank/frontend/app.js#L3592)):**
+   - Updated `generateProductOptions()` so `AUTO_CREATE_PRODUCT` is pre-selected by default when opening product clarification modal, allowing users to proceed instantly with 1-click.
+**The Problem Resolved:**
+During end-to-end data flow analysis of Bank Statements and Cash Entries across extraction, staging, and DBF injection, three system-level discrepancies were identified:
+1. In `_inject_cash_entries()`, `party_f16_val` (line date in `RKACCT01.DBF`) was set to `None` for non-Contra, non-Bank cash vouchers, causing Miracle to render blank opposite account names in ledger lists.
+2. In `_inject_bank_statements()`, `T41F83` (header DBF option flag) was hardcoded to `'1   '` for non-BC entries instead of utilizing the auto-detected DBF configuration `resolved_f83`.
+3. In `app.js`, staged grid Contra rendering miscalculated `isRcptVal`, and editing withdrawal/deposit inputs overwritten `row.transaction_type` to `'Payment'` or `'Receipt'` for Contra rows.
+
+**Fixes & Architecture Implemented:**
+1. **Cash Injection Date Population ([dbf_handler.py](file:///Users/jaydevnakum/Work%20Place/WORK/APP%20DETAILS/Mirracle%20Auto%20Entre%20Sale%20or%20Purchase%20or%20Bank/backend/dbf_handler.py#L6510)):**
+   - Fixed `party_f16_val = v_date` and `party_f22_val = None if is_contra else v_date` in `_inject_cash_entries()`, ensuring all cash entry lines in `RKACCT01.DBF` have correct line transaction dates.
+2. **DBF Header T41F83 Configuration Alignment ([dbf_handler.py](file:///Users/jaydevnakum/Work%20Place/WORK/APP%20DETAILS/Mirracle%20Auto%20Entre%20Sale%20or%20Purchase%20or%20Bank/backend/dbf_handler.py#L4945)):**
+   - Updated `_inject_bank_statements()` to set `'T41F83': '9   ' if f98 == 'BC' else resolved_f83`, ensuring header flags align with native detected Miracle DBF structures.
+3. **Group Hint Matching ([dbf_handler.py](file:///Users/jaydevnakum/Work%20Place/WORK/APP%20DETAILS/Mirracle%20Auto%20Entre%20Sale%20or%20Purchase%20or%20Bank/backend/dbf_handler.py#L4462)):**
+   - Updated `is_true_contra_entry()` to match `'CASH-IN-HAND'` and `'CASH IN HAND'` group hints directly.
+4. **Staged Grid Contra Rendering & Edit Handlers ([app.js](file:///Users/jaydevnakum/Work%20Place/WORK/APP%20DETAILS/Mirracle%20Auto%20Entre%20Sale%20or%20Purchase%20or%20Bank/frontend/app.js#L5377)):**
+   - Rewrote `isPymtVal` and `isRcptVal` logic in virtual grid rendering to handle Contra rows cleanly.
+   - Updated withdrawal and deposit input edit handlers in grid rows to preserve `row.transaction_type` when editing Contra entries.
+
+### 181. Fix Miracle Contra Entry (`BC`/`CV`) Header Direction Flags, Date Population & Database Repair
+**The Problem Resolved:**
+In Miracle Accounting Software, Contra entries (`BC`) displayed with wrong direction, blank columns, or failed to open because `RKACCT41.DBF` header `FIELD16` was written as `'C'` instead of native `'R'` (Receipt) or `'P'` (Payment), Line 1 in Cash entries had `FIELD16 = None`, and 274 historical Contra headers across client DBF directories remained in a corrupted state (`FIELD16 == 'C'`).
+
+**Fixes & Architecture Implemented:**
+1. **Header Voucher Direction Flag ([dbf_handler.py](file:///Users/jaydevnakum/Work%20Place/WORK/APP%20DETAILS/Mirracle%20Auto%20Entre%20Sale%20or%20Purchase%20or%20Bank/backend/dbf_handler.py#L4936)):**
+   - Updated `_inject_bank_statements()` and `_inject_cash_entries()` so header `FIELD16` in `RKACCT41.DBF` is set to `'R'` (for Receipt / Deposit) or `'P'` (for Payment / Withdrawal), matching native Miracle DBF specifications.
+2. **Cash Line 1 Date Population ([dbf_handler.py](file:///Users/jaydevnakum/Work%20Place/WORK/APP%20DETAILS/Mirracle%20Auto%20Entre%20Sale%20or%20Purchase%20or%20Bank/backend/dbf_handler.py#L6482)):**
+   - Populated `'FIELD16': v_date` for Line 1 (Cash ledger line) in `_inject_cash_entries()`, ensuring Cash Ledger reports in Miracle filter Contra entries by date range.
+3. **Database Repair Execution & Parity ([dbf_handler.py](file:///Users/jaydevnakum/Work%20Place/WORK/APP%20DETAILS/Mirracle%20Auto%20Entre%20Sale%20or%20Purchase%20or%20Bank/backend/dbf_handler.py#L5523)):**
+   - Upgraded `repair_bank_entry_flags()` in both `backend/dbf_handler.py` and `miracle_bridge/dbf_handler.py` to detect `v_type == 'BC'` with `FIELD16 not in ('R', 'P')`.
+   - Executed repair pass across `CMP0130`, `CMP0027`, `CMP0005`, `CMP0006`, `CMP0013`: successfully repaired **all 274 bad Contra headers** (0 bad headers remaining system-wide).
+4. **Frontend UI Grid Rendering ([app.js](file:///Users/jaydevnakum/Work%20Place/WORK/APP%20DETAILS/Mirracle%20Auto%20Entre%20Sale%20or%20Purchase%20or%20Bank/frontend/app.js#L5372)):**
+   - Normalized `transaction_type` checks in `app.js` grid inputs, filter counters, and rolling balance calculations so rows with Contra/BC/CV render withdrawal and deposit amounts properly.
+
 ### 180. Unified Group & Account Grid Filter Helper (`getRowGroupAndAccount`)
 **The Problem Resolved:**
 In the UI grid, selecting a Group or Account filter from the dropdown caused badge counts and footer totals to remain static across the whole dataset instead of updating to match the active group/account, and unmapped/suspense rows were fragmented across raw party names in the Account dropdown instead of grouping cleanly.

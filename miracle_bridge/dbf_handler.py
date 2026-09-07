@@ -4823,7 +4823,7 @@ class MiracleDBFHandler:
                         'FIELD11': v_date,  # Chq/DD Date
                         'FIELD12': str(vou_no),
                         'FIELD14': 'N',
-                        'FIELD16': 'C' if f98 == 'BC' else ('R' if tx_type == 'Receipt' else 'P'),  # BC=Contra ('C'), BR=Receipt ('R'), BP=Payment ('P')
+                        'FIELD16': 'R' if tx_type == 'Receipt' else 'P',  # Header FIELD16 in T41 must be 'R' (Receipt) or 'P' (Payment)
                         'FIELD17': 'UU000001', # Matching native Miracle DBF user/unit specification
                         'FIELD18': 0.0,
                         'FIELD20': 0,
@@ -5405,24 +5405,22 @@ class MiracleDBFHandler:
                                 
                             is_cv = (v_type == 'CV')
                             is_cash_contra = (v_type in ('BR', 'BP') and str(record['FIELD04']).strip() == 'ACASHACT')
+                            is_bc_bad_f16 = (v_type == 'BC' and str(record['FIELD16']).strip() not in ('R', 'P'))
                             vid = str(record['FIELD01']).strip()
                             
                             updates = {}
-                            if is_cv or is_cash_contra:
+                            if is_cv or is_cash_contra or is_bc_bad_f16:
                                 # Determine direction R/P from matching lines
                                 dr_cr_direction = 'R'
                                 if vid in line_directions:
                                     for f21, drcr in line_directions[vid]:
-                                        if f21 == 'BK':
-                                            dr_cr_direction = 'R' if drcr == 'D' else 'P'
-                                            break
-                                        elif f21 == 'CS':
+                                        if f21 in ('BK', 'CS'):
                                             dr_cr_direction = 'R' if drcr == 'D' else 'P'
                                             break
                                             
                                 updates['FIELD98'] = 'BC'
                                 updates['FIELD99'] = 'BC'
-                                updates['T41F83'] = '9'
+                                updates['T41F83'] = '9   '
                                 updates['FIELD16'] = dr_cr_direction
 
                             # Repair blank FIELD82 narration from T40 memo table
@@ -6311,7 +6309,7 @@ ENDPROC
                         'FIELD11': v_date,  # Chq/DD Date
                         'FIELD12': str(vou_no),
                         'FIELD14': 'N',
-                        'FIELD16': 'C' if f98 == 'BC' else ('R' if tx_type == 'Receipt' else 'P'),  # BC=Contra ('C'), CR=Receipt ('R'), CP=Payment ('P')
+                        'FIELD16': 'R' if tx_type == 'Receipt' else 'P',  # Header FIELD16 in T41 must be 'R' (Receipt) or 'P' (Payment)
                         'FIELD17': 'U0000000',
                         'FIELD18': 0.0,
                         'FIELD20': 0,
@@ -6360,7 +6358,7 @@ ENDPROC
                         'FIELD12': str(vou_no),
                         'T41FVNO': str(vou_no),
                         'FIELD15': '',
-                        'FIELD16': None,
+                        'FIELD16': v_date,
                         'FIELD20': 'N',   # 'N' = Normal active line (Native Miracle requirement so amounts display in Ledger reports)
                         'FIELD21': 'CS',
                         'FIELD22': None,

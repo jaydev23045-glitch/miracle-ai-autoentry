@@ -2939,13 +2939,15 @@ document.addEventListener('DOMContentLoaded', () => {
         });
 
         let html = '<option value="">-- Select Miracle Ledger --</option>';
-        if (item && item.party_gstin) {
-            html += `<option value="AUTO_CREATE_B2B" ${selectedCode === 'AUTO_CREATE_B2B' ? 'selected' : ''} class="text-blue-400 font-semibold">[Auto-Create B2B Ledger with GST]</option>`;
-        } else if (item && !item.party_gstin) {
-            html += `<option value="AUTO_CREATE_B2C" ${selectedCode === 'AUTO_CREATE_B2C' ? 'selected' : ''} class="text-amber-500 font-semibold">[Auto-Create B2C Ledger (No GST)]</option>`;
-        } else {
-            html += `<option value="AUTO_CREATE_B2C" ${selectedCode === 'AUTO_CREATE_B2C' ? 'selected' : ''}>[Auto-Create as New B2C Ledger]</option>`;
-        }
+        const isB2B = item && !!item.party_gstin;
+        const isB2C = item && !item.party_gstin;
+
+        // Smart pre-selection when selectedCode is empty
+        const b2bSelected = selectedCode === 'AUTO_CREATE_B2B' || (selectedCode === '' && isB2B);
+        const b2cSelected = selectedCode === 'AUTO_CREATE_B2C' || (selectedCode === '' && isB2C);
+
+        html += `<option value="AUTO_CREATE_B2B" ${b2bSelected ? 'selected' : ''} class="text-blue-400 font-semibold">✨ [Auto-Create B2B Ledger (with GST)]</option>`;
+        html += `<option value="AUTO_CREATE_B2C" ${b2cSelected ? 'selected' : ''} class="text-amber-500 font-semibold">✨ [Auto-Create B2C Ledger (No GST)]</option>`;
 
         if (suggested.length > 0) {
             html += `<optgroup label="${groupLabel}">
@@ -2972,6 +2974,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         if (globalPartySelect) {
             let globalOpts = '<option value="">-- Select Bulk Mapping Action for All Parties --</option>';
+            globalOpts += '<option value="AUTO_CREATE_SMART" class="text-emerald-400 font-bold">⚡ [Smart Auto-Create: B2B with GST / B2C without GST]</option>';
             globalOpts += '<option value="AUTO_CREATE_B2C" class="text-amber-400 font-bold">✨ [Auto-Create All as B2C Retail Parties]</option>';
             globalOpts += '<option value="AUTO_CREATE_B2B" class="text-blue-400 font-bold">✨ [Auto-Create All as B2B Registered Parties]</option>';
             globalOpts += generateLedgerOptions("");
@@ -2985,7 +2988,12 @@ document.addEventListener('DOMContentLoaded', () => {
                 const selectedVal = globalPartySelect.value;
                 if (selectedVal) {
                     document.querySelectorAll('.mapping-select').forEach(sel => {
-                        sel.value = selectedVal;
+                        if (selectedVal === 'AUTO_CREATE_SMART') {
+                            const isB2C = sel.getAttribute('data-is-b2c') === 'true';
+                            sel.value = isB2C ? 'AUTO_CREATE_B2C' : 'AUTO_CREATE_B2B';
+                        } else {
+                            sel.value = selectedVal;
+                        }
                         sel.classList.remove('border-red-500', 'error-shake');
                     });
                 }
@@ -3581,7 +3589,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function generateProductOptions(selectedCode = "", rowGstPct = null) {
         let html = '<option value="">-- Select Miracle Product --</option>';
-        html += `<option value="AUTO_CREATE_PRODUCT" ${selectedCode === 'AUTO_CREATE_PRODUCT' ? 'selected' : ''} class="text-purple-400 font-semibold">[Auto-Create ${rowGstPct !== null && rowGstPct !== undefined ? rowGstPct + '% ' : ''}Product]</option>`;
+        const isAuto = selectedCode === 'AUTO_CREATE_PRODUCT' || selectedCode === '';
+        html += `<option value="AUTO_CREATE_PRODUCT" ${isAuto ? 'selected' : ''} class="text-purple-400 font-semibold">✨ [Auto-Create ${rowGstPct !== null && rowGstPct !== undefined ? rowGstPct + '% ' : ''}Product in Miracle]</option>`;
 
         if (clientProducts && clientProducts.length > 0) {
             // Group products by category / commodity
@@ -3638,8 +3647,31 @@ document.addEventListener('DOMContentLoaded', () => {
         const productMappingList = document.getElementById('productMappingList');
         productMappingList.innerHTML = '';
 
+        const countBadge = document.getElementById('unmappedProductCountBadge');
+        if (countBadge) countBadge.textContent = unknownProducts.length;
+
         // Populate global product dropdown
-        // Removed as it is now handled dynamically per GST group
+        const globalProdSelect = document.getElementById('globalProductMappingSelect');
+        if (globalProdSelect) {
+            let globalOpts = '<option value="">-- Select Bulk Mapping Action for All Products --</option>';
+            globalOpts += '<option value="AUTO_CREATE_PRODUCT" class="text-purple-400 font-bold">✨ [Auto-Create All Missing Products in Miracle]</option>';
+            globalOpts += generateProductOptions("");
+            globalProdSelect.innerHTML = globalOpts;
+        }
+
+        // Wire ⚡ Apply to All button
+        const applyGlobalProdBtn = document.getElementById('applyGlobalProductMappingBtn');
+        if (applyGlobalProdBtn && globalProdSelect) {
+            applyGlobalProdBtn.onclick = () => {
+                const selectedVal = globalProdSelect.value;
+                if (selectedVal) {
+                    document.querySelectorAll('.product-mapping-select').forEach(sel => {
+                        sel.value = selectedVal;
+                        sel.classList.remove('border-red-500', 'error-shake');
+                    });
+                }
+            };
+        }
 
         // Sort unknown products by GST % descending (e.g. 18%, 12%, 5%, 0%), then alphabetically
         unknownProducts.sort((a, b) => {
@@ -3651,7 +3683,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         unknownProducts.forEach((item, idx) => {
             const selectId = `prod-select-${idx}`;
-            const optionsHtml = generateProductOptions("");
+            const optionsHtml = generateProductOptions("", item.gst_pct);
 
             // Inject GST Group Header if GST changed
             if (currentGst !== item.gst_pct) {
@@ -3692,13 +3724,26 @@ document.addEventListener('DOMContentLoaded', () => {
                         <select id="${selectId}" class="product-mapping-select ${groupClass} w-full bg-slate-900 border border-slate-800 rounded-xl py-2 px-3 text-slate-200 text-sm focus:outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-500/50 focus:ring-offset-2 focus:ring-offset-obsidian-950 cursor-pointer" data-name="${(item.name || '').replace(/"/g, '&quot;')}">
                             ${optionsHtml}
                         </select>
-                        <button class="refresh-products-btn bg-slate-900 hover:bg-slate-800 px-3 rounded-xl text-slate-350 transition border border-slate-800 flex items-center justify-center" title="Refresh Products from Miracle Database" data-select-id="${selectId}">
+                        <button class="refresh-products-btn bg-slate-900 hover:bg-slate-800 px-3 rounded-xl text-slate-350 transition border border-slate-800 flex items-center justify-center shrink-0" title="Refresh Products from Miracle Database" data-select-id="${selectId}">
                             <i class="fa-solid fa-arrows-rotate"></i>
                         </button>
                     </div>
                 </div>
             `;
         });
+
+        // Search Filter Wireup
+        const prodSearchInput = document.getElementById('productMappingSearch');
+        if (prodSearchInput) {
+            prodSearchInput.value = '';
+            prodSearchInput.oninput = (e) => {
+                const q = e.target.value.toLowerCase().trim();
+                document.querySelectorAll('#productMappingList > div').forEach(card => {
+                    const txt = card.innerText.toLowerCase();
+                    card.style.display = (!q || txt.includes(q)) ? '' : 'none';
+                });
+            };
+        }
 
         // Wire up Apply to Group buttons
         document.querySelectorAll('.apply-group-btn').forEach(btn => {
@@ -4334,8 +4379,10 @@ document.addEventListener('DOMContentLoaded', () => {
                     if (currentGridFilter === 'freight' && parseCurrency(row.freight || row.Freight || 0) <= 0 && parseCurrency(row.discount || row.Discount || 0) <= 0) return false;
                     if (currentGridFilter === 'review' && !isSuspense) return false;
                 } else {
-                    if (currentGridFilter === 'receipts' && txType !== 'receipt') return false;
-                    if (currentGridFilter === 'payments' && txType !== 'payment') return false;
+                    const isRcpt = txType.includes('receipt') || txType === 'cr' || txType === 'br' || (txType.includes('contra') && parseCurrency(row.deposit || row.deposit_amt || 0) > 0);
+                    const isPymt = txType.includes('payment') || txType === 'cp' || txType === 'bp' || (txType.includes('contra') && !isRcpt);
+                    if (currentGridFilter === 'receipts' && !isRcpt) return false;
+                    if (currentGridFilter === 'payments' && !isPymt) return false;
 
                     let exists = false;
                     if (clientLedgers && clientLedgers.length > 0 && !isSuspense) {
@@ -4428,10 +4475,11 @@ document.addEventListener('DOMContentLoaded', () => {
             const itemName = (r.items && r.items.length > 0) ? r.items[0].name : "";
             if (itemName === "AUTO_CREATE_PRODUCT" || itemName === "") cntAutoItem++;
 
-            if (txType === 'receipt') {
+            const isRcpt = txType.includes('receipt') || txType === 'cr' || txType === 'br' || (txType.includes('contra') && parseCurrency(r.deposit || r.deposit_amt || 0) > 0);
+            if (isRcpt) {
                 cntReceipts++;
                 sumCr += amtVal;
-            } else if (txType === 'payment') {
+            } else {
                 cntPayments++;
                 sumDr += amtVal;
             }
@@ -5370,12 +5418,34 @@ document.addEventListener('DOMContentLoaded', () => {
                 })()}
                     </div>
                 </td>
-                <td class="px-3 py-2 border-r border-slate-800/30 text-right" style="width:130px;min-width:130px">
-                    <input type="text" class="bg-slate-900/60 hover:bg-slate-900 border border-slate-800 focus:border-rose-500 w-full text-rose-400 text-xs font-bold rounded-lg px-2.5 py-1.5 focus:outline-none transition text-right withdrawal-input" value="${row.transaction_type === 'Payment' ? (row.amount || '') : ''}">
-                </td>
-                <td class="px-3 py-2 border-r border-slate-800/30 text-right" style="width:130px;min-width:130px">
-                    <input type="text" class="bg-slate-900/60 hover:bg-slate-900 border border-slate-800 focus:border-emerald-500 w-full text-emerald-400 text-xs font-bold rounded-lg px-2.5 py-1.5 focus:outline-none transition text-right deposit-input" value="${row.transaction_type === 'Receipt' ? (row.amount || '') : ''}">
-                </td>
+                ${(() => {
+                    const rTx = (row.transaction_type || row.Transaction_Type || row.type || '').toString().trim().toLowerCase();
+                    const isContra = rTx.includes('contra') || rTx === 'bc' || rTx === 'cb';
+                    let isPymtVal = false;
+                    let isRcptVal = false;
+                    if (isContra) {
+                        const wAmt = parseCurrency(row.withdrawal || row.withdrawal_amt || 0);
+                        const dAmt = parseCurrency(row.deposit || row.deposit_amt || 0);
+                        if (wAmt > 0) {
+                            isPymtVal = true;
+                        } else if (dAmt > 0) {
+                            isRcptVal = true;
+                        } else {
+                            isPymtVal = rTx.includes('withdrawal') || rTx.includes('payment');
+                            isRcptVal = !isPymtVal;
+                        }
+                    } else {
+                        isPymtVal = rTx === 'payment' || rTx === 'cp' || rTx === 'bp' || rTx.includes('withdrawal');
+                        isRcptVal = rTx === 'receipt' || rTx === 'cr' || rTx === 'br' || rTx.includes('deposit') || (!isPymtVal && rTx !== 'payment');
+                    }
+                    return `
+                    <td class="px-3 py-2 border-r border-slate-800/30 text-right" style="width:130px;min-width:130px">
+                        <input type="text" class="bg-slate-900/60 hover:bg-slate-900 border border-slate-800 focus:border-rose-500 w-full text-rose-400 text-xs font-bold rounded-lg px-2.5 py-1.5 focus:outline-none transition text-right withdrawal-input" value="${isPymtVal ? (row.amount || row.withdrawal || '') : ''}">
+                    </td>
+                    <td class="px-3 py-2 border-r border-slate-800/30 text-right" style="width:130px;min-width:130px">
+                        <input type="text" class="bg-slate-900/60 hover:bg-slate-900 border border-slate-800 focus:border-emerald-500 w-full text-emerald-400 text-xs font-bold rounded-lg px-2.5 py-1.5 focus:outline-none transition text-right deposit-input" value="${isRcptVal ? (row.amount || row.deposit || '') : ''}">
+                    </td>`;
+                })()}
                 <td class="px-3 py-2 border-r border-slate-800/30 text-right font-black balance-cell whitespace-nowrap ${balColor}" style="width:145px;min-width:145px">
                     ${calculated_balance_formatted}
                 </td>
@@ -5527,7 +5597,14 @@ document.addEventListener('DOMContentLoaded', () => {
                     if (withdrawalInput.value !== '' && depositInput) {
                         depositInput.value = '';
                     }
-                    if (withdrawalInput.value !== '') row.transaction_type = 'Payment';
+                    if (withdrawalInput.value !== '') {
+                        const curTx = (row.transaction_type || '').toString().trim().toLowerCase();
+                        if (!curTx.includes('contra') && curTx !== 'bc' && curTx !== 'cb') {
+                            row.transaction_type = 'Payment';
+                        }
+                        row.withdrawal = parseCurrency(withdrawalInput.value) || 0;
+                        row.deposit = 0;
+                    }
                     row.amount = parseCurrency(withdrawalInput.value) || 0;
                     recalcGrandTotals();
                     renderVirtualGridRows();
@@ -5540,7 +5617,14 @@ document.addEventListener('DOMContentLoaded', () => {
                     if (depositInput.value !== '' && withdrawalInput) {
                         withdrawalInput.value = '';
                     }
-                    if (depositInput.value !== '') row.transaction_type = 'Receipt';
+                    if (depositInput.value !== '') {
+                        const curTx = (row.transaction_type || '').toString().trim().toLowerCase();
+                        if (!curTx.includes('contra') && curTx !== 'bc' && curTx !== 'cb') {
+                            row.transaction_type = 'Receipt';
+                        }
+                        row.deposit = parseCurrency(depositInput.value) || 0;
+                        row.withdrawal = 0;
+                    }
                     row.amount = parseCurrency(depositInput.value) || 0;
                     recalcGrandTotals();
                     renderVirtualGridRows();
@@ -5851,9 +5935,13 @@ document.addEventListener('DOMContentLoaded', () => {
             let amt = parseCurrency(row.amount) || parseCurrency(row.deposit) || parseCurrency(row.withdrawal) || parseCurrency(row.Amount) || parseCurrency(row.Deposit) || parseCurrency(row.Withdrawal) || 0;
             row.amount = amt;
 
-            if (txType === 'receipt' || txType === 'deposit' || txType === 'cr') {
+            if (txType === 'receipt' || txType === 'deposit' || txType === 'cr' || txType === 'br') {
                 currentBalance += amt;
-            } else if (txType === 'payment' || txType === 'withdrawal' || txType === 'dr') {
+            } else if (txType === 'payment' || txType === 'withdrawal' || txType === 'dr' || txType === 'bp') {
+                currentBalance -= amt;
+            } else if (parseCurrency(row.deposit || row.deposit_amt || 0) > 0) {
+                currentBalance += amt;
+            } else if (parseCurrency(row.withdrawal || row.withdrawal_amt || 0) > 0) {
                 currentBalance -= amt;
             } else if (row.running_balance !== undefined && row.running_balance !== null && row.running_balance !== '') {
                 currentBalance = parseFloat(row.running_balance);
