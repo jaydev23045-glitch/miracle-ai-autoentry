@@ -191,8 +191,25 @@ class LegacyGenerativeAIClientWrapper:
         )
 
 
-# Module-level spec file cache: {md5_hash: distilled_rules_text}
+# Bounded Thread-Safe Spec File Cache: {md5_hash: distilled_rules_text}
 _SPEC_FILE_CACHE: dict = {}
+_SPEC_FILE_CACHE_LOCK = threading.Lock()
+_SPEC_FILE_CACHE_MAX_SIZE = 100
+
+def _get_cached_spec(file_hash: str) -> str | None:
+    with _SPEC_FILE_CACHE_LOCK:
+        return _SPEC_FILE_CACHE.get(file_hash)
+
+def _store_cached_spec(file_hash: str, result_text: str):
+    with _SPEC_FILE_CACHE_LOCK:
+        if len(_SPEC_FILE_CACHE) >= _SPEC_FILE_CACHE_MAX_SIZE:
+            # Evict oldest entry (LRU simple pop)
+            try:
+                first_key = next(iter(_SPEC_FILE_CACHE))
+                del _SPEC_FILE_CACHE[first_key]
+            except Exception:
+                _SPEC_FILE_CACHE.clear()
+        _SPEC_FILE_CACHE[file_hash] = result_text
 
 
 class GeminiService:
@@ -202,6 +219,7 @@ class GeminiService:
         model_name: str | None = None,
         is_paid_api_key: bool | None = None,
     ):
+        self._key_lock = threading.Lock()
         from core.config import get_gemini_api_key_pool, clean_api_key
 
         if not api_key:
@@ -218,8 +236,8 @@ class GeminiService:
                             model_name = cfg.get("gemini_model")
                         if is_paid_api_key is None:
                             is_paid_api_key = cfg.get("is_paid_api_key")
-            except Exception:
-                pass
+            except Exception as e:
+                logging.debug(f"Could not load settings.json in GeminiService: {e}")
 
         # Build 10-Key API Pool (GEMINI_API_KEY .. GEMINI_API_KEY_10)
         self.api_keys_pool = []
@@ -1396,20 +1414,23 @@ class GeminiService:
         import time
         import random
 
-        # Production Fallback Hierarchy ordered by RPM/RPD capacity & speed:
-        # Tier 1 (15 RPM / 500 RPD = 5,000 daily requests across 10 keys):
-        #   - gemini-3.1-flash-lite, gemini-3.5-flash-lite, gemini-2.5-flash-lite
-        # Tier 2 (5 RPM / 20 RPD):
-        #   - gemini-3.6-flash, gemini-3.7-flash, gemini-3.5-flash, gemini-3-flash, gemini-2.5-flash
+        # Production Fallback Hierarchy ordered strictly by Strategy: Tier 3 (Intelligence First) -> Tier 2 -> Tier 1 (High-Capacity Backup)
+        # Tier 3 (Highest Intelligence & Accuracy, 20 RPD):
+        #   - gemini-3.6-flash, gemini-3.7-flash, gemini-3.8-flash, gemini-3.5-flash, gemini-2.5-flash
+        # Tier 2 (Mid-Range, 20 RPD):
+        #   - gemini-2.5-flash-lite
+        # Tier 1 (High-Capacity Safety Net Backup, 500 RPD per key):
+        #   - gemini-3.1-flash-lite, gemini-3.5-flash-lite, gemini-1.5-flash
         FALLBACK_MODELS = [
-            "gemini-3.1-flash-lite",
-            "gemini-3.5-flash-lite",
-            "gemini-2.5-flash-lite",
             "gemini-3.6-flash",
             "gemini-3.7-flash",
+            "gemini-3.8-flash",
             "gemini-3.5-flash",
-            "gemini-3-flash",
             "gemini-2.5-flash",
+            "gemini-2.5-flash-lite",
+            "gemini-3.1-flash-lite",
+            "gemini-3.5-flash-lite",
+            "gemini-1.5-flash",
         ]
 
         # Build candidate list starting from requested model
@@ -1471,10 +1492,6 @@ class GeminiService:
                             model=active_model, contents=contents
                         )
                     # Update active key index on clean success with thread safety to rotate keys dynamically
-                    if not hasattr(self, "_key_lock"):
-                        import threading
-
-                        self._key_lock = threading.Lock()
                     with self._key_lock:
                         self.current_key_idx = (actual_idx + 1) % len(keys_pool)
                         self.api_key = keys_pool[self.current_key_idx]
@@ -1634,11 +1651,12 @@ Instructions for the Profile:
         try:
             with open(file_path, "rb") as _f:
                 file_hash = hashlib.md5(_f.read()).hexdigest()
-            if file_hash in _SPEC_FILE_CACHE:
+            cached_res = _get_cached_spec(file_hash)
+            if cached_res:
                 print(
                     f"⚡ [Spec Cache HIT] Returning cached spec for hash {file_hash[:8]}... (instant, no API call)"
                 )
-                return _SPEC_FILE_CACHE[file_hash]
+                return cached_res
         except Exception:
             file_hash = None
 
@@ -1691,7 +1709,7 @@ Return ONLY the distilled rules and mappings."""
             result_text = response.text.strip() if response and response.text else ""
             # Cache result so the same spec file never hits the API twice
             if file_hash and result_text:
-                _SPEC_FILE_CACHE[file_hash] = result_text
+                _store_cached_spec(file_hash, result_text)
                 print(
                     f"💾 [Spec Cache STORE] Cached spec result for hash {file_hash[:8]}..."
                 )
@@ -4093,6 +4111,46 @@ Return ONLY valid JSON.
             "DEBTORS",
             "CREDITOR",
             "CREDITORS",
+            "SUNDRY DEBTORS",
+            "SUNDRY CREDITORS",
+            "INDIRECT EXPENSES",
+            "DIRECT EXPENSES",
+            "INDIRECT INCOME",
+            "DIRECT INCOME",
+            "SALES ACCOUNTS",
+            "PURCHASE ACCOUNTS",
+            "SUSPENSE ACCOUNT",
+            "SUSPENSE A/C",
+            "CHEQUE DEPOSIT",
+            "CHQ DEP",
+            "CHQ DEPOSIT",
+            "CHEQUE REC",
+            "CHEQUE RECVD",
+            "CHEQUE CLEARING",
+            "CLEARING DEPOSIT",
+            "CLEARING",
+            "CLG DEPOSIT",
+            "CHQ RETURN",
+            "CHEQUE RETURN",
+            "CHQ RET",
+            "CHEQUE BOUNCE",
+            "CHQ BOUNCE",
+            "INWARD CHEQUE",
+            "OUTWARD CHEQUE",
+            "NEFT DEPOSIT",
+            "NEFT RECEIPT",
+            "NEFT CR",
+            "NEFT DR",
+            "RTGS CR",
+            "RTGS DR",
+            "IMPS CR",
+            "IMPS DR",
+            "TRANSFER CR",
+            "TRANSFER DR",
+            "TRF DEPOSIT",
+            "BY TRANSFER",
+            "TO TRANSFER",
+            "BANK TRANSFER",
         }
 
         ledger_group_map = {}  # UPPER -> Exact Group Name from Miracle DBF
@@ -4790,7 +4848,7 @@ Return ONLY valid JSON.
 
             if not matched_ledger:
                 extracted_party = self.extract_clean_party_from_narration(narr)
-                if extracted_party and len(extracted_party) >= 2:
+                if extracted_party and len(extracted_party) >= 2 and extracted_party.upper() not in RESERVED_GENERIC_WORDS:
                     matched_ledger = extracted_party
                     match_stage = "Clean Party Auto-Extraction"
                 else:
@@ -4808,18 +4866,19 @@ Return ONLY valid JSON.
                 amount=float(row.get("amount", 0) or 0)
             )
 
-            # Route low confidence entries (< 60) or unmapped items to Suspense Account
-            if dyn_score < 60 or matched_ledger.upper() in ("SUSPENSE ACCOUNT", "SUSPENSE A/C"):
+            # Route low confidence entries (< 65), generic group terms, or unmapped items to Suspense Account
+            is_generic_match = bool(matched_ledger and matched_ledger.upper() in RESERVED_GENERIC_WORDS)
+            if dyn_score < 65 or matched_ledger.upper() in ("SUSPENSE ACCOUNT", "SUSPENSE A/C") or is_generic_match:
                 resolved_suspense = ledger_lookup.get("SUSPENSE ACCOUNT", "Suspense Account")
                 row["mapped_ledger"] = resolved_suspense
                 row["party_name"] = resolved_suspense
                 row["party"] = resolved_suspense
                 row["group_hint"] = "Suspense Account"
-                row["confidence_score"] = dyn_score
+                row["confidence_score"] = 40 if is_generic_match else dyn_score
                 if "Low Confidence - Suspense Account" not in row.get("flags", []):
                     row.setdefault("flags", []).append("Low Confidence - Suspense Account")
                 if not silent_mode:
-                    print(f"  ⚠️ [Suspense Account Fallback (Score: {dyn_score})] '{narr[:50]}' → '{resolved_suspense}'")
+                    print(f"  ⚠️ [Suspense Account Fallback (Score: {row['confidence_score']})] '{narr[:50]}' → '{resolved_suspense}'")
             else:
                 mapped_count += 1
                 row["mapped_ledger"] = matched_ledger
@@ -5097,16 +5156,13 @@ Return ONLY valid JSON.
                             row["party"] = clean_party
                             row["group_hint"] = target_group
                         else:
-                            default_upi = (
-                                "Sundry Debtors"
-                                if tx_type == "Receipt"
-                                else "Sundry Creditors"
-                            )
-                            row["mapped_ledger"] = ledger_lookup.get(
-                                default_upi.upper(), default_upi
-                            )
-                            row["party_name"] = row["mapped_ledger"]
-                            row["party"] = row["mapped_ledger"]
+                            # Rule 26 Guard: NEVER map parent group headers (Sundry Debtors / Sundry Creditors) as party ledger accounts
+                            row["mapped_ledger"] = "Suspense Account"
+                            row["party_name"] = "Suspense Account"
+                            row["party"] = "Suspense Account"
+                            row["group_hint"] = "Suspense Account"
+                            row["confidence_score"] = 0
+                            row["flags"] = ["Rule 26 Guard (Generic Descriptor)", "Human Review Required"]
             # Apply date range filtering from user instructions if specified
             if (
                 result_json.get("status") == "success"
@@ -5564,8 +5620,8 @@ Example Output:
                 dt = safe_create_date(y, m, d)
                 if dt and dt not in found_dates:
                     found_dates.append(dt)
-            except:
-                pass
+            except Exception as err:
+                logging.debug(f"Date match YYYY-MM-DD parse skipped: {err}")
 
         # 2. Match DD/MM/YYYY or DD/MM/YY
         for match in re.finditer(
@@ -5581,8 +5637,8 @@ Example Output:
                 dt = safe_create_date(y, m, d)
                 if dt and dt not in found_dates:
                     found_dates.append(dt)
-            except:
-                pass
+            except Exception as err:
+                logging.debug(f"Date match DD/MM/YYYY parse skipped: {err}")
 
         if len(found_dates) >= 2:
             found_dates.sort()

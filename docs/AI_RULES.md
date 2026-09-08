@@ -44,12 +44,13 @@
 
 ---
 
-### 🧪 Category V: Automated Verification & Memory Persistence (Rules 21 – 25)
+### 🧪 Category V: Automated Verification & Memory Persistence (Rules 21 – 26)
 21. **Rule 21 — Mandatory Empirical Compilation**: You MUST run `python3 -m py_compile` or execution scripts after editing code. Never declare success without running verification.
 22. **Rule 22 — Lock-Resilient ZIP Backups**: Always create a full timestamped client backup in `/BACKUPS/` prior to performing DBF table pushes.
 23. **Rule 23 — Premium UI/UX Styling Protection**: Maintain glassmorphic dark-mode aesthetics in `/frontend/`. Never add plain browser-default inputs or break module navigation.
 24. **Rule 24 — Mandatory Changelog Update**: Append a detailed summary of all code modifications to `docs/CHANGELOG.md` upon task completion.
 25. **Rule 25 — Master Memory Sync**: Update `docs/AI_RULES.md` and `docs/AI_RULES_BOOK.md` whenever a new bug or system rule is established.
+26. **Rule 26 — Strict Generic Group Header Rejection**: NEVER map generic banking descriptors (`CHEQUE DEPOSIT`, `CHQ DEP`, `CLEARING`, `NEFT`) or parent group headers (`Sundry Debtors`, `Sundry Creditors`) as party ledger accounts. All unmapped or generic narrations MUST route to `Suspense Account` with low confidence ($40\%$) for accountant review.
 
 ---
 

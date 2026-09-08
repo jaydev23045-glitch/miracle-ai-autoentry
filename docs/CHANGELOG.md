@@ -1,6 +1,38 @@
 # Miracle Auto-Entry Platform - Changelog
 
-### 184. Enhanced Product Mapping Resolution Modal UI with Real-time Search & Quick Bulk Actions
+### 186. Comprehensive Code Audit & Architecture Optimization for Gemini Service & Core Config
+**The Problem Resolved:**
+1. `gemini_service.py` (292 KB) contained monolithic responsibility coupling and un-bounded spec caching.
+2. In `gemini_service.py`, `_key_lock` thread-lock was initialized dynamically inside retry loops instead of `__init__`, introducing potential race conditions under high concurrency.
+3. Fallback model lists included legacy model strings rather than prioritizing fast active models (`gemini-2.5-flash-lite`, `gemini-3.1-flash-lite`, `gemini-2.5-flash`).
+4. Fallback party mapping assigned parent group headers (`Sundry Debtors` / `Sundry Creditors`) as party names on generic narrations, violating Rule 26.
+5. Bare `except:` swallows in config and date parsing obscured runtime tracebacks.
+
+**Fixes & Architecture Implemented:**
+1. **Thread-Safe Key Lock Initialization ([gemini_service.py](file:///Users/jaydevnakum/Work%20Place/WORK/APP%20DETAILS/Mirracle%20Auto%20Entre%20Sale%20or%20Purchase%20or%20Bank/backend/gemini_service.py#L201)):**
+   - Moved `self._key_lock = threading.Lock()` into `GeminiService.__init__` for safe concurrent key rotation.
+2. **Bounded Thread-Safe Spec Cache ([gemini_service.py](file:///Users/jaydevnakum/Work%20Place/WORK/APP%20DETAILS/Mirracle%20Auto%20Entre%20Sale%20or%20Purchase%20or%20Bank/backend/gemini_service.py#L195)):**
+   - Implemented thread-safe `_get_cached_spec` and `_store_cached_spec` bounded to a max size of 100 entries with LRU eviction to prevent memory leaks during long-running background tasks.
+3. **Intelligence-First Model Fallback Hierarchy ([gemini_service.py](file:///Users/jaydevnakum/Work%20Place/WORK/APP%20DETAILS/Mirracle%20Auto%20Entre%20Sale%20or%20Purchase%20or%20Bank/backend/gemini_service.py#L1422)):**
+   - Reordered `FALLBACK_MODELS` to execute Tier 3 high-reasoning models first (`gemini-3.6-flash`, `gemini-3.7-flash`, `gemini-3.8-flash`, `gemini-3.5-flash`, `gemini-2.5-flash`), followed by Tier 2 (`gemini-2.5-flash-lite`), and finally Tier 1 high-capacity backup models (`gemini-3.1-flash-lite`, `gemini-3.5-flash-lite`, `gemini-1.5-flash`).
+4. **Rule 26 Enforcement ([gemini_service.py](file:///Users/jaydevnakum/Work%20Place/WORK/APP%20DETAILS/Mirracle%20Auto%20Entre%20Sale%20or%20Purchase%20or%20Bank/backend/gemini_service.py#L5157)):**
+   - Enforced Rule 26: generic narrations without extracted party names map strictly to `"Suspense Account"` with `confidence_score = 0` and `"Rule 26 Guard (Generic Descriptor)"` flag, preventing assignment of parent group names as party accounts.
+5. **Exception Logging & Compilation Integrity ([config.py](file:///Users/jaydevnakum/Work%20Place/WORK/APP%20DETAILS/Mirracle%20Auto%20Entre%20Sale%20or%20Purchase%20or%20Bank/backend/core/config.py#L82)):**
+   - Replaced silent `except:` swallows in `.env` parsing and date extraction with structured `logging.debug(...)` calls.
+   - Verified compilation across all core backend files (`python3 -m py_compile`).
+
+### 185. Strict Accounting Foundation Protocol for Bank Narrations & Generic Group Header Rejection
+**The Problem Resolved:**
+When processing bank statements with generic narrations (e.g., `CHEQUE DEPOSIT/119/BARB/BANK OF BARODA...`, `CHQ DEP`, `CLEARING`, `NEFT CR`), the engine fell back to assigning literal group headers like `"Sundry Debtors"` or `"Sundry Creditors"` as the `mapped_ledger`, falsely rendering green `Mapped 100%` badges. In double-entry accounting software, posting vouchers directly to a parent group header or assigning a generic transaction descriptor as a party ledger is a major accounting error.
+
+**Fixes & Architecture Implemented:**
+1. **Generic Group Header & Narration Descriptor Rejection ([gemini_service.py](file:///Users/jaydevnakum/Work%20Place/WORK/APP%20DETAILS/Mirracle%20Auto%20Entre%20Sale%20or%20Purchase%20or%20Bank/backend/gemini_service.py#L4074)):**
+   - Expanded `RESERVED_GENERIC_WORDS` to strictly include all parent group header names (`"SUNDRY DEBTORS"`, `"SUNDRY CREDITORS"`, `"INDIRECT EXPENSES"`, `"DIRECT EXPENSES"`, `"SALES ACCOUNTS"`, `"PURCHASE ACCOUNTS"`) and generic banking method descriptors (`"CHEQUE DEPOSIT"`, `"CHQ DEP"`, `"CHEQUE CLEARING"`, `"CLEARING DEPOSIT"`, `"CHEQUE RETURN"`, `"CHEQUE BOUNCE"`).
+   - Added automatic rejection in `GeminiService`: any candidate match resolving to a generic word or group header is rejected and routed to **`Suspense Account`** with a low confidence score ($40\%$).
+2. **Backend Foundation Rule Alignment ([config.py](file:///Users/jaydevnakum/Work%20Place/WORK/APP%20DETAILS/Mirracle%20Auto%20Entre%20Sale%20or%20Purchase%20or%20Bank/backend/core/config.py#L623)):**
+   - Updated `validate_and_heal_vouchers()` in `config.py`: if `party_name` matches a generic descriptor or group header, the backend explicitly routes the transaction to `Suspense Account` instead of defaulting to `"Sundry Debtors"` / `"Sundry Creditors"`.
+3. **Frontend UI Grid Auto-Healing ([app.js](file:///Users/jaydevnakum/Work%20Place/WORK/APP%20DETAILS/Mirracle%20Auto%20Entre%20Sale%20or%20Purchase%20or%20Bank/frontend/app.js#L5139)):**
+   - Implemented strict accounting guards in `createRowElement()` and `resolveRowAccountingGroup()`: any row whose mapped ledger is a group header or generic cheque descriptor is auto-healed to `"Suspense Account"`, assigned low confidence ($40\%$), and flagged as **`Review` (Unmapped Narration)** so accountants can review and clarify the exact customer.
 **The Problem Resolved:**
 When processing Sales and Purchase invoices with unmapped item names (e.g. `CONSULTING SERVICE` or custom item descriptions), the Product Mapping Resolution Modal lacked a real-time search bar, unmapped item counter, and a top global bulk-map action panel, requiring manual per-group selection.
 

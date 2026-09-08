@@ -5059,8 +5059,15 @@ document.addEventListener('DOMContentLoaded', () => {
             return normalizeAccountingGroup(autoCreateLedgerHints[legUp]);
         }
 
-        // 3. If mappedLedger is SUSPENSE ACCOUNT or empty, return Suspense Account
-        if (!legUp || legUp === 'SUSPENSE ACCOUNT') {
+        // 3. If mappedLedger is SUSPENSE ACCOUNT, empty, generic group header, or unmapped cheque descriptor, return Suspense Account
+        const GENERIC_PARTY_DESCRIPTORS = [
+            'SUNDRY DEBTORS', 'SUNDRY CREDITORS', 'INDIRECT EXPENSES', 'DIRECT EXPENSES',
+            'INDIRECT INCOME', 'DIRECT INCOME', 'SALES ACCOUNTS', 'PURCHASE ACCOUNTS',
+            'CHEQUE DEPOSIT', 'CHQ DEP', 'CHQ DEPOSIT', 'CHEQUE CLEARING', 'CLEARING DEPOSIT',
+            'CLEARING', 'CLG DEPOSIT', 'CHQ RETURN', 'CHEQUE RETURN', 'CHQ RET', 'CHEQUE BOUNCE',
+            'INWARD CHEQUE', 'OUTWARD CHEQUE', 'NEFT DEPOSIT', 'RTGS DEPOSIT', 'IMPS DEPOSIT'
+        ];
+        if (!legUp || legUp === 'SUSPENSE ACCOUNT' || GENERIC_PARTY_DESCRIPTORS.includes(legUp) || /^CHEQUE DEPOSIT|^CHQ DEP|^CLEARING/i.test(legUp)) {
             return 'Suspense Account';
         }
 
@@ -5131,6 +5138,26 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function createRowElement(row, index, globalAutoCreateLedgers, autoCreateLedgerHints) {
         let cScore = (row.confidence_score !== undefined && row.confidence_score !== null) ? row.confidence_score : 100;
+
+        // 🚨 Strict Accounting Guard: Route generic group headers & unmapped cheque descriptors to Suspense Account 🚨
+        const cleanLegUp = (row.mapped_ledger || "").trim().toUpperCase();
+        const GENERIC_BAD_LIST = [
+            'SUNDRY DEBTORS', 'SUNDRY CREDITORS', 'INDIRECT EXPENSES', 'DIRECT EXPENSES',
+            'INDIRECT INCOME', 'DIRECT INCOME', 'SALES ACCOUNTS', 'PURCHASE ACCOUNTS',
+            'CHEQUE DEPOSIT', 'CHQ DEP', 'CHQ DEPOSIT', 'CHEQUE CLEARING', 'CLEARING DEPOSIT',
+            'CLEARING', 'CLG DEPOSIT', 'CHQ RETURN', 'CHEQUE RETURN', 'CHQ RET', 'CHEQUE BOUNCE'
+        ];
+        if (GENERIC_BAD_LIST.includes(cleanLegUp) || /^CHEQUE DEPOSIT|^CHQ DEP|^CLEARING/i.test(cleanLegUp)) {
+            row.mapped_ledger = 'Suspense Account';
+            row.party_name = 'Suspense Account';
+            row.party = 'Suspense Account';
+            row.group_hint = 'Suspense Account';
+            row.confidence_score = 40;
+            cScore = 40;
+            row.status = 'Review';
+            if (!row.flags) row.flags = [];
+            if (!row.flags.includes('Unmapped Narration')) row.flags.push('Unmapped Narration');
+        }
 
         // 🚨 DBF Product GST Mismatch Check 🚨
         let gstMismatchDetected = false;
