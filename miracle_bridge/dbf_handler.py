@@ -1080,6 +1080,16 @@ class MiracleDBFHandler:
                     seen_names.add(key)
                     merged_products[key] = p
 
+        if not merged_products:
+            prods = self.read_products(year_folder="")
+            for p in prods:
+                p_code = p.get("code", "").strip()
+                p_name = p.get("name", "").strip()
+                key = (p_name.upper(), p_code.upper())
+                if key not in seen_names and p_name:
+                    seen_names.add(key)
+                    merged_products[key] = p
+
         return list(merged_products.values())
 
     def _sync_party_to_other_years(self, party_name: str, party_code: str, source_year_folder: str, target_year_folder: str | None = None):

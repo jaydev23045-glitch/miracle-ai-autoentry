@@ -2332,7 +2332,7 @@ def export_excel_memory_vault():
 @router.get("/api/bridge/version")
 def check_miracle_bridge_version(current_version: str = "1.0.0"):
     """Checks the latest available MiracleBridge release version for client auto-updates."""
-    LATEST_BRIDGE_VERSION = "1.1.0"
+    LATEST_BRIDGE_VERSION = "1.2.0"
     needs_update = current_version.strip() != LATEST_BRIDGE_VERSION
     return {
         "status": "success",
@@ -2340,7 +2340,7 @@ def check_miracle_bridge_version(current_version: str = "1.0.0"):
         "current_version": current_version,
         "needs_update": needs_update,
         "download_url": "/api/bridge/download",
-        "changelog": "System tray agent, auto-start on boot, and background OTA binary update engine."
+        "changelog": "v1.2.0: Direct local bridge routing, auto pre-fetch on modal open, and 3-tier multi-year DBF scanning for products and party ledgers."
     }
 
 

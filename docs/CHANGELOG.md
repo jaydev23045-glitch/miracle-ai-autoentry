@@ -1,6 +1,6 @@
 # Miracle Auto-Entry Platform - Changelog
 
-### 187. Dual-Mode Local Bridge Routing & Comprehensive Master Fallback for Products & Ledgers
+### 187. Miracle Bridge v1.2.0 Release: Dual-Mode Local Bridge Routing & Comprehensive Master Fallback for Products & Ledgers
 **The Problem Resolved:**
 When accessing the Miracle AI Auto-Entry tool via cloud deployment (`miracle-ai-autoentry.onrender.com`), both the **Party Ledger Mapping Modal** (`#mappingModal`) and **Product Item Mapping Modal** (`#productMappingModal`) displayed dropdowns with ONLY default options (`-- Select Miracle Ledger --`, `[Auto-Create B2B/B2C]`, `[Auto-Create 0% Product]`) and zero existing Miracle account ledgers or product masters.
 

@@ -159,7 +159,7 @@ def backup_full_client_folder(client_id: str, base_path: str, custom_backup_path
     return archive_path
 
 
-BRIDGE_VERSION = "1.1.0"
+BRIDGE_VERSION = "1.2.0"
 CLOUD_URL = os.environ.get("RENDER_CLOUD_URL", "https://miracle-ai-autoentry.onrender.com").rstrip("/")
 
 

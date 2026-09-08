@@ -39,8 +39,10 @@ Miracle9070/
 # PyInstaller Build Output & Executables
 miracle_bridge/build/
 miracle_bridge/dist/
+!miracle_bridge/dist/MiracleBridge.exe
 miracle_bridge/*.spec
 *.exe
+!miracle_bridge/dist/*.exe
 
 # OS & IDE Metadata
 .DS_Store
