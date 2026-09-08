@@ -1,5 +1,26 @@
 # Miracle Auto-Entry Platform - Changelog
 
+### 187. Dual-Mode Local Bridge Routing & Comprehensive Master Fallback for Products & Ledgers
+**The Problem Resolved:**
+When accessing the Miracle AI Auto-Entry tool via cloud deployment (`miracle-ai-autoentry.onrender.com`), both the **Party Ledger Mapping Modal** (`#mappingModal`) and **Product Item Mapping Modal** (`#productMappingModal`) displayed dropdowns with ONLY default options (`-- Select Miracle Ledger --`, `[Auto-Create B2B/B2C]`, `[Auto-Create 0% Product]`) and zero existing Miracle account ledgers or product masters.
+
+**Root Causes:**
+1. `fetchProducts()` in `frontend/app.js` sent HTTP requests directly to `${API_URL}/api/products...`. On Render cloud server, fetching local DBF files on disk failed and returned `0` products, overriding `clientProducts = []`.
+2. Mapping modal refresh buttons (`.refresh-ledgers-btn` and `.refresh-products-btn`) called raw `${API_URL}/api/refresh-...` cloud endpoints directly instead of querying the user's local Miracle Bridge (`http://localhost:9123`).
+3. Single-year product lookups in `dbf_handler.py` queried strictly inside `CMP0005/YR25/RKACCM21.DBF`. If `RKACCM21.DBF` was located in the client root directory (`CMP0005/RKACCM21.DBF`) or another year folder, `read_products()` returned an empty list.
+
+**Fixes & Architecture Implemented:**
+1. **Bridge-Aware Product Fetching ([app.js](file:///Users/jaydevnakum/Work%20Place/WORK/APP%20DETAILS/Mirracle%20Auto%20Entre%20Sale%20or%20Purchase%20or%20Bank/frontend/app.js#L533)):**
+   - Updated `fetchProducts()` in `app.js` to evaluate `isLocalBridgeOnline` and route requests to `LOCAL_BRIDGE_URL/api/local-products?client_id=${clientId}&year_folder=${activeYearFolder}&base_path=${currentMiraclePath}` when running on cloud server connected to local Miracle Bridge.
+2. **Modal Pre-Fetch & Refresh Listeners ([app.js](file:///Users/jaydevnakum/Work%20Place/WORK/APP%20DETAILS/Mirracle%20Auto%20Entre%20Sale%20or%20Purchase%20or%20Bank/frontend/app.js#L2974)):**
+   - Added automatic pre-fetch calls (`await fetchLedgers()` and `await fetchProducts()`) inside `showMappingModal()` and `showProductMappingModal()` whenever memory arrays are empty upon modal open.
+   - Updated modal refresh buttons (`.refresh-ledgers-btn` and `.refresh-products-btn`) to invoke `await fetchLedgers()` and `await fetchProducts()`.
+3. **Comprehensive Root & Multi-Year Master Fallback ([dbf_handler.py](file:///Users/jaydevnakum/Work%20Place/WORK/APP%20DETAILS/Mirracle%20Auto%20Entre%20Sale%20or%20Purchase%20or%20Bank/backend/dbf_handler.py#L600)):**
+   - Updated `read_products()` in both `backend/dbf_handler.py` and `miracle_bridge/dbf_handler.py` to check client root folder (`self.client_path/RKACCM21.DBF`) if not found in year subfolder.
+   - Updated `get_products()` to fall back to `read_products_all_years()` if single-year folder returns no products.
+4. **Verified Compilation ([dbf_handler.py](file:///Users/jaydevnakum/Work%20Place/WORK/APP%20DETAILS/Mirracle%20Auto%20Entre%20Sale%20or%20Purchase%20or%20Bank/backend/dbf_handler.py)):**
+   - Verified clean Python compilation across backend files (`python3 -m py_compile`).
+
 ### 186. Comprehensive Code Audit & Architecture Optimization for Gemini Service & Core Config
 **The Problem Resolved:**
 1. `gemini_service.py` (292 KB) contained monolithic responsibility coupling and un-bounded spec caching.

@@ -504,7 +504,9 @@ class MiracleDBFHandler:
     def get_products(self, year_folder: str | None = None) -> list:
         """Helper alias for reading products."""
         if year_folder:
-            return self.read_products(year_folder=year_folder)
+            prods = self.read_products(year_folder=year_folder)
+            if prods:
+                return prods
         return self.read_products_all_years()
 
     def read_ledgers(self, year_folder: str | None = None):
@@ -1016,7 +1018,16 @@ class MiracleDBFHandler:
             m21_path = self._get_table_path('rkaccm21.dbf', year_folder)
             
         if not os.path.exists(m21_path):
-            return []
+            if self.client_path:
+                root_m21 = os.path.join(self.client_path, 'RKACCM21.DBF')
+                if not os.path.exists(root_m21):
+                    root_m21 = os.path.join(self.client_path, 'rkaccm21.dbf')
+                if os.path.exists(root_m21):
+                    m21_path = root_m21
+                else:
+                    return []
+            else:
+                return []
             
         try:
             from dbfread import DBF

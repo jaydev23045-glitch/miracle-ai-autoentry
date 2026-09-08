@@ -532,11 +532,18 @@ document.addEventListener('DOMContentLoaded', () => {
 
     async function fetchProducts() {
         try {
-            const res = await fetch(`${API_URL}/api/products${activeYearFolder ? '?year=' + activeYearFolder : ''}`);
+            const clientId = getActiveClientId();
+            const currentMiraclePath = (typeof miracleBasePathInput !== 'undefined' && miracleBasePathInput && miracleBasePathInput.value)
+                ? miracleBasePathInput.value.trim() : 'C:\\Miracle';
+            const targetUrl = isLocalBridgeOnline
+                ? `${LOCAL_BRIDGE_URL}/api/local-products?client_id=${clientId}&year_folder=${activeYearFolder || ''}&base_path=${encodeURIComponent(currentMiraclePath)}`
+                : `${API_URL}/api/products${activeYearFolder ? '?year=' + activeYearFolder : ''}`;
+            const res = await fetch(targetUrl);
             if (!res.ok) throw new Error("Failed to retrieve products.");
             const data = await res.json();
-            clientProducts = data.data || [];
-            console.log(`Loaded ${clientProducts.length} products for financial year ${data.year}`);
+            clientProducts = data.data || data.products || [];
+            window.clientProducts = clientProducts;
+            console.log(`Loaded ${clientProducts.length} products for financial year ${data.year || activeYearFolder}`);
             populateDefaultProductSelect();
         } catch (err) {
             console.error("Error fetching client products:", err);
@@ -2964,7 +2971,15 @@ document.addEventListener('DOMContentLoaded', () => {
         return html;
     }
 
-    function showMappingModal(unknownItems) {
+    async function showMappingModal(unknownItems) {
+        if (!clientLedgers || clientLedgers.length === 0) {
+            try {
+                await fetchLedgers();
+            } catch (e) {
+                console.error("Failed to pre-fetch ledgers for mapping modal:", e);
+            }
+        }
+
         mappingList.innerHTML = '';
 
         // Populate Top Bulk-Select Dropdown
@@ -3046,12 +3061,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 const currentValue = selectEl.value;
 
                 try {
-                    // Pull fresh data from Miracle DBF files
-                    const res = await fetch(`${API_URL}/api/refresh-ledgers`, { method: 'POST' });
-                    if (!res.ok) throw new Error("Refresh failed.");
-                    const data = await res.json();
-
-                    clientLedgers = data.data || [];
+                    // Pull fresh data from Miracle DBF files via fetchLedgers
+                    await fetchLedgers();
                     console.log(`Refreshed: ${clientLedgers.length} ledgers found.`);
 
                     // Re-populate options while keeping current selection
@@ -3627,17 +3638,7 @@ document.addEventListener('DOMContentLoaded', () => {
         // Ensure products are loaded from DBFs across all years before building modal
         if (!clientProducts || clientProducts.length === 0) {
             try {
-                const clientId = getActiveClientId();
-                const currentMiraclePath = (typeof miracleBasePathInput !== 'undefined' && miracleBasePathInput && miracleBasePathInput.value)
-                    ? miracleBasePathInput.value.trim() : 'C:\\Miracle';
-                const targetUrl = isLocalBridgeOnline
-                    ? `${LOCAL_BRIDGE_URL}/api/local-products?client_id=${clientId}&year_folder=${activeYearFolder || ''}&base_path=${encodeURIComponent(currentMiraclePath)}`
-                    : `${API_URL}/api/products${activeYearFolder ? '?year=' + activeYearFolder : ''}`;
-                const res = await fetch(targetUrl);
-                if (res.ok) {
-                    const data = await res.json();
-                    clientProducts = data.data || data.products || [];
-                }
+                await fetchProducts();
             } catch (e) {
                 console.error("Failed to pre-fetch products for mapping modal:", e);
             }
@@ -3770,11 +3771,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 const currentValue = selectEl.value;
 
                 try {
-                    const res = await fetch(`${API_URL}/api/refresh-products`, { method: 'POST' });
-                    if (!res.ok) throw new Error("Refresh failed.");
-                    const data = await res.json();
-
-                    clientProducts = data.data || [];
+                    await fetchProducts();
                     console.log(`Refreshed: ${clientProducts.length} products found.`);
 
                     selectEl.innerHTML = generateProductOptions(currentValue);
