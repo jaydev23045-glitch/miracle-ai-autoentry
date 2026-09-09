@@ -1,5 +1,151 @@
 # Miracle Auto-Entry Platform - Changelog
 
+### 200. Miracle Party Master GUID Registration & Cross-Year Dropdown Visibility Protocol
+**The Problem Resolved:**
+When newly created party ledgers (e.g. `Ambica Mart`) were auto-generated during Sales or Purchase voucher pushes, the party appeared in Miracle's Sales Bill Voucher List (Bill 501), but did NOT show up in Miracle's Party A/c dropdown master lookup search dialog (`Edit Sales Bill`).
+
+**Root Causes:**
+1. **Missing Master Ledger Status (`FIELD04 = 'Y'`) in `RKACCGID.DBF`**: In `backend/dbf_handler.py`, `_register_guid()` set `FIELD04` to blank spaces (`"".ljust(25)`) for non-header records (`is_header=False`). Miracle's FoxPro engine specifically requires `FIELD04 = 'Y'` for `YRM01` master ledger records to index them in account selection dialogs. Blank `FIELD04` caused Miracle's dropdown search queries to ignore the newly created party.
+2. **Year-Folder `RKACCGID.DBF` Path Blindspot**: `_find_gid_path()` only checked the root `self.client_path` directory, failing to find `RKACCGID.DBF` when stored inside year folders (e.g. `YR27/RKACCGID.DBF`).
+3. **Cross-Year Party Sync Blindspot**: `create_party_ledger()` inserted new party ledgers into the active target year folder (e.g. `YR27`), but did not automatically sync them across prior/other financial year folders (`YR26`, `YR25`). When Miracle performs cross-year dropdown account searches, unsynced accounts were omitted from dropdown search results.
+
+**Fixes & Architecture Implemented:**
+1. **Master Ledger GUID Status (`FIELD04 = 'Y'`) Assignment ([dbf_handler.py](file:///Users/jaydevnakum/Work%20Place/WORK/APP%20DETAILS/Mirracle%20Auto%20Entre%20Sale%20or%20Purchase%20or%20Bank/backend/dbf_handler.py#L5346)):** Updated `_register_guid()` and `_register_guids_batch()` to automatically assign `FIELD04 = 'Y'.ljust(25)` whenever registering master ledgers (`record_type == 'YRM01'`).
+2. **Year-Folder Aware GID Finder ([dbf_handler.py](file:///Users/jaydevnakum/Work%20Place/WORK/APP%20DETAILS/Mirracle%20Auto%20Entre%20Sale%20or%20Purchase%20or%20Bank/backend/dbf_handler.py#L5314)):** Enhanced `_find_gid_path(year_folder=None)` to search year subdirectories (`<client_path>/<year_folder>/RKACCGID.DBF`) and all child folders inside `client_path`.
+3. **Auto-Healing Party GUID Repair Engine ([dbf_handler.py](file:///Users/jaydevnakum/Work%20Place/WORK/APP%20DETAILS/Mirracle%20Auto%20Entre%20Sale%20or%20Purchase%20or%20Bank/backend/dbf_handler.py#L5366)):** Added `repair_unregistered_party_guids()` to scan `RKACCM01.DBF`, register any unindexed party ledgers in `RKACCGID.DBF`, and upgrade historical party ledgers with blank `FIELD04` values to `FIELD04 = 'Y'`.
+4. **Cross-Year Master Ledger Sync ([dbf_handler.py](file:///Users/jaydevnakum/Work%20Place/WORK/APP%20DETAILS/Mirracle%20Auto%20Entre%20Sale%20or%20Purchase%20or%20Bank/backend/dbf_handler.py#L1825)):** Updated `create_party_ledger()` to automatically invoke `_sync_party_to_other_years()` and register GUIDs across all active financial year folders (`YR27`, `YR26`, `YR25`).
+
+
+### 199. Resolution of GST DBF Mismatch False Positives & Tax-Aware Default Product Assignment Protocol
+**The Problems Resolved:**
+1. **False Red `GST DBF Mismatch` Badges**: In the Sales and Purchase UI grid, 100% mathematically balanced invoice rows displayed a red `GST DBF Mismatch` warning badge.
+2. **Global Product Overwriting Across Tax Brackets**: Selecting a default Miracle product (e.g. `FOOTWEAR GST 5%`) forced that single product onto EVERY invoice in the upload batch, overwriting 0% GST / exempt bills with a 5% product and triggering false GST rate mismatches.
+
+**Root Causes:**
+1. In `frontend/app.js` (lines 5188–5204), `DBF Product GST Mismatch Check` performed rigid string equality checks on `mappedProduct.commodity` against hardcoded commodity codes (`"C002"`, `"CNGT"`). Because Miracle DBFs store commodity codes as custom strings (`""`, `"001"`, `"C001"`) or HSN numbers, valid 5% / 0% rows failed the commodity string test and falsely flagged `GST DBF Mismatch` on clean rows.
+2. In `frontend/app.js` (lines 3570–3582), `defaultProductVal` (saved in `localStorage` or top toolbar dropdown) ran a blind `forEach` loop over all items in all invoices without checking tax rates, forcing a 5% GST product onto 0% / Exempt / 18% bills.
+
+**Fixes & Architecture Implemented:**
+1. **Backend Product GST Property Enrichment ([dbf_handler.py](file:///Users/jaydevnakum/Work%20Place/WORK/APP%20DETAILS/Mirracle%20Auto%20Entre%20Sale%20or%20Purchase%20or%20Bank/backend/dbf_handler.py#L1190)):** Updated `read_products()` to extract and attach exact `'gst_pct'` values (`0.0`, `3.0`, `5.0`, `12.0`, `18.0`, `28.0`) to every product object returned to the frontend.
+2. **True GST Rate Mismatch Engine ([app.js](file:///Users/jaydevnakum/Work%20Place/WORK/APP%20DETAILS/Mirracle%20Auto%20Entre%20Sale%20or%20Purchase%20or%20Bank/frontend/app.js#L5188)):** Rewrote `DBF Product GST Mismatch Check` in `app.js` to compare the true product GST rate (`mappedProduct.gst_pct`) against `row.gst_pct`. When tax rates match (e.g. 5% product on 5% row), the mismatch flag is cleared and the status badge renders clean green `Mapped` status at 100% confidence.
+3. **Tax-Aware Default Product Guard ([app.js](file:///Users/jaydevnakum/Work%20Place/WORK/APP%20DETAILS/Mirracle%20Auto%20Entre%20Sale%20or%20Purchase%20or%20Bank/frontend/app.js#L3568)):** Updated default product assignment so a default product ONLY applies to items sharing its exact tax rate (e.g. a 5% default product applies to 5% items, but leaves 0% / Exempt / 18% items untouched to map to their respective tax-bracket products).
+
+
+### 198. Cash Sales & Cash Purchases Mode & Master Ledger Resolution Protocol
+**The Problem Resolved:**
+When processing Cash Sales or Cash Purchases (or entries with party names like `"Cash Sale"`, `"Cash Sales"`, `"Cash Purchase"`, `"Counter Sale"`), legacy behavior auto-created a new party ledger named `"Cash Sale"` under `Sundry Debtors` (`G0000009`) or `Sundry Creditors` (`G0000013`) with `Cash/Debit` mode set to `Debit` (`FIELD16 = 'D'`). This caused improper accounting in Miracle (creating a customer ledger named `Cash Sale` under Debtors instead of posting to `Cash Account`).
+
+**Root Causes:**
+1. In `backend/dbf_handler.py`, `inject_vouchers()` did not distinguish Cash Sales/Purchases from Credit party transactions, hardcoding `FIELD16 = 'D'` (Debit mode) in `RKACCT41.DBF` and creating new party ledgers under `Sundry Debtors`.
+2. Gemini extraction prompts for Sales and Purchases lacked explicit instructions to map cash invoices to `Cash Account` (`Cash-in-Hand` group `G0000005`).
+
+**Fixes & Architecture Implemented:**
+1. **Universal Cash Voucher Guard ([dbf_handler.py](file:///Users/jaydevnakum/Work%20Place/WORK/APP%20DETAILS/Mirracle%20Auto%20Entre%20Sale%20or%20Purchase%20or%20Bank/backend/dbf_handler.py#L3436)):** Integrated `is_cash_voucher` detection for Sales and Purchases. Cash vouchers matching `CASH_PARTY_ALIASES` (`CASH`, `CASH SALE`, `CASH SALES`, `CASH PURCHASE`, `COUNTER SALE`, `CASH ACCOUNT`) automatically map `party_code` to the client's master **`Cash Account`** (group `G0000005` `Cash-in-Hand`), completely preventing the creation of `Cash Sale` under `Sundry Debtors`.
+2. **Native Cash Mode Assignment ([dbf_handler.py](file:///Users/jaydevnakum/Work%20Place/WORK/APP%20DETAILS/Mirracle%20Auto%20Entre%20Sale%20or%20Purchase%20or%20Bank/backend/dbf_handler.py#L3805)):** Updated header generation in `RKACCT41.DBF` to set `'FIELD16': 'C'` for Cash vouchers (selecting **`Cash`** mode in Miracle UI) and `'FIELD16': 'D'` for Debit party bills (selecting **`Debit`** mode in Miracle UI).
+3. **GST Counter Sale Tax Tagging ([dbf_handler.py](file:///Users/jaydevnakum/Work%20Place/WORK/APP%20DETAILS/Mirracle%20Auto%20Entre%20Sale%20or%20Purchase%20or%20Bank/backend/dbf_handler.py#L4171)):** Updated `RKACCT52.DBF` GST records to flag Cash vouchers with `'T52F45': 'S'` (Single / Counter Sale), ensuring GSTR returns display Cash Sales in the Counter Sales section.
+4. **Auto-Healing Group Repair Engine ([dbf_handler.py](file:///Users/jaydevnakum/Work%20Place/WORK/APP%20DETAILS/Mirracle%20Auto%20Entre%20Sale%20or%20Purchase%20or%20Bank/backend/dbf_handler.py#L5665)):** Updated `repair_expense_ledger_groups()` to scan `RKACCM01.DBF` for ledgers named `"CASH SALE"`, `"CASH SALES"`, etc. mistakenly assigned to `Sundry Debtors` or `Bank OCC a/c` and re-assign them to `Cash-in-Hand` (`G0000005`).
+5. **AI Prompt Upgrades ([gemini_service.py](file:///Users/jaydevnakum/Work%20Place/WORK/APP%20DETAILS/Mirracle%20Auto%20Entre%20Sale%20or%20Purchase%20or%20Bank/backend/gemini_service.py#L2508)):** Upgraded Gemini extraction prompts for Sales and Purchases to detect cash bills and set `party_name: 'Cash Account'`, `group_hint: 'Cash in Hand'`.
+
+
+### 197. Resolution of Loose Group Pattern Matching & Bank OCC Account Default Assignment Bug
+**The Problem Resolved:**
+When auto-creating missing party/vendor ledgers (such as `SONAM`) during voucher push or manual entry, ledgers were unexpectedly assigned to `Bank OCC a/c` (`G0000016`) instead of `Sundry Creditors` (`G0000013`), `Sundry Debtors` (`G0000009`), or `Loans & Advances` (`G0000011`).
+
+**Root Causes:**
+1. In `backend/dbf_handler.py`, `find_group_by_name()` performed single-pass substring pattern matching (`if pat in group_name`). In standard Miracle master group tables (`RKACCM11.DBF`), `Bank OCC a/c` (`G0000016`) contains both `"BANK"` and `"LOAN"`. Loose substring matching for generic keywords matching bank or loan groups unexpectedly returned `G0000016` (`Bank OCC a/c`) or `G0000017` (`Secured Loans`).
+2. Fallback group codes in `create_party_ledger()` contained misaligned static default codes (e.g. `LOANS & ADVANCES` pointing to `G0000007` Investments instead of `G0000011` Loans Given (Asset)).
+
+**Fixes & Architecture Implemented:**
+1. **Two-Phase Guarded Group Name Resolution ([dbf_handler.py](file:///Users/jaydevnakum/Work%20Place/WORK/APP%20DETAILS/Mirracle%20Auto%20Entre%20Sale%20or%20Purchase%20or%20Bank/backend/dbf_handler.py#L1510)):** Restructured `find_group_by_name()` into:
+   - **Phase 1 (Exact Match):** Exact case-insensitive comparison (`pattern == group_name`).
+   - **Phase 2 (Guarded Substring Match):** Substring matching with safety guards explicitly excluding `G0000016` (`Bank OCC a/c`) and `G0000017` (`Secured Loans`) unless the search pattern explicitly contains `OCC`, `OVERDRAFT`, `OD/CC`, `OD A/C`, or `SECURED`.
+2. **Corrected Miracle Standard Group Fallbacks ([dbf_handler.py](file:///Users/jaydevnakum/Work%20Place/WORK/APP%20DETAILS/Mirracle%20Auto%20Entre%20Sale%20or%20Purchase%20or%20Bank/backend/dbf_handler.py#L1550)):** Corrected default fallback group codes in `create_party_ledger()`:
+   - `LOANS & ADVANCES` $\rightarrow$ `G0000011` (Parent `G0000003` Assets)
+   - `UNSECURED LOANS` $\rightarrow$ `G0000020` (Parent `G0000010` Liabilities)
+   - `SECURED LOANS` $\rightarrow$ `G0000017` (Parent `G0000010` Liabilities)
+   - `SALES ACCOUNTS` $\rightarrow$ `G0000021` (Parent `G0000002` Trading)
+   - `PURCHASE ACCOUNTS` $\rightarrow$ `G0000023` (Parent `G0000002` Trading)
+3. **Auto-Healing Group Repair Engine ([dbf_handler.py](file:///Users/jaydevnakum/Work%20Place/WORK/APP%20DETAILS/Mirracle%20Auto%20Entre%20Sale%20or%20Purchase%20or%20Bank/backend/dbf_handler.py#L1675), [vouchers.py](file:///Users/jaydevnakum/Work%20Place/WORK/APP%20DETAILS/Mirracle%20Auto%20Entre%20Sale%20or%20Purchase%20or%20Bank/backend/routers/vouchers.py#L2100)):** Upgraded `/api/repair-expense-groups` endpoint to call `repair_wrong_bank_occ_groups()`, automatically detecting party ledgers mistakenly assigned `Bank OCC a/c` (`G0000016`) and re-assigning them to their proper `Sundry Creditors`, `Sundry Debtors`, or `Loans & Advances` groups in `RKACCM01.DBF`.
+
+
+### 196. Universal Suspense Account Routing Guard & Accountant Human Review Protocol
+**The Problem Resolved:**
+When AI data extraction or heuristic fallback encountered ambiguous transactions with confidence scores $< 80\%$, legacy behavior attempted to force guesses into party or creditor ledgers, risking incorrect postings.
+ 
+**Fixes & Architecture Implemented:**
+1. **Upgraded CA Safeguard Confidence Threshold ([gemini_service.py](file:///Users/jaydevnakum/Work%20Place/WORK/APP%20DETAILS/Mirracle%20Auto%20Entre%20Sale%20or%20Purchase%20or%20Bank/backend/gemini_service.py#L5966)):** Enforced an $80\%$ minimum confidence score guard. Any transaction extraction or suspense resolution with confidence $< 80\%$ is automatically routed to **`Suspense Account`** (`G0000028`), assigned `confidence_score = 40`, and flagged as **`Human Review Required`** (`Review` status badge).
+2. **Seamless 1-Click Accountant Review ([app.js](file:///Users/jaydevnakum/Work%20Place/WORK/APP%20DETAILS/Mirracle%20Auto%20Entre%20Sale%20or%20Purchase%20or%20Bank/frontend/app.js#L5271)):** Maintained visual amber warning badges (`⚠️ Review`) for all `Suspense Account` entries in the UI grid. Selecting or mapping any ledger in the UI grid instantly converts status to `Ready` / `Mapped`, sets `confidence_score = 100`, removes suspense flags, and persists mapping to client AI Memory.
+
+### 195. Transport, Parking, and Expense Keyword Classification Engine & Master Group Synchronization
+**The Problem Resolved:**
+1. **Contradictory Expense & Loan Classifications:** Narrations containing transport or parking keywords (e.g. `19173-TPT-RENT-HASMUKH SHANTIL` vs `19173-TPT-PARKING-HASMUKH SHAN`) were given contradictory account groups (e.g. `Direct Expenses` vs `Loans & Advances (Asset)`). Because `PARKING` and `TPT` were missing from backend classification heuristics and Gemini system prompts, transactions with human names fell through to `Loans & Advances (Asset)`.
+2. **Inconsistent Grid Group Hints:** In the UI grid (`frontend/app.js`), rows mapped to the exact same ledger (e.g. `PARKING`) displayed different account groups because `inferExpenseGroupHint()` checked the initial raw AI `rowHint` before querying Miracle Master `clientLedgers` or `autoCreateLedgerHints`.
+3. **Isolated Group Hint Updates:** Changing the group hint or mapping a ledger for one row did not propagate group hints to other rows sharing the same mapped ledger name unless their raw narrations matched byte-for-byte.
+
+**Root Causes:**
+1. In `backend/gemini_service.py`, `classify_transaction_nature()` lacked keywords for `PARKING`, `PARKING CHARGES`, `TPT`, `TRANSPORT`, `FREIGHT`, `TOLL`, `FASTAG`, `LOADING`, `UNLOADING`, `HAMALI`, `CARTAGE`, and `BHADA`. In the `is_human` check, any narration containing a human name without a recognized utility keyword defaulted to `Loans & Advances (Asset)`.
+2. In `frontend/app.js`, `inferExpenseGroupHint()` returned `rowHint` immediately at step 1 if present, blocking lookup of Miracle Master `clientLedgers` ground truth (`RKACCM01.DBF`) or `autoCreateLedgerHints`.
+3. Event handlers in `app.js` (`groupHintSelect` and `handleLedgerChange`) propagated updates strictly by `narration`, ignoring rows that shared the same `mapped_ledger`.
+
+**Fixes & Architecture Implemented:**
+1. **Backend Classification Engine Upgrade ([gemini_service.py](file:///Users/jaydevnakum/Work%20Place/WORK/APP%20DETAILS/Mirracle%20Auto%20Entre%20Sale%20or%20Purchase%20or%20Bank/backend/gemini_service.py#L1150)):** Added `DIRECT_EXPENSE_KWS` (`FREIGHT`, `BHADA`, `CARRIAGE`, `CARTAGE`, `LOADING`, `UNLOADING`, `HAMALI`, `TPT`, `TRANSPORT`), expanded `UTILITY_KWS` (`PARKING`, `PARKING CHARGES`, `PARKING FEE`, `TOLL`, `FASTAG`), and added expense descriptor safety guards in `is_human` check to prevent human names attached to expense keywords from defaulting to `Loans & Advances`.
+2. **Master DBF Priority Group Lookup ([app.js](file:///Users/jaydevnakum/Work%20Place/WORK/APP%20DETAILS/Mirracle%20Auto%20Entre%20Sale%20or%20Purchase%20or%20Bank/frontend/app.js#L5067)):** Restructured `inferExpenseGroupHint()` order of resolution: (1) Master `clientLedgers` ground truth, (2) `autoCreateLedgerHints`, (3) Keyword heuristics (`PARKING`, `RENT`, `TPT`, `FREIGHT`, `TOLL`), (4) Explicit user `rowHint`, (5) Fallback DR/CR gate.
+3. **Cross-Row Group Synchronization ([app.js](file:///Users/jaydevnakum/Work%20Place/WORK/APP%20DETAILS/Mirracle%20Auto%20Entre%20Sale%20or%20Purchase%20or%20Bank/frontend/app.js#L5588)):** Updated `createRowElement()`, `groupHintSelect.onchange`, and `handleLedgerChange` so that mapping or changing group hint for any ledger updates ALL rows sharing the same `mapped_ledger` in real-time.
+4. **Empirical Automated Verification:** Executed Python unit test asserting that narrations `19173-TPT-RENT-HASMUKH SHANTIL` and `19173-TPT-PARKING-HASMUKH SHAN` both map to `Direct Expenses` / `Indirect Expenses` without defaulting to `Loans & Advances`.
+
+### 194. Universal Ledger Dropdown Deduplication & Dynamic Group Auto-Update Architecture
+**The Problems Resolved:**
+1. **Duplicate Ledgers in UI Dropdown:** In the Bank Statements, Sales, Purchase, and Cash modules, party ledgers (e.g. `UPI Debtors`) appeared 2 or more times in the dropdown options list.
+2. **Stuck Account Group Badges:** When changing the selected party ledger in the grid row dropdown (e.g. to `UPI Debtors`), the account group badge remained locked onto the previous party's group hint (e.g., `GROUP: Suspense Account` or previous party group) rather than dynamically updating to the newly selected party's master Miracle account group.
+
+**Root Causes:**
+1. In `frontend/app.js`, dropdown rendering loops added `<option>` tags from `globalAutoCreateLedgers`, unmapped row ledgers, and `clientLedgers` without checking if an option with the same name was already present in `clientLedgers` or added to the option list (`seenValues`). In `backend/dbf_handler.py`, `read_ledgers_all_years()` merged entries using `f"{code_key}_{name_key}"`, preserving duplicate names if party codes differed across financial years.
+2. In `handleLedgerChange`, `inferExpenseGroupHint(cleanSelected, row.transaction_type, row.group_hint)` passed `row.group_hint` (the previous row's group hint) as the priority override, preventing `inferExpenseGroupHint` from querying `clientLedgers` or updating the group for the newly selected party.
+
+**Fixes & Architecture Implemented:**
+1. **Cross-Year Backend Deduplication ([dbf_handler.py](file:///Users/jaydevnakum/Work%20Place/WORK/APP%20DETAILS/Mirracle%20Auto%20Entre%20Sale%20or%20Purchase%20or%20Bank/backend/dbf_handler.py#L925)):** Updated `read_ledgers_all_years()` to merge ledgers strictly by `name_key` (active year wins on conflict), guaranteeing 100% duplicate-free master ledger arrays from backend APIs.
+2. **Frontend UI Dropdown Deduplication ([app.js](file:///Users/jaydevnakum/Work%20Place/WORK/APP%20DETAILS/Mirracle%20Auto%20Entre%20Sale%20or%20Purchase%20or%20Bank/frontend/app.js#L5280)):** Implemented `seenValues = new Set()` in `app.js` select box generation, `populateGlobalLedgersDatalist()`, and mapping modals. Master ledgers in `clientLedgers` take priority and are excluded from the Auto-Create section, eliminating duplicate dropdown items.
+3. **Dynamic Group Auto-Update Engine ([app.js](file:///Users/jaydevnakum/Work%20Place/WORK/APP%20DETAILS/Mirracle%20Auto%20Entre%20Sale%20or%20Purchase%20or%20Bank/frontend/app.js#L5580)):** Updated `handleLedgerChange` to automatically look up `cleanSelected` in Miracle Master `clientLedgers` first to retrieve its true ground-truth account group (e.g. `Sundry Debtors` for `UPI Debtors`), update `row.group_hint`, persist `autoCreateLedgerHints`, and re-render UI badges instantly.
+
+### 193. Restoration of MiracleDBFHandler Class Definition & Resilient Frontend JSON Syntax Error Handling
+**The Problem Resolved:**
+When pushing staged entries to Miracle DBF, the application displayed a popup error: `Push Failed: Unexpected token 'I', "Internal S"... is not valid JSON`.
+
+**Root Causes:**
+1. In `backend/dbf_handler.py`, the `ensure_writable_recursive()` function was inserted directly below line 26 without proper un-indentation outside the `class MiracleDBFHandler:` body. This accidentally terminated the `MiracleDBFHandler` class definition at line 26 with only `_CROSS_YEAR_CACHE`, making `MiracleDBFHandler` an empty class and causing `MiracleDBFHandler(client_path)` to fail with `TypeError: MiracleDBFHandler() takes no arguments` (returning HTTP 500 `"Internal Server Error"`).
+2. In `frontend/app.js`, when a 500 error response was returned by the server, `await res.json()` attempted to parse plain text `"Internal Server Error"` as JSON, causing a `SyntaxError: Unexpected token 'I'` popup that masked the underlying server error.
+
+**Fixes & Architecture Implemented:**
+1. **Class Definition Restoration ([dbf_handler.py](file:///Users/jaydevnakum/Work%20Place/WORK/APP%20DETAILS/Mirracle%20Auto%20Entre%20Sale%20or%20Purchase%20or%20Bank/backend/dbf_handler.py#L25)):** Moved `ensure_writable_recursive()` helper before `class MiracleDBFHandler:` to restore all class methods (`__init__`, `read_ledgers`, `inject_vouchers`, `get_all_year_folder_bounds`, etc.).
+2. **Resilient Frontend Response Parsing ([app.js](file:///Users/jaydevnakum/Work%20Place/WORK/APP%20DETAILS/Mirracle%20Auto%20Entre%20Sale%20or%20Purchase%20or%20Bank/frontend/app.js#L6586)):** Updated `pushVouchers()` response handler to safely parse JSON error details or fall back to `await res.text()` if text/HTML, preventing `SyntaxError: Unexpected token 'I'` popups.
+3. **Empirical Automated Verification:** Executed Python test script calling `push_vouchers_endpoint()` with real sales voucher payload on client `CMP0006`. Confirmed `PUSH SUCCESS! Result: {'status': 'success', 'count': 1, 'primary_year': 'YR26'}`.
+
+### 192. Resolution of UnboundLocalError 'year_bounds' Variable Initialization Bug in DBF Push Engine
+**The Problem Resolved:**
+When pushing staged entries to Miracle DBF, the application displayed a popup error: `Push Failed: cannot access local variable 'year_bounds' where it is not associated with a value`.
+
+**Root Cause:**
+In `backend/routers/vouchers.py`, `year_bounds` was assigned inside a `try:` block (`year_bounds = handler.get_all_year_folder_bounds()`). If pre-push validation or DBF reading inside that `try:` block raised a non-HTTP exception, the exception was caught by `except Exception as val_err:` and execution proceeded into multi-year voucher partitioning. At line 1503, `resolve_year_folder_for_date_fast(year_bounds, ...)` referenced `year_bounds`, but because `year_bounds` was never assigned before the exception in the `try:` block, Python raised an `UnboundLocalError`.
+
+**Fixes & Architecture Implemented:**
+1. **Unbound Variable Prevention ([vouchers.py](file:///Users/jaydevnakum/Work%20Place/WORK/APP%20DETAILS/Mirracle%20Auto%20Entre%20Sale%20or%20Purchase%20or%20Bank/backend/routers/vouchers.py#L1385)):** Pre-declared `year_bounds = {}` and `handler = MiracleDBFHandler(client_path)` outside the pre-push validation `try:` block so that `year_bounds` is guaranteed to be a valid dictionary across all execution paths.
+2. **Defensive Partition Guard ([vouchers.py](file:///Users/jaydevnakum/Work%20Place/WORK/APP%20DETAILS/Mirracle%20Auto%20Entre%20Sale%20or%20Purchase%20or%20Bank/backend/routers/vouchers.py#L1498)):** Added a fallback check before multi-year voucher partitioning to ensure `year_bounds` is safely populated if empty.
+3. **Empirical Automated Verification:** Executed Python unit test asserting that non-HTTP validation exceptions complete cleanly without raising `UnboundLocalError`.
+
+### 191. Universal Client Directory Permission Self-Healing for Resilient Safety ZIP Backups
+**The Problem Resolved:**
+When pushing staged entries to Miracle DBF, the application creates a mandatory timestamped ZIP backup inside `<base_path>/<client_id>/BACKUPS` prior to database modifications (Rule 22). On client PCs where company folders (`CMPxxxx`) were extracted from `.zip` archives or copied from external / NAS drives, folder write permissions (`+w`) were often missing (`dr-xr-xr-x` / mode `555`), causing `os.makedirs()` to throw `[Errno 13] Permission denied` and safety-aborting the push.
+
+**Root Causes:**
+1. Folder extraction or SMB network folder transfers can preserve read-only attributes on directory trees (e.g. `CMP0006`).
+2. When directory write permission is missing, creating subdirectories (such as `BACKUPS`) or modifying DBF files raises `PermissionError` in Python.
+
+**Fixes & Architecture Implemented:**
+1. **Self-Healing Permission Engine ([vouchers.py](file:///Users/jaydevnakum/Work%20Place/WORK/APP%20DETAILS/Mirracle%20Auto%20Entre%20Sale%20or%20Purchase%20or%20Bank/backend/routers/vouchers.py#L193)):** Implemented `ensure_writable_recursive(target_path)` using `stat` flags (`stat.S_IRUSR | stat.S_IWUSR | stat.S_IXUSR`) to automatically inspect and grant user write access to directory trees and DBF files.
+2. **Resilient Backup Engine ([vouchers.py](file:///Users/jaydevnakum/Work%20Place/WORK/APP%20DETAILS/Mirracle%20Auto%20Entre%20Sale%20or%20Purchase%20or%20Bank/backend/routers/vouchers.py#L240), [miracle_bridge_agent.py](file:///Users/jaydevnakum/Work%20Place/WORK/APP%20DETAILS/Mirracle%20Auto%20Entre%20Sale%20or%20Purchase%20or%20Bank/backend/miracle_bridge_agent.py#L144)):** Updated `backup_full_client_folder()` across both backend routers and local bridge agent to invoke permission self-healing on `client_path` and `backups_dir` before directory creation and ZIP archiving. Added `PermissionError` retry handlers.
+3. **Self-Healing DBF Table Writes ([dbf_handler.py](file:///Users/jaydevnakum/Work%20Place/WORK/APP%20DETAILS/Mirracle%20Auto%20Entre%20Sale%20or%20Purchase%20or%20Bank/backend/dbf_handler.py#L2742)):** Integrated permission self-healing into `_open_table_with_retry()` and `safe_cdx_context()` to auto-repair read-only DBF files or `YRxx` directory attributes during DBF header/line writing.
+4. **Empirical Automated Verification:** Created unit test creating a strictly read-only directory tree (`chmod 555`) and verified that `backup_full_client_folder()` automatically repairs permissions and creates valid ZIP backups without throwing `PermissionError`.
+
 ### 190. Universal Sales & Purchase Ledger Sync & Cloud Upload Payload Attachment
 **The Problem Resolved:**
 When pushing vouchers to Miracle, vouchers were written successfully to `RKACCT41.DBF` on the client PC. However, when uploading Sales or Purchase PDFs for AI extraction, party ledgers were missing ("DATA NOT COME").

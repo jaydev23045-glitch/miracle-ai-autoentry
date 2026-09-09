@@ -1147,7 +1147,30 @@ class GeminiService:
                 # Amazon CR = seller payment received from Amazon
                 return "Sundry Debtors"
 
-        # ── STEP 8: UTILITY & BILLS & BANK CHARGES ───────────────────────────
+        # ── STEP 8a: DIRECT EXPENSES (Freight, Transport, Labour, Loading) ────
+        DIRECT_EXPENSE_KWS = [
+            "FREIGHT",
+            "BHADA",
+            "CARRIAGE",
+            "CARTAGE",
+            "LOADING",
+            "UNLOADING",
+            "HAMALI",
+            "COOLIE",
+            "OCTROI",
+            "GATE PASS",
+            "CUSTOMS",
+            "LABOUR",
+            "WAGES",
+            "RAW MATERIAL",
+            "TPT",
+            "TRANSPORT",
+            "TRANSPORTATION",
+        ]
+        if any(k in text for k in DIRECT_EXPENSE_KWS):
+            return "Direct Expenses" if is_payment else "Direct Income"
+
+        # ── STEP 8b: UTILITY & BILLS & BANK CHARGES ───────────────────────────
         UTILITY_KWS = [
             "ELECTRICITY",
             "BIJLI",
@@ -1172,6 +1195,15 @@ class GeminiService:
             "RENT",
             "LEASE",
             "MAINTENANCE",
+            "PARKING",
+            "PARKING CHG",
+            "PARKING CHARGES",
+            "PARKING EXPENSE",
+            "PARKING FEE",
+            "TOLL",
+            "TOLL TAX",
+            "FASTAG",
+            "NETC FASTAG",
             "WATER BILL",
             "GAS BILL",
             "GOOGLE PLAY",
@@ -1195,7 +1227,7 @@ class GeminiService:
         if any(k in text for k in UTILITY_KWS):
             return "Indirect Expenses" if is_payment else "Indirect Income"
 
-        # ── STEP 8b: HEALTHCARE, DIAGNOSTICS & TRADE VENDORS ───────────────
+        # ── STEP 8c: HEALTHCARE, DIAGNOSTICS & TRADE VENDORS ───────────────
         TRADE_HEALTH_KWS = [
             "DIABETIC",
             "FOOTWEAR",
@@ -1367,7 +1399,20 @@ class GeminiService:
             ]
         )
         if is_human and not is_company:
-            return "Loans & Advances (Asset)" if is_payment else "Unsecured Loans"
+            has_expense_descriptor = any(
+                kw in text
+                for kw in [
+                    "PARKING", "RENT", "TPT", "TRANSPORT", "FREIGHT", "SALARY", "PETROL",
+                    "DIESEL", "FUEL", "ELECTRICITY", "POWER", "TEA", "FOOD", "SNACKS",
+                    "REPAIR", "MAINTENANCE", "STATIONERY", "POSTAGE", "COURIER", "TOLL",
+                    "FASTAG", "LOADING", "UNLOADING", "HAMALI", "CARTAGE", "BHADA",
+                    "ALLOWANCE", "REIMBURSEMENT", "CHARGE", "CHARGES", "EXPENSE", "EXPENSES", "EXP"
+                ]
+            )
+            if not has_expense_descriptor:
+                return "Loans & Advances (Asset)" if is_payment else "Unsecured Loans"
+            else:
+                return "Indirect Expenses" if is_payment else "Indirect Income"
 
         # ── STEP 16: FINAL DR/CR DIRECTION GATE (when no keyword matched) ───
         # Counterparty payments map to Sundry Creditors (or Expenses); receipts map to Sundry Debtors
@@ -2462,8 +2507,10 @@ Return your response ONLY as a JSON object matching this schema:
 """
             if module == "Purchases":
                 rules_str += "- CRITICAL CONTEXT: You are extracting a PURCHASE BILL. This means the user's client is the BUYER. You MUST extract the name of the SELLER/VENDOR (the company issuing the bill) as the party_name. DO NOT extract the BUYER (the client receiving the bill). Look for logos, 'Billed From', or the entity at the very top to identify the Seller.\n"
+                rules_str += "- CASH PURCHASES GUARD: If the bill is a Cash Purchase or party name is 'Cash Purchase', 'Cash', 'Counter Purchase', or 'Cash Account', output party_name as 'Cash Account' and set group_hint to 'Cash in Hand'.\n"
             elif module == "Sales":
                 rules_str += "- CRITICAL CONTEXT: You are extracting a SALES BILL. This means the user's client is the SELLER. You MUST extract the BUYER/CUSTOMER (the person receiving the goods/services) as the party_name. DO NOT extract the SELLER (the client issuing the bill).\n"
+                rules_str += "- CASH SALES GUARD: If the bill is a Cash Sale, Counter Sale, or party name is 'Cash Sale', 'Cash Sales', 'Cash', 'Counter Sale', or 'Cash Account', output party_name as 'Cash Account' and set group_hint to 'Cash in Hand'.\n"
 
         # ── Catalog Injection (Sales & Purchases) ──────────────────────────────────
         catalog_injection = ""
@@ -5917,17 +5964,17 @@ INSTRUCTIONS:
                     raw_target = str(res.get("mapped_ledger") or "").strip()
                     conf = int(res.get("confidence_score", 80) or 80)
 
-                    # CA SAFEGUARD: If confidence < 70%, force Suspense Account for human review
-                    if conf < 70:
+                    # CA SAFEGUARD: If confidence < 80%, force Suspense Account for human review
+                    if conf < 80:
                         r["mapped_ledger"] = "Suspense Account"
                         r["party_name"] = "Suspense Account"
                         r["party"] = "Suspense Account"
                         r["group_hint"] = "Suspense Account"
-                        r["confidence_score"] = 0
-                        r["flags"] = ["Low Confidence (< 70%)", "Human Review Required"]
+                        r["confidence_score"] = 40
+                        r["flags"] = ["Low Confidence (< 80%)", "Human Review Required"]
                         mapped_success = True
                         print(
-                            f"  🛡️ [CA Safeguard] Confidence {conf}% < 70% for '{narr}'. Forcing fallback to Suspense Account for human review."
+                            f"  🛡️ [CA Safeguard] Confidence {conf}% < 80% for '{narr}'. Forcing fallback to Suspense Account for human review."
                         )
                     elif raw_target and raw_target.upper() not in (
                         "SUSPENSE ACCOUNT",

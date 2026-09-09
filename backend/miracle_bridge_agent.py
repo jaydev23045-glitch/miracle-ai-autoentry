@@ -10,6 +10,7 @@ Local Agent URL: http://localhost:9123
 
 import sys
 import os
+import stat
 import time
 import datetime
 import zipfile
@@ -141,6 +142,51 @@ def zip_dir_resilient(src_dir: str, zip_path: str, base_dir_name: str, active_ye
                                 try: os.remove(temp_copy)
                                 except: pass
 
+def ensure_writable_recursive(target_path: str) -> None:
+    """
+    Recursively ensures that target_path and all nested files/directories have write permissions.
+    Self-heals read-only folder attributes (common in Windows copies, NAS mounts, or zip extracts).
+    """
+    if not target_path or not isinstance(target_path, str):
+        return
+
+    curr = target_path
+    parents_to_heal = []
+    while curr and curr != os.path.dirname(curr):
+        if os.path.exists(curr):
+            parents_to_heal.append(curr)
+        curr = os.path.dirname(curr)
+
+    for p in reversed(parents_to_heal):
+        try:
+            st = os.stat(p)
+            if os.path.isdir(p):
+                os.chmod(p, st.st_mode | stat.S_IRUSR | stat.S_IWUSR | stat.S_IXUSR)
+            else:
+                os.chmod(p, st.st_mode | stat.S_IRUSR | stat.S_IWUSR)
+        except Exception:
+            pass
+
+    if not os.path.exists(target_path):
+        return
+
+    if os.path.isdir(target_path):
+        for root, dirs, files in os.walk(target_path):
+            for d in dirs:
+                dp = os.path.join(root, d)
+                try:
+                    st = os.stat(dp)
+                    os.chmod(dp, st.st_mode | stat.S_IRUSR | stat.S_IWUSR | stat.S_IXUSR)
+                except Exception:
+                    pass
+            for f in files:
+                fp = os.path.join(root, f)
+                try:
+                    st = os.stat(fp)
+                    os.chmod(fp, st.st_mode | stat.S_IRUSR | stat.S_IWUSR)
+                except Exception:
+                    pass
+
 def backup_full_client_folder(client_id: str, base_path: str, custom_backup_path: str = "", active_year_folder: str = "") -> str:
     if not client_id or not base_path:
         raise Exception("Client ID or base path is missing.")
@@ -149,12 +195,22 @@ def backup_full_client_folder(client_id: str, base_path: str, custom_backup_path
     if not os.path.exists(client_path):
         raise Exception(f"Client folder not found at {client_path}")
 
+    # Self-heal permissions on client folder
+    ensure_writable_recursive(client_path)
+
     if custom_backup_path and custom_backup_path.strip():
         backups_dir = custom_backup_path.strip()
     else:
         backups_dir = os.path.join(base_path, client_id, "BACKUPS")
         
-    os.makedirs(backups_dir, exist_ok=True)
+    ensure_writable_recursive(backups_dir)
+    try:
+        os.makedirs(backups_dir, exist_ok=True)
+    except PermissionError as pe:
+        print(f"⚠️ Permission error creating backup directory {backups_dir}: {pe}. Self-healing permissions and retrying...")
+        ensure_writable_recursive(client_path)
+        ensure_writable_recursive(backups_dir)
+        os.makedirs(backups_dir, exist_ok=True)
 
     timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
     backup_filename = f"BACKUP_{client_id}_{timestamp}"

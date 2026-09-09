@@ -1,6 +1,7 @@
 import contextlib
 import logging
 import os
+import stat
 import threading
 import time
 from datetime import date
@@ -20,6 +21,51 @@ logging.basicConfig(
 _GST_REGEX = re.compile(r'GST\s*(\d{1,2})\s*%?', re.IGNORECASE)
 # Fixed: was r'^YR\\d+$' (double-backslash, never matched) → now correct single backslash
 _YEAR_REGEX = re.compile(r'^YR\d+$', re.IGNORECASE)
+
+def ensure_writable_recursive(target_path: str) -> None:
+    """
+    Recursively ensures that target_path and all nested files/directories have write permissions.
+    Self-heals read-only folder attributes (common in Windows copies, NAS mounts, or zip extracts).
+    """
+    if not target_path or not isinstance(target_path, str):
+        return
+
+    curr = target_path
+    parents_to_heal = []
+    while curr and curr != os.path.dirname(curr):
+        if os.path.exists(curr):
+            parents_to_heal.append(curr)
+        curr = os.path.dirname(curr)
+
+    for p in reversed(parents_to_heal):
+        try:
+            st = os.stat(p)
+            if os.path.isdir(p):
+                os.chmod(p, st.st_mode | stat.S_IRUSR | stat.S_IWUSR | stat.S_IXUSR)
+            else:
+                os.chmod(p, st.st_mode | stat.S_IRUSR | stat.S_IWUSR)
+        except Exception:
+            pass
+
+    if not os.path.exists(target_path):
+        return
+
+    if os.path.isdir(target_path):
+        for root, dirs, files in os.walk(target_path):
+            for d in dirs:
+                dp = os.path.join(root, d)
+                try:
+                    st = os.stat(dp)
+                    os.chmod(dp, st.st_mode | stat.S_IRUSR | stat.S_IWUSR | stat.S_IXUSR)
+                except Exception:
+                    pass
+            for f in files:
+                fp = os.path.join(root, f)
+                try:
+                    st = os.stat(fp)
+                    os.chmod(fp, st.st_mode | stat.S_IRUSR | stat.S_IWUSR)
+                except Exception:
+                    pass
 
 class MiracleDBFHandler:
     _CROSS_YEAR_CACHE = {}  # {(client_path, active_year_folder): (timestamp, ledgers_list)}
@@ -876,23 +922,21 @@ class MiracleDBFHandler:
         folder_names = [f['name'] for f in all_folders if f['name'] != active_year_folder]
         folder_names.append(active_year_folder)  # active year is last = highest priority
         
-        merged: dict = {}  # composite key = (code_key, name_key) -> ledger dict
+        merged_by_name: dict = {}  # name_key -> ledger dict (active year wins)
         
         for yr in folder_names:
             try:
                 yr_ledgers = self.read_ledgers(yr)
                 for led in yr_ledgers:
-                    code_key = str(led.get('code') or '').strip().upper()
                     name_key = str(led.get('print_name') or led.get('name') or '').strip().upper()
-                    composite_key = f"{code_key}_{name_key}"
                     if name_key:
                         led['year_folder'] = yr
-                        merged[composite_key] = led  # later year overwrites earlier (active year wins)
+                        merged_by_name[name_key] = led  # active year (processed last) wins on conflict
             except Exception as e:
                 # If a year folder has no ledger file, skip it silently
                 logger.info(f"  [cross-year] Skipped {yr}: {e}")
         
-        result = list(merged.values())
+        result = list(merged_by_name.values())
         logger.info(f"[cross-year ledger merge] {len(result)} unique ledgers found across {len(folder_names)} year folders.")
         with MiracleDBFHandler._CROSS_YEAR_CACHE_LOCK:
             MiracleDBFHandler._CROSS_YEAR_CACHE[cache_key] = (now, result)
@@ -1144,6 +1188,27 @@ class MiracleDBFHandler:
                 comm_type = r.get('M21F26') or ''
                 
                 category = commodity.strip() if commodity else (comm_type.strip() if comm_type else "General Stock")
+                
+                extracted_pct = self._extract_gst_from_name(str(name or ''))
+                if extracted_pct is not None:
+                    gst_pct = float(extracted_pct)
+                else:
+                    comm_str = str(commodity or '').strip().upper()
+                    if comm_str == 'CNGT' or 'EXEMPT' in str(name or '').upper() or 'NIL' in str(name or '').upper():
+                        gst_pct = 0.0
+                    elif comm_str in ('C001', 'C006') or '3%' in str(name or '').upper():
+                        gst_pct = 3.0
+                    elif comm_str in ('C002', '002', '2') or '5%' in str(name or '').upper():
+                        gst_pct = 5.0
+                    elif comm_str in ('C003', '003', '3') or '12%' in str(name or '').upper():
+                        gst_pct = 12.0
+                    elif comm_str in ('C004', '004', '4') or '18%' in str(name or '').upper():
+                        gst_pct = 18.0
+                    elif comm_str in ('C005', '005', '5') or '28%' in str(name or '').upper():
+                        gst_pct = 28.0
+                    else:
+                        gst_pct = 18.0
+
                 products.append({
                     'code': code.strip() if code else '',
                     'name': name.strip() if name else '',
@@ -1152,7 +1217,8 @@ class MiracleDBFHandler:
                     'uqc': uqc.strip() if uqc else '',
                     'commodity': commodity.strip() if commodity else '',
                     'commodity_type': comm_type.strip() if comm_type else '',
-                    'category': category
+                    'category': category,
+                    'gst_pct': gst_pct
                 })
             return products
         except Exception as e:
@@ -1466,10 +1532,23 @@ class MiracleDBFHandler:
                 logger.error(f"Warning: Failed to load groups in create_party_ledger: {ex}")
 
         def find_group_by_name(pattern_list, fallback_code, fallback_parent):
+            # Phase 1: Exact Group Name Match (Case-insensitive)
             for pattern in pattern_list:
+                pat_up = pattern.strip().upper()
                 for name, info in resolved_groups.items():
-                    if pattern in name:
+                    if pat_up == name:
                         return info["code"], info["parent"]
+
+            # Phase 2: Substring Match with Strict Bank OCC (G0000016 / G0000017) Guard
+            for pattern in pattern_list:
+                pat_up = pattern.strip().upper()
+                for name, info in resolved_groups.items():
+                    # Strict Safety Guard: NEVER match Bank OCC a/c (G0000016) or Secured Loans (G0000017) unless explicitly requested!
+                    if info["code"] in ("G0000016", "G0000017") and not any(k in pat_up for k in ["OCC", "OVERDRAFT", "OD/CC", "OD A/C", "SECURED"]):
+                        continue
+                    if pat_up in name:
+                        return info["code"], info["parent"]
+
             return fallback_code, fallback_parent
 
         # Determine group codes based on name-based overrides first (highly reliable & universal)
@@ -1490,7 +1569,7 @@ class MiracleDBFHandler:
               any(w in name_up for w in ["HDFC", "ICICI", "SBI", "AXIS", "KOTAK", "BOB", "PNB", "UNION BANK", "CANARA"])) and not any(chg in name_up for chg in ["CHARGE", "CHARGES", "CHG", "CHGS", "INTEREST", "COMMISSION", "FEE", "FEES"]):
             group_code, parent_group = find_group_by_name(["BANK ACCOUNTS (BANKS)", "BANK ACCOUNTS", "BANKS"], 'G0000004', 'G0000003')
         # 3. Cash overrides
-        elif name_up in ("CASH", "CASH ACCOUNT", "CASH A/C"):
+        elif name_up in ("CASH", "CASH ACCOUNT", "CASH A/C", "CASH A/C.", "CASH AC", "CASH SALE", "CASH SALES", "CASH PURCHASE", "CASH PURCHASES", "COUNTER SALE", "COUNTER SALES"):
             group_code, parent_group = find_group_by_name(["CASH HAND", "CASH"], 'G0000005', 'G0000003')
         # 4. Capital / Drawings overrides
         elif any(w in name_up for w in ["DRAWING", "DRAWINGS", "PERSONAL EXPENSE", "PERSONAL EXPENSES", "PARTNER CAPITAL"]):
@@ -1506,9 +1585,9 @@ class MiracleDBFHandler:
             group_code, parent_group = find_group_by_name(["INVESTMENTS", "INVESTMENT"], 'G0000007', 'G0000003')
         # 7. Secured / Unsecured Loans overrides
         elif "UNSECURED LOAN" in name_up or "UNSECURED LOANS" in name_up:
-            group_code, parent_group = find_group_by_name(["UNSECURED LOANS", "UNSECURED"], 'G0000019', 'G0000010')
+            group_code, parent_group = find_group_by_name(["UNSECURED LOANS", "UNSECURED"], 'G0000020', 'G0000010')
         elif "SECURED LOAN" in name_up or "SECURED LOANS" in name_up:
-            group_code, parent_group = find_group_by_name(["SECURED LOANS", "SECURED"], 'G0000008', 'G0000010')
+            group_code, parent_group = find_group_by_name(["SECURED LOANS", "SECURED"], 'G0000017', 'G0000010')
         # 8. Expense overrides (covers Rent, Salary, Fees, Charges, Welfare, Office, Printing, Repairs, etc.)
         elif any(w in name_up for w in [
             "EXPENSE", "EXPENSES", "CHARGE", "CHARGES", "RENT", "SALARY", "SALARIES", "INTEREST", "FEES", "FEE",
@@ -1544,11 +1623,11 @@ class MiracleDBFHandler:
         elif "INVESTMENT" in group_hint_up:
             group_code, parent_group = find_group_by_name(["INVESTMENTS", "INVESTMENT"], 'G0000007', 'G0000003')
         elif "UNSECURED LOANS" in group_hint_up or "UNSECURED" in group_hint_up:
-            group_code, parent_group = find_group_by_name(["UNSECURED LOANS", "UNSECURED"], 'G0000019', 'G0000010')
+            group_code, parent_group = find_group_by_name(["UNSECURED LOANS", "UNSECURED"], 'G0000020', 'G0000010')
         elif "SECURED LOANS" in group_hint_up or "SECURED" in group_hint_up:
-            group_code, parent_group = find_group_by_name(["SECURED LOANS", "SECURED"], 'G0000008', 'G0000010')
+            group_code, parent_group = find_group_by_name(["SECURED LOANS", "SECURED"], 'G0000017', 'G0000010')
         elif "LOANS & ADVANCES" in group_hint_up or "LOANS AND ADVANCES" in group_hint_up:
-            group_code, parent_group = find_group_by_name(["LOANS & ADVANCES (ASSET)", "LOANS & ADVANCES", "LOANS AND ADVANCES"], 'G0000007', 'G0000003')
+            group_code, parent_group = find_group_by_name(["LOANS & ADVANCES (ASSET)", "LOANS & ADVANCES", "LOANS AND ADVANCES"], 'G0000011', 'G0000003')
         elif "SUNDRY DEBTORS" in group_hint_up or "DEBTOR" in group_hint_up or "CUSTOMER" in group_hint_up:
             group_code, parent_group = find_group_by_name(["SUNDRY DEBTORS", "DEBTOR", "CUSTOMER"], 'G0000009', 'G0000003')
         elif "SUNDRY CREDITORS" in group_hint_up or "CREDITOR" in group_hint_up or "SUPPLIER" in group_hint_up:
@@ -1556,9 +1635,9 @@ class MiracleDBFHandler:
         elif "SUSPENSE" in group_hint_up:
             group_code, parent_group = find_group_by_name(["SUSPENSE ACCOUNT", "SUSPENSE"], 'G0000028', '')
         elif "SALES" in group_hint_up:
-            group_code, parent_group = find_group_by_name(["SALES ACCOUNTS", "SALES"], 'G0000011', 'G0000002')
+            group_code, parent_group = find_group_by_name(["SALES ACCOUNTS", "SALES"], 'G0000021', 'G0000002')
         elif "PURCHASE" in group_hint_up:
-            group_code, parent_group = find_group_by_name(["PURCHASE ACCOUNTS", "PURCHASE"], 'G0000012', 'G0000002')
+            group_code, parent_group = find_group_by_name(["PURCHASE ACCOUNTS", "PURCHASE"], 'G0000023', 'G0000002')
         elif "BANK" in group_hint_up:
             group_code, parent_group = find_group_by_name(["BANK ACCOUNTS", "BANK"], 'G0000004', 'G0000003')
         elif "CASH" in group_hint_up:
@@ -1585,9 +1664,9 @@ class MiracleDBFHandler:
             if not has_business_keyword:
                 # Looks like an individual person name — use loan accounts
                 if transaction_type.capitalize() == 'Receipt':
-                    group_code, parent_group = find_group_by_name(["UNSECURED LOANS", "UNSECURED"], 'G0000019', 'G0000010')
+                    group_code, parent_group = find_group_by_name(["UNSECURED LOANS", "UNSECURED"], 'G0000020', 'G0000010')
                 else:
-                    group_code, parent_group = find_group_by_name(["LOANS & ADVANCES (ASSET)", "LOANS & ADVANCES", "LOANS AND ADVANCES"], 'G0000007', 'G0000003')
+                    group_code, parent_group = find_group_by_name(["LOANS & ADVANCES (ASSET)", "LOANS & ADVANCES", "LOANS AND ADVANCES"], 'G0000011', 'G0000003')
             else:
                 # Business name — use Debtors/Creditors
                 if transaction_type.capitalize() == 'Receipt':
@@ -1741,10 +1820,18 @@ class MiracleDBFHandler:
             finally:
                 t02.close()
 
-        # Register in RKACCGID.DBF
-        self._register_guid('YRM01', led_code, is_header=False)
+        # Register in RKACCGID.DBF with FIELD04='Y'
+        self._register_guid('YRM01', led_code, is_header=False, year_folder=year_folder)
 
-        # Ledger created strictly in target year_folder (selected/current year)
+        # Cross-year sync to ensure new party appears across all active financial year folders
+        try:
+            if os.path.exists(self.client_path):
+                for item in os.listdir(self.client_path):
+                    if item.upper().startswith("YR") and os.path.isdir(os.path.join(self.client_path, item)) and item.upper() != str(year_folder).upper():
+                        self._sync_party_to_other_years(name, led_code, year_folder, target_year_folder=item)
+                        self._register_guid('YRM01', led_code, is_header=False, year_folder=item)
+        except Exception as sync_err:
+            logger.warning(f"Cross-year party sync warning for {name}: {sync_err}")
 
         logger.info(f"Auto-created new {'B2B' if is_registered else 'B2C'} ledger: {name} ({led_code}) with GSTIN {gstin}")
         return led_code
@@ -2741,17 +2828,24 @@ class MiracleDBFHandler:
     def _open_table_with_retry(self, table, mode, max_retries=5, base_delay=0.2):
         """
         Opens a dbf.Table instance with exponential backoff retries if it is locked.
+        Self-heals read-only folder/file permissions if PermissionError occurs.
         """
         import time
+        tbl_path = getattr(table, 'filename', None)
+        if tbl_path:
+            ensure_writable_recursive(tbl_path)
         for attempt in range(max_retries):
             try:
                 table.open(mode=mode)
                 return
             except Exception as e:
+                if isinstance(e, PermissionError) or "permission" in str(e).lower():
+                    if tbl_path:
+                        ensure_writable_recursive(tbl_path)
                 if attempt == max_retries - 1:
                     raise e
                 delay = base_delay * (2 ** attempt)
-                logger.warning(f"⚠️ Table {table.filename} is locked by another process (Wine/Miracle). Retrying open in {delay:.2f}s... (Attempt {attempt+1}/{max_retries})")
+                logger.warning(f"⚠️ Table {tbl_path or 'unknown'} is locked by another process (Wine/Miracle). Retrying open in {delay:.2f}s... (Attempt {attempt+1}/{max_retries})")
                 time.sleep(delay)
 
     @contextlib.contextmanager
@@ -2768,6 +2862,7 @@ class MiracleDBFHandler:
             yield
             return
 
+        ensure_writable_recursive(dbf_path)
         cdx_path = dbf_path.replace('.DBF', '.CDX').replace('.dbf', '.cdx')
         has_cdx = os.path.exists(cdx_path)
         orig_byte28 = None
@@ -2788,6 +2883,13 @@ class MiracleDBFHandler:
                             f.write(new_byte28)
                     break  # Success, exit retry loop
                 except (IOError, PermissionError) as e:
+                    ensure_writable_recursive(dbf_path)
+                    if attempt == max_retries - 1:
+                        logger.error(f"❌ Failed to acquire lock for CDX flag modification on {dbf_path} after {max_retries} attempts.")
+                        raise RuntimeError(f"Miracle DBF table '{os.path.basename(dbf_path)}' is currently open in Miracle Accounting desktop software. Please close the company window in Miracle desktop software and try again.")
+                    delay = base_delay * (2 ** attempt)
+                    logger.warning(f"⚠️ File {dbf_path} is locked by Wine/Miracle. Retrying CDX bypass in {delay:.2f}s... (Attempt {attempt + 1}/{max_retries})")
+                    time.sleep(delay)
                     if attempt == max_retries - 1:
                         logger.error(f"❌ Failed to acquire lock for CDX flag modification on {dbf_path} after {max_retries} attempts.")
                         raise RuntimeError(f"Miracle DBF table '{os.path.basename(dbf_path)}' is currently open in Miracle Accounting desktop software. Please close the company window in Miracle desktop software and try again.")
@@ -3364,19 +3466,55 @@ class MiracleDBFHandler:
                     city = v.get('party_city') or ''
                     pincode = v.get('party_pincode') or ''
                     
-                    # 1. Match party by name (Space & Punctuation Insensitive)
-                    if party_id:
-                        party_code = get_ledger_code(party_id)
+                    # ── CASH SALES & CASH PURCHASES GUARD (RULE 34) ────────────────────
+                    CASH_PARTY_ALIASES = {
+                        'CASH', 'CASH SALE', 'CASH SALES', 'CASH PURCHASE', 'CASH PURCHASES', 
+                        'COUNTER SALE', 'COUNTER SALES', 'CASH ACCOUNT', 'CASH A/C', 'CASH A/C.', 
+                        'CASH AC', 'CASH CUSTOMER', 'CASH SUPPLIER', 'PETTY CASH', 'CASH IN HAND'
+                    }
 
-                    # 2. Fallback to GSTIN lookup only if name match is missing/unmapped
-                    if (not party_code or party_code.upper() not in existing_codes) and gstin and len(gstin) >= 15 and gstin in gstin_to_code:
-                        party_code = gstin_to_code[gstin]
-                        logger.info(f"✅ Matched party by GSTIN: {gstin} -> {party_code}")
+                    party_raw_up = party_id.strip().upper()
+                    party_an_up = clean_alpha_num(party_raw_up)
+                    is_cash_voucher = (
+                        v.get('is_cash') is True or 
+                        str(v.get('cash_debit') or '').strip().upper() in ('C', 'CASH') or
+                        party_raw_up in CASH_PARTY_ALIASES or 
+                        party_an_up in ('CASH', 'CASHSALE', 'CASHSALES', 'CASHPURCHASE', 'CASHPURCHASES', 'COUNTERSALE', 'CASHACCOUNT', 'CASHAC', 'CASHINHAND') or
+                        str(v.get('group_hint') or '').strip().upper() in ('CASH-IN-HAND', 'CASH IN HAND', 'CASH ACCOUNT', 'CASH A/C', 'CASH')
+                    )
+
+                    party_code = ''
+                    if is_cash_voucher:
+                        # 1. Resolve party_code to existing Miracle master Cash Account ledger (group G0000005 or name in CASH_PARTY_ALIASES)
+                        cash_party_code = None
+                        for led in ledgers:
+                            g_code_led = led.get('group_code', '')
+                            l_name_led = led.get('name', '').strip().upper()
+                            if g_code_led == 'G0000005' or led.get('classification') == 'Cash' or l_name_led in ('CASH ACCOUNT', 'CASH A/C.', 'CASH A/C', 'CASH'):
+                                cash_party_code = led['code']
+                                logger.info(f"✅ Cash Voucher: Mapped '{party_id}' to Miracle Master Cash Account '{led['name']}' ({cash_party_code})")
+                                break
+                                
+                        if not cash_party_code:
+                            # Auto-create standard Cash Account under Cash-in-Hand (G0000005), NEVER Sundry Debtors
+                            cash_party_code = self.create_party_ledger("Cash Account", module, group_hint="Cash in Hand", year_folder=year_folder)
+                            logger.info(f"✅ Cash Voucher: Created default master Cash Account ({cash_party_code}) under Cash-in-Hand (G0000005)")
+                            
+                        party_code = cash_party_code
+                    else:
+                        # 1. Match party by name (Space & Punctuation Insensitive)
+                        if party_id:
+                            party_code = get_ledger_code(party_id)
+
+                        # 2. Fallback to GSTIN lookup only if name match is missing/unmapped
+                        if (not party_code or party_code.upper() not in existing_codes) and gstin and len(gstin) >= 15 and gstin in gstin_to_code:
+                            party_code = gstin_to_code[gstin]
+                            logger.info(f"✅ Matched party by GSTIN: {gstin} -> {party_code}")
                     
                     # Auto-create B2C/B2B ledger if missing from local database
                     is_existing_code = party_code.upper() in existing_codes
                     
-                    if not is_existing_code:
+                    if not is_existing_code and not is_cash_voucher:
                         party_code = self.create_party_ledger(party_id, module, gstin=gstin, address=address, city=city, pincode=pincode, year_folder=year_folder, group_hint=v.get('group_hint', ''))
                         # ── D1: Patch in-memory dicts instead of full read_ledgers() reload ──
                         # Old code called self.read_ledgers(year_folder) here — reloading 3 DBF
@@ -3398,7 +3536,7 @@ class MiracleDBFHandler:
 
                     # USER GROUP OVERRIDE SYNC:
                     user_gh = str(v.get('group_hint') or '').strip()
-                    if party_code and user_gh:
+                    if party_code and user_gh and not is_cash_voucher:
                         target_grp = self.resolve_group_code_from_hint(user_gh, year_folder=year_folder)
                         if target_grp:
                             try:
@@ -3407,7 +3545,7 @@ class MiracleDBFHandler:
                                 logger.warning(f"⚠️ Warning: Could not update group code for {party_id} ({party_code}): {grp_err}")
                             if an_key and an_key not in alpha_num_to_code_keys_list:
                                 alpha_num_to_code_keys_list.append(an_key)
-                    elif is_existing_code:
+                    elif is_existing_code and not is_cash_voucher:
                         # ── D7: Skip update if nothing changed ───────────────────────────
                         # Old code always called update_party_ledger_details — opening 2 DBF
                         # files and scanning them linearly, even for vouchers with no
@@ -3694,7 +3832,7 @@ class MiracleDBFHandler:
                         'FIELD06': total,
                         'FIELD07': sum(p["amount"] for p in processed_items) if module == 'Sales' else taxable,
                         'FIELD14': resolved_format,
-                        'FIELD16': 'D',
+                        'FIELD16': 'C' if is_cash_voucher else 'D',
                         'FIELD17': 'U0000000',
                         'FIELD20': len(processed_items),  # Number of item lines in RKACCT02
                         'FIELD21': 'T',  # Always 'T' (Tax Invoice) even for Exempt/No-GST
@@ -5181,20 +5319,39 @@ class MiracleDBFHandler:
 
         return injected_count
 
-    def _find_gid_path(self) -> str | None:
+    def _find_gid_path(self, year_folder: str | None = None) -> str | None:
         """Locates RKACCGID.DBF in year folder or parent company folder."""
-        candidates = [
+        candidates = []
+        if year_folder:
+            candidates.extend([
+                os.path.join(self.client_path, year_folder, 'RKACCGID.DBF'),
+                os.path.join(self.client_path, year_folder, 'rkaccgid.dbf'),
+            ])
+        candidates.extend([
             os.path.join(self.client_path, 'RKACCGID.DBF'),
             os.path.join(self.client_path, 'rkaccgid.dbf'),
             os.path.join(os.path.dirname(self.client_path), 'RKACCGID.DBF'),
             os.path.join(os.path.dirname(self.client_path), 'rkaccgid.dbf'),
-        ]
+        ])
+        
+        if os.path.exists(self.client_path):
+            try:
+                for sub in os.listdir(self.client_path):
+                    sub_p = os.path.join(self.client_path, sub)
+                    if os.path.isdir(sub_p):
+                        candidates.extend([
+                            os.path.join(sub_p, 'RKACCGID.DBF'),
+                            os.path.join(sub_p, 'rkaccgid.dbf'),
+                        ])
+            except Exception:
+                pass
+
         for p in candidates:
             if os.path.exists(p):
                 return p
         return None
 
-    def _register_guids_batch(self, records: list):
+    def _register_guids_batch(self, records: list, year_folder: str | None = None):
         """Registers multiple records in RKACCGID.DBF in a single open/close cycle for speed."""
         import uuid
         import dbf
@@ -5202,7 +5359,7 @@ class MiracleDBFHandler:
         if not records:
             return
             
-        gid_path = self._find_gid_path()
+        gid_path = self._find_gid_path(year_folder)
         if not gid_path:
             logger.warning(f"Warning: RKACCGID.DBF not found at {self.client_path}")
             return
@@ -5213,6 +5370,7 @@ class MiracleDBFHandler:
             try:
                 for record_type, record_id, is_header in records:
                     guid_str = uuid.uuid4().hex.upper()
+                    rec_type_up = str(record_type).strip().upper()
                     if is_header:
                         pfx = record_id[:2].upper()
                         if pfx in ('SS', 'PP'):
@@ -5221,6 +5379,8 @@ class MiracleDBFHandler:
                             field04_val = 'W'.ljust(25)
                         else:
                             field04_val = 'H'.ljust(25)
+                    elif rec_type_up == 'YRM01':
+                        field04_val = 'Y'.ljust(25)
                     else:
                         field04_val = ''.ljust(25)
                     
@@ -5239,12 +5399,90 @@ class MiracleDBFHandler:
             finally:
                 table.close()
 
+    def repair_unregistered_party_guids(self, year_folder: str | None = None):
+        """Scans RKACCM01.DBF and ensures all party ledgers are registered in RKACCGID.DBF with FIELD04='Y'."""
+        import uuid
+        import dbf
+        
+        if not year_folder:
+            year_folder = self.get_latest_year_folder()
+            
+        gid_path = self._find_gid_path(year_folder)
+        if not gid_path:
+            return
+            
+        m01_path = self._get_table_path('RKACCM01.DBF', year_folder)
+        if not os.path.exists(m01_path):
+            m01_path = self._get_table_path('rkaccm01.dbf', year_folder)
+            if not os.path.exists(m01_path):
+                return
+
+        try:
+            with self.safe_cdx_context(gid_path):
+                gid_tbl = dbf.Table(gid_path)
+                gid_tbl.open(mode=dbf.READ_WRITE)
+                try:
+                    gid_records = {}
+                    for r in gid_tbl:
+                        if dbf.is_deleted(r):
+                            continue
+                        f01 = str(r.field01).strip().upper()
+                        f02 = str(r.field02).strip().upper()
+                        if f01 == 'YRM01':
+                            gid_records[f02] = r
+
+                    m01_tbl = dbf.Table(m01_path)
+                    m01_tbl.open(mode=dbf.READ_ONLY)
+                    to_add = []
+                    to_fix_f04 = []
+                    try:
+                        for r in m01_tbl:
+                            if dbf.is_deleted(r):
+                                continue
+                            p_code = str(r.field01).strip().upper()
+                            if not p_code:
+                                continue
+                            if p_code not in gid_records:
+                                to_add.append(p_code)
+                            else:
+                                gid_rec = gid_records[p_code]
+                                current_f04 = str(gid_rec.field04).strip()
+                                if current_f04 != 'Y':
+                                    to_fix_f04.append(gid_rec)
+                    finally:
+                        m01_tbl.close()
+
+                    if to_fix_f04:
+                        for gid_rec in to_fix_f04:
+                            gid_rec.write_record(FIELD04='Y'.ljust(25))
+                        logger.info(f"🔧 Fixed FIELD04='Y' for {len(to_fix_f04)} existing party GUIDs in RKACCGID.DBF")
+
+                    if to_add:
+                        for p_code in to_add:
+                            guid_str = uuid.uuid4().hex.upper()
+                            gid_tbl.append(self.clean_record_dict({
+                                'FIELD01': 'YRM01',
+                                'FIELD02': p_code.ljust(12),
+                                'FIELD03': guid_str,
+                                'FIELD04': 'Y'.ljust(25),
+                                'FIELD05': 'E',
+                                'GIDF07': '01',
+                                'GIDF08': '1'
+                            }, table=gid_tbl))
+                        logger.info(f"🔧 Auto-repaired {len(to_add)} missing party GUIDs (YRM01) in RKACCGID.DBF")
+                finally:
+                    gid_tbl.close()
+        except Exception as e:
+            logger.error(f"Repair party GUID error: {e}")
+
     def repair_unregistered_guids(self, year_folder: str):
         """Scans RKACCT41.DBF and registers any missing voucher GUIDs in RKACCGID.DBF."""
         import uuid
         import dbf
         
-        gid_path = self._find_gid_path()
+        self.repair_unregistered_party_guids(year_folder)
+        
+        gid_path = self._find_gid_path(year_folder)
         if not gid_path:
             return
             
@@ -5298,17 +5536,18 @@ class MiracleDBFHandler:
         except Exception as e:
             logger.error(f"Repair GUID error: {e}")
 
-    def _register_guid(self, record_type: str, record_id: str, is_header: bool = False):
+    def _register_guid(self, record_type: str, record_id: str, is_header: bool = False, year_folder: str | None = None):
         """Registers a record in RKACCGID.DBF to prevent Miracle's parser from ignoring it."""
         import uuid
         import dbf
         
-        gid_path = self._find_gid_path()
+        gid_path = self._find_gid_path(year_folder)
         if not gid_path:
             logger.warning(f"Warning: RKACCGID.DBF not found at {self.client_path}")
             return
                 
         guid_str = uuid.uuid4().hex.upper()
+        rec_type_up = str(record_type).strip().upper()
         if is_header:
             pfx = record_id[:2].upper()
             if pfx in ('SS', 'PP'):
@@ -5317,6 +5556,8 @@ class MiracleDBFHandler:
                 field04_val = 'W'.ljust(25)
             else:
                 field04_val = 'H'.ljust(25)
+        elif rec_type_up == 'YRM01':
+            field04_val = 'Y'.ljust(25)
         else:
             field04_val = ''.ljust(25)
         
@@ -5556,8 +5797,16 @@ class MiracleDBFHandler:
                         name_up = str(record['FIELD02']).strip().upper()
                         grp_code = str(record['FIELD05']).strip().upper()
                         
+                        # Repair Cash Sale / Cash Purchase ledgers wrongly assigned to Sundry Debtors, Creditors, or Bank OCC:
+                        cash_aliases = ("CASH SALE", "CASH SALES", "CASH PURCHASE", "CASH PURCHASES", "COUNTER SALE", "COUNTER SALES")
+                        cash_group_code = "G0000005"
+                        if name_up in cash_aliases and grp_code != cash_group_code:
+                            dbf_lib.write(record, FIELD05=cash_group_code, FIELD04="G0000003")
+                            repaired_count += 1
+                            repaired_names.append(f"{str(record['FIELD02']).strip()} (Moved to Cash-in-Hand)")
+
                         # If group code is currently G0000017 / G0000016 (Bank OCC / Loans) or empty, and ledger name is an expense:
-                        if grp_code in ('G0000017', 'G0000016', 'G0000002') or (grp_code == '' and any(kw in name_up for kw in expense_keywords)):
+                        elif grp_code in ('G0000017', 'G0000016', 'G0000002') or (grp_code == '' and any(kw in name_up for kw in expense_keywords)):
                             if any(kw in name_up for kw in expense_keywords) and not any(b_kw in name_up for b_kw in ["BANK A/C", "BANK ACCOUNT", "HDFC", "ICICI", "SBI", "AXIS", "KOTAK", "BOB", "PNB"]):
                                 dbf_lib.write(record, FIELD05=indirect_exp_code)
                                 repaired_count += 1

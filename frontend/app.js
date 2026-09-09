@@ -2954,7 +2954,12 @@ document.addEventListener('DOMContentLoaded', () => {
             groupLabel = "Expense Ledgers";
         }
 
+        const seenNames = new Set();
         clientLedgers.forEach(led => {
+            const key = (led.name || led.print_name || '').trim().toUpperCase();
+            if (!key || seenNames.has(key)) return;
+            seenNames.add(key);
+
             const optHtml = `<option value="${led.name}" ${led.name === selectedCode || led.code === selectedCode ? 'selected' : ''}>${led.print_name} (${led.code})</option>`;
             if (targetClassification && led.classification === targetClassification) {
                 suggested.push(optHtml);
@@ -3559,21 +3564,34 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         // Step 2: Check Products (Line Items)
-        // Apply default product if selected
+        // Apply default product if selected (Tax-Aware Guard: only apply to items matching default product GST rate)
         const defaultProductSelect = document.getElementById('defaultProductSelect');
         const defaultProductVal = defaultProductSelect ? defaultProductSelect.value : '';
-        if (defaultProductVal) {
-            data.forEach(invoice => {
-                if (Array.isArray(invoice.items)) {
-                    invoice.items.forEach(item => {
-                        const match = clientProducts.find(p => p.name === defaultProductVal);
-                        if (match) {
-                            item.name = match.name;
-                            item.mapped_code = match.code;
-                        }
-                    });
+        if (defaultProductVal && defaultProductVal !== 'AUTO_CREATE_PRODUCT' && typeof clientProducts !== 'undefined' && clientProducts && clientProducts.length > 0) {
+            const defaultMatch = clientProducts.find(p => p.name === defaultProductVal || p.code === defaultProductVal);
+            if (defaultMatch) {
+                let defaultGst = null;
+                if (defaultMatch.gst_pct !== undefined && defaultMatch.gst_pct !== null && defaultMatch.gst_pct !== '') {
+                    defaultGst = Math.round(parseFloat(defaultMatch.gst_pct));
+                } else {
+                    const mPct = (defaultMatch.name || '').match(/(\d+)%/);
+                    if (mPct) defaultGst = parseInt(mPct[1], 10);
+                    else if (/EXEMPT|NIL|CNGT|0%/i.test(defaultMatch.name)) defaultGst = 0;
                 }
-            });
+
+                data.forEach(invoice => {
+                    if (Array.isArray(invoice.items)) {
+                        invoice.items.forEach(item => {
+                            const itemGst = Math.round(parseFloat(item.gst_pct !== undefined && item.gst_pct !== null ? item.gst_pct : (invoice.gst_pct || 0)));
+                            // Only apply default product if default product tax rate matches item tax rate or if default product is general
+                            if (defaultGst === null || defaultGst === itemGst) {
+                                item.name = defaultMatch.name;
+                                item.mapped_code = defaultMatch.code;
+                            }
+                        });
+                    }
+                });
+            }
         }
 
         const unknownProducts = [];
@@ -4560,14 +4578,17 @@ document.addEventListener('DOMContentLoaded', () => {
         const datalist = document.getElementById('globalMiracleLedgersDatalist');
         if (!datalist) return;
         let optionsHtml = '';
+        const seen = new Set();
 
         const autoLedgers = (typeof globalAutoCreateLedgers !== 'undefined' && Array.isArray(globalAutoCreateLedgers)) ? globalAutoCreateLedgers : [];
         const hints = (typeof autoCreateLedgerHints !== 'undefined' && autoCreateLedgerHints) ? autoCreateLedgerHints : {};
 
         if (clientLedgers && Array.isArray(clientLedgers) && clientLedgers.length > 0) {
             clientLedgers.forEach(l => {
-                const name = (l.name || '').trim();
-                if (name) {
+                const name = (l.name || l.print_name || '').trim();
+                const key = name.toUpperCase();
+                if (name && !seen.has(key)) {
+                    seen.add(key);
                     optionsHtml += `<option value="${name}">${l.group_name || 'Miracle Master'}</option>`;
                 }
             });
@@ -4576,20 +4597,22 @@ document.addEventListener('DOMContentLoaded', () => {
         if (autoLedgers.length > 0) {
             autoLedgers.forEach(ul => {
                 const name = (ul || '').trim();
-                if (name) {
-                    const hint = hints[name.toUpperCase()] || (typeof inferExpenseGroupHint === 'function' ? inferExpenseGroupHint(name) : 'Auto-Create');
+                const key = name.toUpperCase();
+                if (name && !seen.has(key)) {
+                    seen.add(key);
+                    const hint = hints[key] || (typeof inferExpenseGroupHint === 'function' ? inferExpenseGroupHint(name) : 'Auto-Create');
                     optionsHtml += `<option value="${name}">${name} (Auto-Create → ${hint})</option>`;
                 }
             });
         }
 
         if (currentExtractedData && Array.isArray(currentExtractedData) && currentExtractedData.length > 0) {
-            const seen = new Set();
             currentExtractedData.forEach(r => {
                 if (r.mapped_ledger && r.mapped_ledger.toUpperCase() !== 'SUSPENSE ACCOUNT') {
                     const name = r.mapped_ledger.trim();
-                    if (!seen.has(name.toUpperCase())) {
-                        seen.add(name.toUpperCase());
+                    const key = name.toUpperCase();
+                    if (!seen.has(key)) {
+                        seen.add(key);
                         optionsHtml += `<option value="${name}">${name}</option>`;
                     }
                 }
@@ -5057,20 +5080,7 @@ document.addEventListener('DOMContentLoaded', () => {
             return 'Indirect Expenses';
         }
 
-        // 1. EXPLICIT USER ROW HINT: If rowHint is explicitly passed (e.g. user selected Suspense Account, Sundry Creditors, etc. in UI dropdown),
-        // respect user selection 100%! Never let master DBF fallback or heuristics overwrite explicit user selection!
-        const hintUp = (rowHint || '').toUpperCase().trim();
-        const isSystemPlaceholder = !rowHint ||
-            hintUp === 'REVIEW' ||
-            hintUp === 'SUSPENSE ACCOUNT (REVIEW)' ||
-            hintUp === 'GRID MAPPED' ||
-            hintUp === 'AUTO-CREATE';
-
-        if (!isSystemPlaceholder) {
-            return normalizeAccountingGroup(rowHint);
-        }
-
-        // 2. Check master Miracle ledgers (clientLedgers) loaded from RKACCM01 DBF
+        // 1. Check master Miracle ledgers (clientLedgers) loaded from RKACCM01 DBF (Ground Truth)
         if (typeof clientLedgers !== 'undefined' && clientLedgers && clientLedgers.length > 0 && legUp && legUp !== 'SUSPENSE ACCOUNT') {
             const masterMatch = clientLedgers.find(l =>
                 (l.name || '').trim().toUpperCase() === legUp ||
@@ -5085,12 +5095,12 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         }
 
-        // 3. Check if autoCreateLedgerHints has an explicit user-defined group for this auto-create ledger
+        // 2. Check if autoCreateLedgerHints has an explicit or propagated group for this ledger
         if (typeof autoCreateLedgerHints !== 'undefined' && autoCreateLedgerHints && autoCreateLedgerHints[legUp]) {
             return normalizeAccountingGroup(autoCreateLedgerHints[legUp]);
         }
 
-        // 4. If mappedLedger is SUSPENSE ACCOUNT, empty, generic group header, or unmapped cheque descriptor, return Suspense Account
+        // 3. If mappedLedger is SUSPENSE ACCOUNT, empty, generic group header, or unmapped cheque descriptor, return Suspense Account
         const GENERIC_PARTY_DESCRIPTORS = [
             'SUNDRY DEBTORS', 'SUNDRY CREDITORS', 'INDIRECT EXPENSES', 'DIRECT EXPENSES',
             'INDIRECT INCOME', 'DIRECT INCOME', 'SALES ACCOUNTS', 'PURCHASE ACCOUNTS',
@@ -5100,6 +5110,12 @@ document.addEventListener('DOMContentLoaded', () => {
         ];
         if (!legUp || legUp === 'SUSPENSE ACCOUNT' || GENERIC_PARTY_DESCRIPTORS.includes(legUp) || /^CHEQUE DEPOSIT|^CHQ DEP|^CLEARING/i.test(legUp)) {
             return 'Suspense Account';
+        }
+
+        // 4. Direct Expenses Heuristics (Freight, Carriage, Transport, Loading)
+        const isKnownDirectExpense = /FREIGHT|BHADA|CARRIAGE|CARTAGE|LOADING|UNLOADING|HAMALI|COOLIE|OCTROI|GATE PASS|CUSTOMS|LABOUR|WAGES|RAW MATERIAL/i.test(legUp);
+        if (isKnownDirectExpense) {
+            return isPayment ? 'Direct Expenses' : 'Direct Income';
         }
 
         // 5. Hard Cash & Bank group overrides
@@ -5115,8 +5131,8 @@ document.addEventListener('DOMContentLoaded', () => {
             return 'Duties & Taxes';
         }
 
-        // 7. Regex signals for expenses/investments/banks
-        const isKnownExpense = /EXPENSE|EXPENSES|OTHER EXPENSE|KASAR|SALARY|SALARIES|WAGES|STIPEND|BONUS|PF |ESI|REMUNERATION|PETROL|DIESEL|FUEL|RENT|ELECTRICITY|POWER|WATER|TELEPHONE|MOBILE|INTERNET|BROADBAND|PRINTING|STATIONERY|FOOD|SNACKS|STAFF|REPAIR|SERVICE|MAINTENANCE|FREIGHT|TRANSPORT|CONVEYANCE|COURIER|ADVERTISEMENT|MARKETING|SOFTWARE|AUDIT|LEGAL|BANK CHARG|CHARGES|DISCOUNT|ZOMATO|SWIGGY|BLINKIT|ZEPTO|INSTAMART|CRED|DUNZO|BIGBASKET|URBAN COMPANY|URBANCLAP|HOUSEJOY|SULEKHA|MILKBASKET/i.test(legUp);
+        // 7. Regex signals for expenses/utilities/parking/transport/investments/banks
+        const isKnownExpense = /PARKING|PARKING CHG|PARKING CHARGES|PARKING FEE|PARKING EXPENSE|TOLL|TOLL TAX|FASTAG|NETC FASTAG|TPT|TRANS|TRANSPORT|EXPENSE|EXPENSES|OTHER EXPENSE|KASAR|SALARY|SALARIES|WAGES|STIPEND|BONUS|PF |ESI|REMUNERATION|PETROL|DIESEL|FUEL|RENT|ELECTRICITY|POWER|WATER|TELEPHONE|MOBILE|INTERNET|BROADBAND|PRINTING|STATIONERY|FOOD|SNACKS|STAFF|REPAIR|SERVICE|MAINTENANCE|CONVEYANCE|COURIER|ADVERTISEMENT|MARKETING|SOFTWARE|AUDIT|LEGAL|BANK CHARG|CHARGES|DISCOUNT|ZOMATO|SWIGGY|BLINKIT|ZEPTO|INSTAMART|CRED|DUNZO|BIGBASKET|URBAN COMPANY|URBANCLAP|HOUSEJOY|SULEKHA|MILKBASKET/i.test(legUp);
         const isKnownBankCharge = /NACH CHARGE|ECS CHARGE|ACH CHARGE|MANDATE CHARGE|BILL PAYMENT|INSURANCE PREMIUM|NACH DEBIT/i.test(legUp);
         const isKnownInvestment = /GROWW|ZERODHA|UPSTOX|SHARE KHAN|ANGEL BROKING|KOTAK SEC|ICICI DIRECT|HDFC SEC|PAYTM MONEY|MUTUAL FUND|SIP AUTO|DEMAT|NEXTBILLION|INDIAN CLEARING|CLEARING CORP|NSCCL|BSCCL|ICCL/i.test(legUp);
         const isKnownBank = /^(HDFC|ICICI|AXIS|SBI|IDFC|KOTAK|INDUSIND|BANK OF BARODA|UNION BANK|CANARA BANK|PUNJAB NATIONAL|CENTRAL BANK|BANK OF INDIA)/i.test(legUp);
@@ -5140,7 +5156,19 @@ document.addEventListener('DOMContentLoaded', () => {
             return 'Capital Account / Drawings';
         }
 
-        // 9. Final DR/CR gate for unknown person/vendor names
+        // 9. EXPLICIT USER ROW HINT: Respect explicit non-placeholder row hints
+        const hintUp = (rowHint || '').toUpperCase().trim();
+        const isSystemPlaceholder = !rowHint ||
+            hintUp === 'REVIEW' ||
+            hintUp === 'SUSPENSE ACCOUNT (REVIEW)' ||
+            hintUp === 'GRID MAPPED' ||
+            hintUp === 'AUTO-CREATE';
+
+        if (!isSystemPlaceholder) {
+            return normalizeAccountingGroup(rowHint);
+        }
+
+        // 10. Final DR/CR gate for unknown person/vendor names
         return isPayment ? 'Sundry Creditors' : 'Sundry Debtors';
     }
 
@@ -5170,18 +5198,32 @@ document.addEventListener('DOMContentLoaded', () => {
             if (!row.flags.includes('Unmapped Narration')) row.flags.push('Unmapped Narration');
         }
 
-        // 🚨 DBF Product GST Mismatch Check 🚨
+        // 🚨 DBF Product GST Mismatch Check (Rule 35) 🚨
         let gstMismatchDetected = false;
         if (currentModule === 'Sales' || currentModule === 'Purchases') {
-            const mappedItemName = (row.items && row.items.length > 0) ? row.items[0].name : "";
-            if (mappedItemName && clientProducts && clientProducts.length > 0) {
-                const mappedProduct = clientProducts.find(p => p.name === mappedItemName);
-                if (mappedProduct) {
-                    const mappedComm = (mappedProduct.commodity || mappedProduct.commodity_code || mappedProduct.M21F27 || "").trim().toUpperCase();
-                    const rowGst = parseFloat(row.gst_pct) || 0;
-                    const expectedComm = rowGst <= 0 ? "CNGT" : (rowGst <= 5 ? "C002" : (rowGst <= 12 ? "C003" : (rowGst <= 18 ? "C004" : "C005")));
+            const mappedItemName = (row.items && row.items.length > 0) ? (row.items[0].name || "") : "";
+            const rowGst = Math.round(parseFloat(row.gst_pct) || 0);
 
-                    if (mappedComm !== "" && mappedComm !== expectedComm && mappedItemName !== "AUTO_CREATE_PRODUCT") {
+            if (mappedItemName && mappedItemName !== "AUTO_CREATE_PRODUCT" && typeof clientProducts !== 'undefined' && clientProducts && clientProducts.length > 0) {
+                const mappedProduct = clientProducts.find(p => p.name === mappedItemName || p.code === mappedItemName);
+                if (mappedProduct) {
+                    let prodGst = null;
+                    if (mappedProduct.gst_pct !== undefined && mappedProduct.gst_pct !== null && mappedProduct.gst_pct !== '') {
+                        prodGst = Math.round(parseFloat(mappedProduct.gst_pct));
+                    } else if (mappedProduct.tax_rate !== undefined && mappedProduct.tax_rate !== null) {
+                        prodGst = Math.round(parseFloat(mappedProduct.tax_rate));
+                    } else {
+                        const nameStr = (mappedProduct.name || "").toUpperCase();
+                        const mPct = nameStr.match(/(\d+)%/);
+                        if (mPct) {
+                            prodGst = parseInt(mPct[1], 10);
+                        } else if (nameStr.includes("EXEMPT") || nameStr.includes("NIL") || nameStr.includes("CNGT") || nameStr.includes("0%")) {
+                            prodGst = 0;
+                        }
+                    }
+
+                    // Only flag mismatch if we know the product GST rate and it clearly differs from the row GST rate
+                    if (prodGst !== null && !isNaN(prodGst) && prodGst !== rowGst) {
                         gstMismatchDetected = true;
                     }
                 }
@@ -5192,6 +5234,11 @@ document.addEventListener('DOMContentLoaded', () => {
             cScore = Math.floor(cScore / 2); // Drop confidence to half
             if (!row.flags) row.flags = [];
             if (!row.flags.includes("GST DBF Mismatch")) row.flags.push("GST DBF Mismatch");
+        } else {
+            // Clean up false mismatch flags if the row math & product GST rate are valid
+            if (row.flags) {
+                row.flags = row.flags.filter(f => f !== "GST DBF Mismatch" && f !== "GST Mismatch");
+            }
         }
 
         let borderHighlight = '';
@@ -5236,9 +5283,9 @@ document.addEventListener('DOMContentLoaded', () => {
                     if (matchedLedgerObj) {
                         hasMappedMatch = true;
                         row.mapped_ledger = matchedLedgerObj.name;
-                        // ONLY pre-fill default group from master if user HAS NOT EXPLICITLY set a group_hint!
-                        if (!row.group_hint && matchedLedgerObj.group_name) {
-                            row.group_hint = matchedLedgerObj.group_name;
+                        if (matchedLedgerObj.group_name && matchedLedgerObj.group_name.toUpperCase() !== 'UNKNOWN') {
+                            row.group_hint = normalizeAccountingGroup(matchedLedgerObj.group_name);
+                            autoCreateLedgerHints[cleanLedger] = row.group_hint;
                         }
                     } else {
                         hasMappedMatch = clientLedgers.some(led =>
@@ -5247,6 +5294,11 @@ document.addEventListener('DOMContentLoaded', () => {
                             led.code.trim().toUpperCase() === cleanLedger
                         );
                     }
+                }
+                if (!hasMappedMatch && cleanLedger && cleanLedger !== "SUSPENSE ACCOUNT") {
+                    const dynamicGroup = inferExpenseGroupHint(row.mapped_ledger, row.transaction_type, autoCreateLedgerHints[cleanLedger] || row.group_hint);
+                    row.group_hint = dynamicGroup;
+                    autoCreateLedgerHints[cleanLedger] = dynamicGroup;
                 }
                 const isSuspense = cleanLedger === "SUSPENSE ACCOUNT" || row.group_hint === "Suspense Account";
                 if (isSuspense) {
@@ -5284,35 +5336,45 @@ document.addEventListener('DOMContentLoaded', () => {
         if (currentModule === 'Bank Statements' || currentModule === 'Cash Entries') {
             let hasSuspense = false;
             let ledgerOptions = `<option value="">-- Select Ledger --</option><option value="CREATE_NEW_LEDGER" class="text-cyan-400 font-bold bg-slate-950">➕ + Create New Custom Miracle Ledger...</option>`;
+            const seenValues = new Set();
+            seenValues.add("");
+            seenValues.add("CREATE_NEW_LEDGER");
+
             let hasMappedMatch = false;
             const aiLedger = (row.mapped_ledger || "Suspense Account").toUpperCase().trim();
 
             if (clientLedgers && clientLedgers.length > 0) {
                 clientLedgers.forEach(l => {
-                    if (l.name.toUpperCase().trim() === aiLedger) {
+                    const lName = (l.name || l.print_name || '').toUpperCase().trim();
+                    if (lName === aiLedger) {
                         hasMappedMatch = true;
                     }
                 });
             }
 
-            const rawGroup = inferExpenseGroupHint(row.mapped_ledger, row.transaction_type, row.group_hint);
-            const rowGroup = normalizeAccountingGroup(rawGroup);
-            row.group_hint = rowGroup;
-
+            // Deduplicated Auto-Create & Master Ledgers
             if (globalAutoCreateLedgers && globalAutoCreateLedgers.length > 0) {
                 globalAutoCreateLedgers.forEach(ul => {
-                    const isSelected = (row.mapped_ledger || "").trim().toUpperCase() === ul.toUpperCase() && !hasMappedMatch ? "selected" : "";
-                    const hint = (row.mapped_ledger || "").trim().toUpperCase() === ul.toUpperCase() && row.group_hint
-                        ? row.group_hint
-                        : inferExpenseGroupHint(ul, row.transaction_type, autoCreateLedgerHints[ul.toUpperCase()]);
-                    ledgerOptions += `<option value="${ul}" data-hint="${hint}" ${isSelected}>${ul} (Auto-Create → ${hint})</option>`;
+                    const ulKey = (ul || '').toUpperCase().trim();
+                    if (!ulKey) return;
+                    const isMasterExist = clientLedgers && clientLedgers.some(l => (l.name || l.print_name || '').toUpperCase().trim() === ulKey);
+                    if (!isMasterExist && !seenValues.has(ulKey)) {
+                        seenValues.add(ulKey);
+                        const isSelected = (row.mapped_ledger || "").trim().toUpperCase() === ulKey && !hasMappedMatch ? "selected" : "";
+                        const hint = (row.mapped_ledger || "").trim().toUpperCase() === ulKey && row.group_hint
+                            ? row.group_hint
+                            : inferExpenseGroupHint(ul, row.transaction_type, autoCreateLedgerHints[ulKey]);
+                        ledgerOptions += `<option value="${ul}" data-hint="${hint}" ${isSelected}>${ul} (Auto-Create → ${hint})</option>`;
+                    }
                 });
             }
 
             if (!hasMappedMatch && row.mapped_ledger && row.mapped_ledger.toUpperCase().trim() !== "SUSPENSE ACCOUNT") {
                 const unmappedName = row.mapped_ledger.trim();
-                const alreadyInGlobal = globalAutoCreateLedgers && globalAutoCreateLedgers.some(g => g.toUpperCase().trim() === unmappedName.toUpperCase());
-                if (!alreadyInGlobal) {
+                const unmappedKey = unmappedName.toUpperCase();
+                const isMasterExist = clientLedgers && clientLedgers.some(l => (l.name || l.print_name || '').toUpperCase().trim() === unmappedKey);
+                if (!isMasterExist && !seenValues.has(unmappedKey)) {
+                    seenValues.add(unmappedKey);
                     const hint = inferExpenseGroupHint(unmappedName, row.transaction_type, row.group_hint);
                     ledgerOptions += `<option value="${unmappedName}" data-hint="${hint}" selected>${unmappedName} (Auto-Create → ${hint})</option>`;
                 }
@@ -5320,8 +5382,13 @@ document.addEventListener('DOMContentLoaded', () => {
 
             if (clientLedgers && clientLedgers.length > 0) {
                 clientLedgers.forEach(l => {
-                    const rawName = l.name;
-                    if (rawName.toUpperCase() === "SUSPENSE ACCOUNT") {
+                    const rawName = l.name || l.print_name || '';
+                    if (!rawName) return;
+                    const cleanKey = rawName.toUpperCase().trim();
+                    if (seenValues.has(cleanKey)) return;
+                    seenValues.add(cleanKey);
+
+                    if (cleanKey === "SUSPENSE ACCOUNT") {
                         hasSuspense = true;
                     }
                     let displayName = rawName;
@@ -5337,11 +5404,13 @@ document.addEventListener('DOMContentLoaded', () => {
                             displayName = clean.toLowerCase().replace(/\b\w/g, c => c.toUpperCase());
                         }
                     }
-                    const isSelected = (rawName.toUpperCase().trim() === aiLedger || displayName.toUpperCase().trim() === aiLedger) && hasMappedMatch ? "selected" : "";
+                    const isSelected = (cleanKey === aiLedger || displayName.toUpperCase().trim() === aiLedger) && hasMappedMatch ? "selected" : "";
                     ledgerOptions += `<option value="${rawName}" ${isSelected}>${displayName}</option>`;
                 });
             }
-            if (!hasSuspense) {
+
+            if (!hasSuspense && !seenValues.has("SUSPENSE ACCOUNT")) {
+                seenValues.add("SUSPENSE ACCOUNT");
                 const isSelected = (row.mapped_ledger || "Suspense Account").toUpperCase() === "SUSPENSE ACCOUNT" ? "selected" : "";
                 ledgerOptions += `<option value="Suspense Account" ${isSelected}>Suspense Account (Auto-Create)</option>`;
             }
@@ -5551,19 +5620,20 @@ document.addEventListener('DOMContentLoaded', () => {
                 groupHintSelect.addEventListener('change', () => {
                     const newGroup = groupHintSelect.value;
                     row.group_hint = newGroup;
-                    if (row.mapped_ledger) {
-                        autoCreateLedgerHints[row.mapped_ledger.toUpperCase()] = newGroup;
+                    const currentLegUp = (row.mapped_ledger || "").trim().toUpperCase();
+                    if (currentLegUp && currentLegUp !== 'SUSPENSE ACCOUNT') {
+                        autoCreateLedgerHints[currentLegUp] = newGroup;
                     }
 
-                    // Propagate group_hint change across matching narrations
+                    // Propagate group_hint change across all matching mapped ledgers & narrations
                     const currentNarr = (row.narration || "").trim().toUpperCase();
-                    if (currentNarr) {
-                        currentExtractedData.forEach(r => {
-                            if ((r.narration || "").trim().toUpperCase() === currentNarr) {
-                                r.group_hint = newGroup;
-                            }
-                        });
-                    }
+                    currentExtractedData.forEach(r => {
+                        const rLegUp = (r.mapped_ledger || "").trim().toUpperCase();
+                        const rNarrUp = (r.narration || "").trim().toUpperCase();
+                        if ((currentLegUp && currentLegUp !== 'SUSPENSE ACCOUNT' && rLegUp === currentLegUp) || (currentNarr && rNarrUp === currentNarr)) {
+                            r.group_hint = newGroup;
+                        }
+                    });
 
                     // Update status badge
                     const statusContainer = tr.querySelector('.status-container');
@@ -5574,6 +5644,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         }
                     }
                     updateFilterCounts();
+                    renderVirtualGridRows();
                 });
             }
 
@@ -5581,6 +5652,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 const handleLedgerChange = () => {
                     const selectedVal = ledgerInput.value;
                     const cleanSelected = (selectedVal || "").trim();
+                    const cleanSelectedUp = cleanSelected.toUpperCase();
 
                     row.mapped_ledger = cleanSelected || 'Suspense Account';
                     row.party_name = cleanSelected;
@@ -5589,37 +5661,65 @@ document.addEventListener('DOMContentLoaded', () => {
                     row.Party_Name = cleanSelected;
                     row.status = 'Ready';
 
-                    const newGroup = inferExpenseGroupHint(cleanSelected, row.transaction_type, row.group_hint);
-                    row.group_hint = newGroup;
+                    // ── DYNAMIC GROUP AUTO-UPDATE ON LEDGER CHANGE ──────────────────
+                    let newGroup = '';
 
-                    // Auto-propagate mapping across all rows with matching narration
-                    const currentNarr = (row.narration || "").trim().toUpperCase();
-                    let matchCount = 0;
-                    if (currentNarr) {
-                        currentExtractedData.forEach(r => {
-                            if ((r.narration || "").trim().toUpperCase() === currentNarr) {
-                                r.mapped_ledger = cleanSelected || 'Suspense Account';
-                                r.party_name = cleanSelected;
-                                r.party = cleanSelected;
-                                r.PartyName = cleanSelected;
-                                r.Party_Name = cleanSelected;
-                                r.group_hint = newGroup;
-                                r.status = 'Ready';
-                                if (cleanSelected && cleanSelected.toUpperCase() !== "SUSPENSE ACCOUNT") {
-                                    if (r.flags) r.flags = r.flags.filter(f => f !== "Suspense Mapping");
-                                    r.confidence_score = 100;
-                                } else {
-                                    if (!r.flags) r.flags = [];
-                                    if (!r.flags.includes("Suspense Mapping")) r.flags.push("Suspense Mapping");
-                                    r.confidence_score = 75;
-                                }
-                                matchCount++;
-                            }
-                        });
+                    // 1. Look up in Miracle Master clientLedgers first (Ground Truth)
+                    if (clientLedgers && clientLedgers.length > 0) {
+                        const masterMatch = clientLedgers.find(l =>
+                            (l.name || '').trim().toUpperCase() === cleanSelectedUp ||
+                            (l.print_name || '').trim().toUpperCase() === cleanSelectedUp ||
+                            (l.code || '').trim().toUpperCase() === cleanSelectedUp
+                        );
+                        if (masterMatch && masterMatch.group_name && masterMatch.group_name.toUpperCase() !== 'UNKNOWN') {
+                            newGroup = normalizeAccountingGroup(masterMatch.group_name);
+                        }
                     }
 
+                    // 2. Look up in autoCreateLedgerHints dictionary
+                    if (!newGroup && autoCreateLedgerHints && autoCreateLedgerHints[cleanSelectedUp]) {
+                        newGroup = normalizeAccountingGroup(autoCreateLedgerHints[cleanSelectedUp]);
+                    }
+
+                    // 3. Dynamic Fallback Heuristics (pass null for rowHint to avoid locking onto previous party group)
+                    if (!newGroup) {
+                        newGroup = inferExpenseGroupHint(cleanSelected, row.transaction_type, null);
+                    }
+
+                    row.group_hint = newGroup;
+
+                    if (cleanSelected && cleanSelectedUp !== 'SUSPENSE ACCOUNT') {
+                        autoCreateLedgerHints[cleanSelectedUp] = newGroup;
+                    }
+
+                    // Auto-propagate mapping and group hint across all matching narrations & mapped ledgers
+                    const currentNarr = (row.narration || "").trim().toUpperCase();
+                    let matchCount = 0;
+                    currentExtractedData.forEach(r => {
+                        const rLegUp = (r.mapped_ledger || "").trim().toUpperCase();
+                        const rNarrUp = (r.narration || "").trim().toUpperCase();
+                        if ((currentNarr && rNarrUp === currentNarr) || (cleanSelectedUp && cleanSelectedUp !== 'SUSPENSE ACCOUNT' && rLegUp === cleanSelectedUp)) {
+                            r.mapped_ledger = cleanSelected || 'Suspense Account';
+                            r.party_name = cleanSelected;
+                            r.party = cleanSelected;
+                            r.PartyName = cleanSelected;
+                            r.Party_Name = cleanSelected;
+                            r.group_hint = newGroup;
+                            r.status = 'Ready';
+                            if (cleanSelected && cleanSelected.toUpperCase() !== "SUSPENSE ACCOUNT") {
+                                if (r.flags) r.flags = r.flags.filter(f => f !== "Suspense Mapping");
+                                r.confidence_score = 100;
+                            } else {
+                                if (!r.flags) r.flags = [];
+                                if (!r.flags.includes("Suspense Mapping")) r.flags.push("Suspense Mapping");
+                                r.confidence_score = 75;
+                            }
+                            matchCount++;
+                        }
+                    });
+
                     if (matchCount > 1) {
-                        showToast(`Auto-mapped '${cleanSelected}' to ${matchCount} matching transactions!`, "info");
+                        showToast(`Auto-mapped '${cleanSelected}' (${newGroup}) to ${matchCount} matching transactions!`, "info");
                     }
 
                     populateGlobalLedgersDatalist();
@@ -6584,8 +6684,18 @@ document.addEventListener('DOMContentLoaded', () => {
             });
 
             if (!res.ok) {
-                const errData = await res.json();
-                throw new Error(errData.detail || "Failed to push to Miracle.");
+                let errDetail = "";
+                try {
+                    const errData = await res.json();
+                    errDetail = errData.detail || errData.message || JSON.stringify(errData);
+                } catch (_) {
+                    try {
+                        errDetail = await res.text();
+                    } catch (_) {
+                        errDetail = `HTTP ${res.status} ${res.statusText}`;
+                    }
+                }
+                throw new Error(errDetail || "Failed to push to Miracle.");
             }
 
             const result = await res.json();

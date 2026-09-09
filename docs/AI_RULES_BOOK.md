@@ -85,16 +85,18 @@ Always query `RKACCM11.DBF` dynamically. Each client's Miracle installation assi
 ### Standard Group Search Patterns (in `dbf_handler.py`)
 | Logical Group | Search Patterns in RKACCM11 | Fallback Code |
 |---|---|---|
-| Indirect Expenses | `"EXPENSE ACCOUNT"`, `"INDIRECT EXPENSE"`, `"EXPENSE"` | `G0000017` |
+| Indirect Expenses | `"EXPENSE ACCOUNT"`, `"INDIRECT EXPENSE"`, `"EXPENSE"` | `G0000018` |
 | Direct Expenses | `"EXPENSES (DIRECT)"`, `"DIRECT EXPENSE"` | `G0000014` |
-| Indirect Income | `"INCOME (OTHER THEN SALES)"`, `"INDIRECT INCOME"`, `"INCOME"` | `G0000016` |
+| Indirect Income | `"INCOME (OTHER THEN SALES)"`, `"INDIRECT INCOME"`, `"INCOME"` | `G0000019` |
 | Sundry Debtors | `"SUNDRY DEBTORS"`, `"DEBTOR"`, `"CUSTOMER"` | `G0000009` |
 | Sundry Creditors | `"SUNDRY CREDITORS"`, `"CREDITOR"`, `"SUPPLIER"` | `G0000013` |
 | Bank Accounts | `"BANK ACCOUNTS (BANKS)"`, `"BANK ACCOUNTS"`, `"BANKS"` | `G0000004` |
-| Loans & Advances (Asset) | `"LOANS & ADVANCES (ASSET)"`, `"LOANS & ADVANCES"` | `G0000007` |
-| Unsecured Loans (Liability) | `"UNSECURED LOANS"`, `"UNSECURED"` | `G0000019` |
+| Loans & Advances (Asset) | `"LOANS & ADVANCES (ASSET)"`, `"LOANS & ADVANCES"` | `G0000011` |
+| Unsecured Loans (Liability) | `"UNSECURED LOANS"`, `"UNSECURED"` | `G0000020` |
 | Capital Account | `"CAPITAL ACCOUNT"`, `"CAPITAL"` | `G0000001` |
 | Fixed Assets | `"FIXED ASSETS"`, `"FIXED ASSET"` | `G0000006` |
+| Bank OCC a/c (Special Guarded) | `"BANK OCC A/C"`, `"BANK OCC"`, `"OVERDRAFT"` | `G0000016` |
+| Secured Loans (Special Guarded) | `"SECURED LOANS"`, `"SECURED LOAN"` | `G0000017` |
 | Suspense Account | `"SUSPENSE ACCOUNT"`, `"SUSPENSE"` | `G0000028` |
 
 ### Personal Accounting vs Business Accounting (CRITICAL DISTINCTION)
@@ -446,6 +448,10 @@ Step 5: Check RKACCT52.DBF (for Sales/Purchase)
 30. **Dynamic Company State Code Auto-Detection**: Core engines (`gemini_service.py`, `main.py`) MUST auto-detect `company_state_code` dynamically from Miracle company setup tables (`handler.get_company_state_code()`), avoiding static `'24'` state code fallbacks.
 31. **Universal Empirical Financial Year Bounds & Multi-Year Routing Engine**: Year folder date ranges must never be assumed from folder string math (`2000 + int(folder[2:])`). Instead, core engines (`dbf_handler.py`, `config.py`, `vouchers.py`) MUST empirically discover date bounds by scanning DBF tables (`RKACCT41.DBF`) in each year folder. Incoming vouchers are dynamically resolved to their target physical year folder on disk (`YR25`, `YR26`, `YR27`), multi-year voucher batches are automatically partitioned and injected into their respective year DBFs, and missing year folders are reported with clear actionable error messages.
 32. **Strict Generic Group Header & Cheque Narration Rejection Protocol**: Core engines (`gemini_service.py`, `config.py`, `app.js`) MUST NEVER assign parent group headers (`"Sundry Debtors"`, `"Sundry Creditors"`, `"Indirect Expenses"`) or generic banking method descriptors (`"CHEQUE DEPOSIT"`, `"CHQ DEP"`, `"CHEQUE CLEARING"`, `"CLEARING DEPOSIT"`, `"CHEQUE RETURN"`) as party ledger names. Any bank statement narration lacking a specific party/person/vendor name MUST be rejected as an unmapped ledger, auto-routed to `"Suspense Account"`, assigned low confidence ($40\%$), and flagged for user clarification (`Review` / `Unmapped Narration`).
+33. **Priority Master Group & Transport/Expense Keyword Classification Protocol**: Master DBF account group classifications (`RKACCM01.DBF`) and auto-create ledger hints MUST take precedence over initial raw extraction AI row hints in the UI grid. All narrations containing transport (`TPT`, `FREIGHT`, `BHADA`, `LOADING`) or parking (`PARKING`, `TOLL`, `FASTAG`) keywords MUST classify under `Direct Expenses` or `Indirect Expenses` and NEVER default to `Loans & Advances (Asset)` even if human names are present in the narration string. Group hint edits for any ledger MUST automatically propagate to ALL rows sharing that mapped ledger.
+34. **Universal Suspense Account Routing & 80% Confidence Guard Protocol**: Any transaction extraction, AI suspense mapping, or heuristic fallback with confidence score $< 80\%$ MUST automatically route to `Suspense Account` (`G0000028`) with `confidence_score = 40` and flag `Human Review Required` (amber `Review` badge). AI engines MUST NEVER force guesses for uncertain entries. User selection in the UI grid or clarification modal MUST instantly set `confidence_score = 100`, update status to `Ready` / `Mapped`, and persist the mapping to client AI Memory.
+35. **Tax-Aware Product Assignment & True GST Rate Mismatch Protocol**: Product GST validation MUST compare true numerical tax rates (`mappedProduct.gst_pct`) against `row.gst_pct`. It MUST NEVER flag `GST DBF Mismatch` if tax rates match. Default product overrides (`defaultProductVal`) MUST be tax-aware and ONLY apply to invoice items sharing the default product's exact GST percentage, preventing 5% products from overwriting 0% / Exempt or 18% bills across multi-rate batches.
+36. **Miracle Party Master GUID Registration & Cross-Year Dropdown Visibility Protocol**: Whenever auto-creating or syncing party master ledgers (`YRM01`) in `RKACCM01.DBF`, GUID records in `RKACCGID.DBF` MUST explicitly set `FIELD04 = 'Y'` (25 chars padded) so Miracle's FoxPro engine displays the ledger in Party A/c dropdown master lookup search dialogs (`Edit Sales Bill`). Newly created parties MUST automatically sync across all active financial year folders (`YR27`, `YR26`, `YR25`), and `repair_unregistered_party_guids()` MUST automatically repair missing or blank `FIELD04` GUID entries across all client database tables.
 
 ---
 
