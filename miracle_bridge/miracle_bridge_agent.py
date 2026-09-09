@@ -256,6 +256,49 @@ def start_update_checker_loop():
     t.start()
 
 
+def push_masters_to_cloud():
+    """Scans local Miracle DBF folders and pushes ledgers and products to Render Cloud master cache."""
+    try:
+        import requests
+        base_path = "C:\\Miracle"
+        if not os.path.exists(base_path):
+            return
+        
+        cmp_folders = [f for f in os.listdir(base_path) if f.upper().startswith("CMP") and os.path.isdir(os.path.join(base_path, f))]
+        for cmp in cmp_folders:
+            client_path = os.path.join(base_path, cmp)
+            try:
+                handler = MiracleDBFHandler(client_path)
+                ledgers = handler.read_ledgers_all_years()
+                products = handler.read_products_all_years()
+                if ledgers or products:
+                    sync_url = f"{CLOUD_URL}/api/bridge/sync-masters"
+                    payload = {
+                        "client_id": cmp.upper(),
+                        "ledgers": ledgers,
+                        "products": products
+                    }
+                    requests.post(sync_url, json=payload, timeout=10)
+                    print(f"☁️ Master Sync: Pushed {len(ledgers)} ledgers and {len(products)} products for {cmp} to Render Cloud.")
+            except Exception as e:
+                print(f"⚠️ Master Sync warning for {cmp}: {e}")
+    except Exception as err:
+        print(f"⚠️ Master Sync error: {err}")
+
+
+def start_master_sync_loop():
+    """Launches background thread for periodic master catalog syncing to Render Cloud."""
+    def run_sync():
+        time.sleep(5)
+        push_masters_to_cloud()
+        while True:
+            time.sleep(60)  # Push every 60 seconds
+            push_masters_to_cloud()
+            
+    t = threading.Thread(target=run_sync, daemon=True)
+    t.start()
+
+
 def start_system_tray_icon():
     """Initializes Windows System Tray notification area icon."""
     try:
@@ -698,8 +741,9 @@ if __name__ == "__main__":
     # 1. Enable Windows Auto-Start on Windows Boot
     enable_windows_autostart()
     
-    # 2. Launch Background Version Checker Loop
+    # 2. Launch Background Version Checker Loop & Master Sync Loop
     start_update_checker_loop()
+    start_master_sync_loop()
     
     # 3. Initialize Windows System Tray Icon
     start_system_tray_icon()

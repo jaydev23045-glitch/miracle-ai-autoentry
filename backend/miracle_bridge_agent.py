@@ -48,6 +48,8 @@ if getattr(sys, 'frozen', False):
 sys.path.insert(0, BASE_DIR)
 sys.path.insert(0, os.path.abspath(os.path.join(BASE_DIR, "..", "backend")))
 
+CLOUD_URL = os.environ.get("RENDER_CLOUD_URL", "https://miracle-ai-autoentry.onrender.com").rstrip("/")
+
 def sanitize_surrogates(val: Any) -> Any:
     """Universally removes lone UTF-16/UTF-32 surrogate code points (U+D800 to U+DFFF)."""
     if isinstance(val, str):
@@ -235,25 +237,117 @@ def health_check():
         "platform": sys.platform
     }
 
-def resolve_valid_base_path(base_path: str) -> str:
-    """Intelligently resolves the actual Miracle folder on the local Windows PC if a Mac/cloud path is passed"""
-    if base_path and os.path.exists(base_path) and not ("/Users/" in base_path or "/home/" in base_path):
-        return base_path
-    
-    candidates = ["C:\\Miracle", "D:\\Miracle", "E:\\Miracle", "C:\\Miracle9070", "D:\\Miracle9070", "E:\\Miracle9070"]
-    for c in candidates:
-        if os.path.exists(c):
-            return c
-            
-    for drive in ["C:\\", "D:\\", "E:\\"]:
-        if os.path.exists(drive):
+def scan_all_miracle_paths() -> List[Dict[str, Any]]:
+    """Scans all local drives (C:, D:, E:, F:, G:) and candidate locations to discover valid Miracle directories."""
+    discovered = []
+    seen = set()
+
+    # 1. Standard candidate folders
+    standard_candidates = [
+        "C:\\Miracle", "D:\\Miracle", "E:\\Miracle", "F:\\Miracle",
+        "C:\\Miracle9070", "D:\\Miracle9070", "E:\\Miracle9070",
+        "C:\\Miracle_Data", "D:\\Miracle_Data", "E:\\Miracle_Data"
+    ]
+
+    # Add project local fallback paths if present
+    for p in [BASE_DIR, os.path.abspath(os.path.join(BASE_DIR, ".."))]:
+        for sub in ["MIRRACLE FILE", "Miracle9070", "mnt_mirracle"]:
+            fp = os.path.join(p, sub)
+            if os.path.exists(fp):
+                standard_candidates.append(fp)
+
+    for cand in standard_candidates:
+        norm = os.path.normpath(cand).upper()
+        if os.path.exists(cand) and os.path.isdir(cand) and norm not in seen:
+            seen.add(norm)
             try:
-                for sub in os.listdir(drive):
-                    if sub.upper().startswith("CMP") and os.path.isdir(os.path.join(drive, sub)):
-                        return drive
+                cmps = [d for d in os.listdir(cand) if os.path.isdir(os.path.join(cand, d)) and d.upper().startswith("CMP")]
+                if cmps:
+                    discovered.append({
+                        "path": cand,
+                        "client_count": len(cmps),
+                        "clients": cmps
+                    })
             except Exception:
                 pass
-    return "C:\\Miracle"
+
+    # 2. Drive root & 1-level subfolder scan across all drives
+    drives = [f"{d}:\\" for d in "CDEFG" if os.path.exists(f"{d}:\\")]
+    for drive in drives:
+        norm_d = os.path.normpath(drive).upper()
+        if norm_d not in seen:
+            try:
+                cmps = [d for d in os.listdir(drive) if os.path.isdir(os.path.join(drive, d)) and d.upper().startswith("CMP")]
+                if cmps:
+                    seen.add(norm_d)
+                    discovered.append({
+                        "path": drive,
+                        "client_count": len(cmps),
+                        "clients": cmps
+                    })
+            except Exception:
+                pass
+
+        # Scan 1-level subdirectories on drive
+        try:
+            for sub in os.listdir(drive):
+                sub_path = os.path.join(drive, sub)
+                norm_sub = os.path.normpath(sub_path).upper()
+                if os.path.isdir(sub_path) and norm_sub not in seen and not sub.startswith("$") and sub.lower() not in ["windows", "program files", "program files (x86)", "system volume information", "users", "appdata"]:
+                    try:
+                        cmps = [d for d in os.listdir(sub_path) if os.path.isdir(os.path.join(sub_path, d)) and d.upper().startswith("CMP")]
+                        if cmps:
+                            seen.add(norm_sub)
+                            discovered.append({
+                                "path": sub_path,
+                                "client_count": len(cmps),
+                                "clients": cmps
+                            })
+                    except Exception:
+                        pass
+        except Exception:
+            pass
+
+    return sorted(discovered, key=lambda x: x["client_count"], reverse=True)
+
+def resolve_valid_base_path(base_path: str = "") -> str:
+    """Intelligently resolves the actual Miracle folder on the local Windows PC"""
+    if base_path and os.path.exists(base_path) and not ("/Users/" in base_path or "/home/" in base_path):
+        # Check if base_path itself contains CMP folders
+        try:
+            if any(d.upper().startswith("CMP") for d in os.listdir(base_path) if os.path.isdir(os.path.join(base_path, d))):
+                return base_path
+        except Exception:
+            pass
+
+    discovered = scan_all_miracle_paths()
+    if discovered:
+        return discovered[0]["path"]
+
+    return base_path or "C:\\Miracle"
+
+def find_client_base_path(client_id: str, suggested_base_path: str = "") -> str:
+    """Finds the specific Miracle base path containing target client_id across all PC drives"""
+    if suggested_base_path and os.path.exists(os.path.join(suggested_base_path, client_id)):
+        return suggested_base_path
+
+    discovered = scan_all_miracle_paths()
+    for item in discovered:
+        if client_id.upper() in [c.upper() for c in item["clients"]]:
+            return item["path"]
+
+    return resolve_valid_base_path(suggested_base_path)
+
+@app.get("/api/discover-miracle-paths")
+def discover_miracle_paths():
+    """Lists all detected Miracle installation directories across all drives on the local PC"""
+    discovered = scan_all_miracle_paths()
+    rec = discovered[0]["path"] if discovered else "C:\\Miracle"
+    return {
+        "status": "success",
+        "discovered_paths": discovered,
+        "recommended_path": rec
+    }
 
 @app.get("/api/local-clients")
 def get_local_clients(base_path: str = "C:\\Miracle"):
@@ -269,21 +363,21 @@ def get_local_clients(base_path: str = "C:\\Miracle"):
             try:
                 handler = MiracleDBFHandler(full_p)
                 company_name = handler.get_company_name()
-                clients.append({"id": d, "name": company_name or d})
+                clients.append({"id": d, "name": company_name or d, "base_path": base_path})
             except Exception:
-                clients.append({"id": d, "name": d})
-    return {"clients": sorted(clients, key=lambda x: x["id"])}
+                clients.append({"id": d, "name": d, "base_path": base_path})
+    return {"clients": sorted(clients, key=lambda x: x["id"]), "base_path": base_path}
 
 @app.get("/api/local-years")
 def get_local_years(base_path: str = "C:\\Miracle", client_id: str = "CMP0001"):
     """Lists all available financial year folders (YRxx) in local client directory"""
-    base_path = resolve_valid_base_path(base_path)
+    base_path = find_client_base_path(client_id, base_path)
     if not base_path or not os.path.exists(base_path):
-        return {"years": [], "recommended": ""}
+        return {"years": [], "recommended": "", "base_path": base_path}
     
     client_path = os.path.join(base_path, client_id)
     if not os.path.exists(client_path):
-        return {"years": [], "recommended": ""}
+        return {"years": [], "recommended": "", "base_path": base_path}
         
     try:
         handler = MiracleDBFHandler(client_path)
@@ -320,50 +414,50 @@ def get_local_years(base_path: str = "C:\\Miracle", client_id: str = "CMP0001"):
                 "has_transactions": has_transactions,
                 "recommended": (y == recommended)
             })
-        return {"years": mapped_years, "recommended": recommended}
+        return {"years": mapped_years, "recommended": recommended, "base_path": base_path}
     except Exception as e:
         print(f"Error fetching local years: {e}")
-        return {"years": [], "recommended": ""}
+        return {"years": [], "recommended": "", "base_path": base_path}
 
 @app.get("/api/local-ledgers")
 def get_local_ledgers(base_path: str = "C:\\Miracle", client_id: str = "CMP0005", year_folder: str = "YR25"):
     """Reads classified party ledgers directly from local DBF files on client machine"""
-    base_path = resolve_valid_base_path(base_path)
+    base_path = find_client_base_path(client_id, base_path)
     client_path = os.path.join(base_path, client_id)
     if not os.path.exists(client_path):
-        return {"status": "success", "ledgers": []}
+        return {"status": "success", "ledgers": [], "base_path": base_path}
     try:
         handler = MiracleDBFHandler(client_path)
         ledgers = handler.get_all_ledgers(year_folder)
-        return {"status": "success", "year": year_folder, "ledgers": ledgers}
+        return {"status": "success", "year": year_folder, "ledgers": ledgers, "base_path": base_path}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to read local ledgers: {str(e)}")
 
 @app.get("/api/local-groups")
 def get_local_groups(base_path: str = "C:\\Miracle", client_id: str = "CMP0005"):
     """Reads account groups hierarchy directly from local RKACCM11.DBF"""
-    base_path = resolve_valid_base_path(base_path)
+    base_path = find_client_base_path(client_id, base_path)
     client_path = os.path.join(base_path, client_id)
     if not os.path.exists(client_path):
-        return {"status": "success", "groups": []}
+        return {"status": "success", "groups": [], "base_path": base_path}
     try:
         handler = MiracleDBFHandler(client_path)
         groups = handler.read_account_groups()
-        return {"status": "success", "groups": groups}
+        return {"status": "success", "groups": groups, "base_path": base_path}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to read account groups: {str(e)}")
 
 @app.get("/api/local-products")
 def get_local_products(base_path: str = "C:\\Miracle", client_id: str = "CMP0005", year_folder: str = ""):
     """Reads product masters directly from local RKACCM21.DBF"""
-    base_path = resolve_valid_base_path(base_path)
+    base_path = find_client_base_path(client_id, base_path)
     client_path = os.path.join(base_path, client_id)
     if not os.path.exists(client_path):
-        return {"status": "success", "products": []}
+        return {"status": "success", "products": [], "base_path": base_path}
     try:
         handler = MiracleDBFHandler(client_path)
         products = handler.get_products(year_folder)
-        return {"status": "success", "products": products}
+        return {"status": "success", "products": products, "base_path": base_path}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to read products: {str(e)}")
 
@@ -557,8 +651,52 @@ def inject_vouchers(payload: InjectRequestPayload):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+def push_masters_to_cloud():
+    """Scans local Miracle DBF folders and pushes ledgers and products to Render Cloud master cache."""
+    try:
+        import requests
+        base_path = "C:\\Miracle"
+        if not os.path.exists(base_path):
+            return
+        
+        cmp_folders = [f for f in os.listdir(base_path) if f.upper().startswith("CMP") and os.path.isdir(os.path.join(base_path, f))]
+        for cmp in cmp_folders:
+            client_path = os.path.join(base_path, cmp)
+            try:
+                handler = MiracleDBFHandler(client_path)
+                ledgers = handler.read_ledgers_all_years()
+                products = handler.read_products_all_years()
+                if ledgers or products:
+                    sync_url = f"{CLOUD_URL}/api/bridge/sync-masters"
+                    payload = {
+                        "client_id": cmp.upper(),
+                        "ledgers": ledgers,
+                        "products": products
+                    }
+                    requests.post(sync_url, json=payload, timeout=10)
+                    print(f"☁️ Master Sync: Pushed {len(ledgers)} ledgers and {len(products)} products for {cmp} to Render Cloud.")
+            except Exception as e:
+                print(f"⚠️ Master Sync warning for {cmp}: {e}")
+    except Exception as err:
+        print(f"⚠️ Master Sync error: {err}")
+
+
+def start_master_sync_loop():
+    """Launches background thread for periodic master catalog syncing to Render Cloud."""
+    def run_sync():
+        time.sleep(5)
+        push_masters_to_cloud()
+        while True:
+            time.sleep(60)  # Push every 60 seconds
+            push_masters_to_cloud()
+            
+    t = threading.Thread(target=run_sync, daemon=True)
+    t.start()
+
+
 if __name__ == "__main__":
     print("🚀 Starting Miracle DBF Local Bridge Agent on port 9123...")
+    start_master_sync_loop()
     
     # Safe Uvicorn Log Configuration for PyInstaller --windowed / GUI mode
     UVICORN_LOG_CONFIG = {

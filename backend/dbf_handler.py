@@ -1484,7 +1484,7 @@ class MiracleDBFHandler:
             group_code, parent_group = find_group_by_name(["SUSPENSE ACCOUNT", "SUSPENSE"], 'G0000028', '')
         # 1b. Bank Charges & Service Fees overrides (MUST evaluate BEFORE Bank Accounts!)
         elif any(w in name_up for w in ["BANK CHARG", "BANK CHAG", "BANK CHARGES", "SMS CHARG", "INSTAALERT", "ALERTCHG", "SERVICE CHG", "SERVICE CHARGE", "SERVICE CHARGES", "CARD CHARG", "ATM CHG", "MDR RCVRY"]):
-            group_code, parent_group = find_group_by_name(["EXPENSE ACCOUNT", "INDIRECT EXPENSE", "EXPENSES (INDIRECT)", "INDIRECT EXPENSES", "EXPENSE"], 'G0000017', 'G0000002')
+            group_code, parent_group = find_group_by_name(["INDIRECT EXPENSES", "EXPENSES (INDIRECT)", "INDIRECT EXPENSE", "EXPENSE ACCOUNT", "EXPENSE"], 'G0000024', 'G0000023')
         # 2. Bank overrides (Only actual Bank A/cs like HDFC Bank, ICICI Bank, Axis Bank A/c)
         elif (any(w in name_up for w in ["BANK A/C", "BANK ACCOUNT", "CURRENT A/C", "SAVINGS A/C"]) or 
               any(w in name_up for w in ["HDFC", "ICICI", "SBI", "AXIS", "KOTAK", "BOB", "PNB", "UNION BANK", "CANARA"])) and not any(chg in name_up for chg in ["CHARGE", "CHARGES", "CHG", "CHGS", "INTEREST", "COMMISSION", "FEE", "FEES"]):
@@ -1520,37 +1520,41 @@ class MiracleDBFHandler:
             "HOTEL", "RESTAURANT", "CATERING", "SOFTWARE", "INTERNET", "WIFI", "DOMAIN", "HOSTING", "CLOUD",
             "BROADBAND", "MOBILE", "RECHARGE", "PENALTY", "LATE FEE", "SERVICE CHG", "SERVICE CHARGE", "SERVICE CHARGES"
         ]):
-            group_code, parent_group = find_group_by_name(["EXPENSE ACCOUNT", "INDIRECT EXPENSE", "EXPENSES (INDIRECT)", "INDIRECT EXPENSES", "EXPENSE"], 'G0000017', 'G0000002')
+            group_code, parent_group = find_group_by_name(["INDIRECT EXPENSES", "EXPENSES (INDIRECT)", "INDIRECT EXPENSE", "EXPENSE ACCOUNT", "EXPENSE"], 'G0000024', 'G0000023')
         # 9. Income overrides
         elif any(w in name_up for w in ["INCOME", "INTEREST RECEIVED", "COMMISSION RECEIVED", "RENT RECEIVED", "DIVIDEND"]):
-            group_code, parent_group = find_group_by_name(["INCOME (OTHER THEN SALES)", "INDIRECT INCOME", "INCOME"], 'G0000016', 'G0000002')
+            group_code, parent_group = find_group_by_name(["INDIRECT INCOME", "INCOME (OTHER THEN SALES)", "INCOME"], 'G0000022', '')
         # 10. Duties & Taxes overrides
         elif any(w in name_up for w in ["TAX", "GST", "CGST", "SGST", "IGST", "CESS", "DUTY", "DUTIES", "TDS", "TCS", "VAT"]):
-            group_code, parent_group = find_group_by_name(["DUTIES & TAXES", "DUTIES AND TAXES", "TAXES"], 'G0000003', 'G0000010')
+            group_code, parent_group = find_group_by_name(["DUTIES & TAXES", "DUTIES AND TAXES", "TAXES"], 'G0000014', 'G0000010')
             
         # If no name-based override matched, fall back to module and group_hint
-        elif "INDIRECT EXPENSE" in group_hint_up or "EXPENSE" in group_hint_up:
-            group_code, parent_group = find_group_by_name(["EXPENSE ACCOUNT", "INDIRECT EXPENSE", "EXPENSE"], 'G0000017', 'G0000002')
         elif "DIRECT EXPENSE" in group_hint_up:
-            group_code, parent_group = find_group_by_name(["EXPENSES (DIRECT)", "DIRECT EXPENSE"], 'G0000014', 'G0000002')
-        elif "INDIRECT INCOME" in group_hint_up or "INCOME" in group_hint_up:
-            group_code, parent_group = find_group_by_name(["INCOME (OTHER THEN SALES)", "INDIRECT INCOME", "INCOME"], 'G0000016', 'G0000002')
+            group_code, parent_group = find_group_by_name(["EXPENSES (DIRECT)", "DIRECT EXPENSE"], 'G0000023', '')
+        elif "INDIRECT EXPENSE" in group_hint_up or "EXPENSE" in group_hint_up:
+            group_code, parent_group = find_group_by_name(["INDIRECT EXPENSES", "EXPENSES (INDIRECT)", "INDIRECT EXPENSE", "EXPENSE ACCOUNT", "EXPENSE"], 'G0000024', 'G0000023')
         elif "DIRECT INCOME" in group_hint_up:
-            group_code, parent_group = find_group_by_name(["INCOME (TRADING)", "DIRECT INCOME"], 'G0000015', 'G0000002')
+            group_code, parent_group = find_group_by_name(["SALES ACCOUNTS", "DIRECT INCOME", "INCOME (TRADING)"], 'G0000021', '')
+        elif "INDIRECT INCOME" in group_hint_up or "INCOME" in group_hint_up:
+            group_code, parent_group = find_group_by_name(["INDIRECT INCOME", "INCOME (OTHER THEN SALES)", "INCOME"], 'G0000022', '')
         elif "FIXED ASSET" in group_hint_up:
             group_code, parent_group = find_group_by_name(["FIXED ASSETS", "FIXED ASSET"], 'G0000006', 'G0000003')
         elif "CAPITAL" in group_hint_up:
             group_code, parent_group = find_group_by_name(["CAPITAL ACCOUNT", "CAPITAL"], 'G0000001', 'G0000010')
         elif "INVESTMENT" in group_hint_up:
             group_code, parent_group = find_group_by_name(["INVESTMENTS", "INVESTMENT"], 'G0000007', 'G0000003')
-        elif "LOANS & ADVANCES" in group_hint_up or "LOANS AND ADVANCES" in group_hint_up:
-            group_code, parent_group = find_group_by_name(["LOANS & ADVANCES (ASSET)", "LOANS & ADVANCES", "LOANS AND ADVANCES"], 'G0000007', 'G0000003')
         elif "UNSECURED LOANS" in group_hint_up or "UNSECURED" in group_hint_up:
             group_code, parent_group = find_group_by_name(["UNSECURED LOANS", "UNSECURED"], 'G0000019', 'G0000010')
+        elif "SECURED LOANS" in group_hint_up or "SECURED" in group_hint_up:
+            group_code, parent_group = find_group_by_name(["SECURED LOANS", "SECURED"], 'G0000008', 'G0000010')
+        elif "LOANS & ADVANCES" in group_hint_up or "LOANS AND ADVANCES" in group_hint_up:
+            group_code, parent_group = find_group_by_name(["LOANS & ADVANCES (ASSET)", "LOANS & ADVANCES", "LOANS AND ADVANCES"], 'G0000007', 'G0000003')
         elif "SUNDRY DEBTORS" in group_hint_up or "DEBTOR" in group_hint_up or "CUSTOMER" in group_hint_up:
             group_code, parent_group = find_group_by_name(["SUNDRY DEBTORS", "DEBTOR", "CUSTOMER"], 'G0000009', 'G0000003')
         elif "SUNDRY CREDITORS" in group_hint_up or "CREDITOR" in group_hint_up or "SUPPLIER" in group_hint_up:
             group_code, parent_group = find_group_by_name(["SUNDRY CREDITORS", "CREDITOR", "SUPPLIER"], 'G0000013', 'G0000010')
+        elif "SUSPENSE" in group_hint_up:
+            group_code, parent_group = find_group_by_name(["SUSPENSE ACCOUNT", "SUSPENSE"], 'G0000028', '')
         elif "SALES" in group_hint_up:
             group_code, parent_group = find_group_by_name(["SALES ACCOUNTS", "SALES"], 'G0000011', 'G0000002')
         elif "PURCHASE" in group_hint_up:
@@ -1745,23 +1749,28 @@ class MiracleDBFHandler:
         logger.info(f"Auto-created new {'B2B' if is_registered else 'B2C'} ledger: {name} ({led_code}) with GSTIN {gstin}")
         return led_code
 
-    def resolve_group_code_from_hint(self, group_hint: str) -> str:
+    def resolve_group_code_from_hint(self, group_hint: str, year_folder: str | None = None) -> str:
         """Resolves human-readable group hint to exact official Miracle Accounting master group code."""
         if not group_hint:
             return ""
         gh = group_hint.strip().upper()
+        if "INDIRECT EXPENSE" in gh or "INDIRECT EXP" in gh or "EXPENSES (INDIRECT)" in gh:
+            return "G0000024"
+        if "DIRECT EXPENSE" in gh or "EXPENSES (DIRECT)" in gh:
+            return "G0000023"
+        if "EXPENSE" in gh:
+            return "G0000024"
+            
+        if "INDIRECT INCOME" in gh or "OTHER THEN SALES" in gh:
+            return "G0000022"
+        if "DIRECT INCOME" in gh or "TRADING" in gh:
+            return "G0000021"
+        if "INCOME" in gh:
+            return "G0000022"
         if "SUNDRY DEBTORS" in gh or "DEBTOR" in gh or "CUSTOMER" in gh:
             return "G0000009"
         if "SUNDRY CREDITORS" in gh or "CREDITOR" in gh or "SUPPLIER" in gh:
             return "G0000013"
-        if "INDIRECT EXPENSE" in gh or "EXPENSE" in gh or "INDIRECT EXP" in gh:
-            return "G0000017"
-        if "DIRECT EXPENSE" in gh:
-            return "G0000014"
-        if "INDIRECT INCOME" in gh or "INCOME" in gh:
-            return "G0000016"
-        if "DIRECT INCOME" in gh:
-            return "G0000015"
         if "BANK" in gh or "BANK ACCOUNTS" in gh:
             return "G0000004"
         if "CASH" in gh or "CASH-IN-HAND" in gh:
@@ -1782,6 +1791,21 @@ class MiracleDBFHandler:
             return "G0000008"
         if "SUSPENSE" in gh:
             return "G0000028"
+
+        # Dynamic fallback lookup in RKACCM11.DBF for custom Miracle accounting groups
+        try:
+            m11_path = self._get_table_path('RKACCM11.DBF', year_folder)
+            if not os.path.exists(m11_path): m11_path = self._get_table_path('rkaccm11.dbf', year_folder)
+            if os.path.exists(m11_path):
+                from dbfread import DBF
+                m11_table = DBF(m11_path, load=True, encoding='cp1252')
+                for r in m11_table.records:
+                    g_name = str(r['FIELD02']).strip().upper()
+                    if gh in g_name or g_name in gh:
+                        return str(r['FIELD01']).strip()
+        except Exception:
+            pass
+
         return "G0000009"
 
     def update_party_ledger(self, old_name: str, new_name: str, print_name: str = "", group_code: str = "", gstin: str = "", city: str = "", year_folder: str | None = None) -> str:
@@ -3353,7 +3377,7 @@ class MiracleDBFHandler:
                     is_existing_code = party_code.upper() in existing_codes
                     
                     if not is_existing_code:
-                        party_code = self.create_party_ledger(party_id, module, gstin=gstin, address=address, city=city, pincode=pincode, year_folder=year_folder)
+                        party_code = self.create_party_ledger(party_id, module, gstin=gstin, address=address, city=city, pincode=pincode, year_folder=year_folder, group_hint=v.get('group_hint', ''))
                         # ── D1: Patch in-memory dicts instead of full read_ledgers() reload ──
                         # Old code called self.read_ledgers(year_folder) here — reloading 3 DBF
                         # files every time a new party was created (O(N) reads for N new parties).
@@ -3371,6 +3395,16 @@ class MiracleDBFHandler:
                             # Update pre-built key lists used by difflib (D6)
                             if party_id_up not in name_to_code_keys_list:
                                 name_to_code_keys_list.append(party_id_up)
+
+                    # USER GROUP OVERRIDE SYNC:
+                    user_gh = str(v.get('group_hint') or '').strip()
+                    if party_code and user_gh:
+                        target_grp = self.resolve_group_code_from_hint(user_gh, year_folder=year_folder)
+                        if target_grp:
+                            try:
+                                self.update_party_ledger(party_id, party_id, group_code=target_grp, year_folder=year_folder)
+                            except Exception as grp_err:
+                                logger.warning(f"⚠️ Warning: Could not update group code for {party_id} ({party_code}): {grp_err}")
                             if an_key and an_key not in alpha_num_to_code_keys_list:
                                 alpha_num_to_code_keys_list.append(an_key)
                     elif is_existing_code:
@@ -5465,6 +5499,74 @@ class MiracleDBFHandler:
                     logger.info(f"Product Commodity Self-Healing complete. Updated {healed_comm_count} products.")
         except Exception as e:
             logger.error(f"Error running HSN and Commodity self-healing: {e}")
+
+    def repair_expense_ledger_groups(self, year_folder: str | None = None) -> dict:
+        """
+        Scans RKACCM01.DBF for expense ledgers (e.g. Expenses, OFFICE EXPENCE, SALARY, Mobile Recharge, Bank Charges, etc.)
+        that were wrongly assigned group code G0000017 / G0000016 (Bank OCC a/c), and updates their group code (FIELD05)
+        back to G0000024 (Indirect Expenses).
+        """
+        if not year_folder:
+            year_folder = self.get_latest_year_folder()
+            
+        m01_path = self._get_table_path('RKACCM01.DBF', year_folder)
+        if not os.path.exists(m01_path):
+            m01_path = self._get_table_path('rkaccm01.dbf', year_folder)
+            
+        if not os.path.exists(m01_path):
+            return {"repaired_count": 0, "status": "RKACCM01.DBF not found"}
+
+        indirect_exp_code = "G0000024"
+        m11_path = self._get_table_path('RKACCM11.DBF', year_folder)
+        if not os.path.exists(m11_path): m11_path = self._get_table_path('rkaccm11.dbf', year_folder)
+        if os.path.exists(m11_path):
+            try:
+                from dbfread import DBF
+                m11 = DBF(m11_path, load=True, encoding='cp1252')
+                for r in m11.records:
+                    g_code = str(r['FIELD01']).strip()
+                    g_name = str(r['FIELD02']).strip().upper()
+                    if "INDIRECT EXPENSE" in g_name or "EXPENSE ACCOUNT" in g_name or "INDIRECT EXP" in g_name:
+                        indirect_exp_code = g_code
+                        break
+            except Exception as ex:
+                logger.warning(f"Could not load RKACCM11.DBF in repair_expense_ledger_groups: {ex}")
+
+        expense_keywords = [
+            "EXPENSE", "EXPENSES", "CHARGE", "CHARGES", "RENT", "SALARY", "SALARIES", "INTEREST", "FEES", "FEE",
+            "TELEPHONE", "ELECTRICITY", "POWER", "FUEL", "PETROL", "DIESEL", "CONVEYANCE", "TRAVEL", "TRAVELLING",
+            "OFFICE", "PRINTING", "STATIONERY", "REPAIR", "REPAIRS", "MAINTENANCE", "COMMISSION", "BROKERAGE",
+            "PROFESSIONAL", "AUDIT", "POSTAGE", "COURIER", "SUBSCRIPTION", "ADVERTISEMENT", "ADVERTISING",
+            "WELFARE", "INSURANCE", "PROMOTION", "ENTERTAINMENT", "DONATION", "TEA", "COFFEE",
+            "REFRESHMENT", "REFRESHMENTS", "MILK", "WATER", "CLEANING", "SWEET", "SWEETS", "FOOD",
+            "HOTEL", "RESTAURANT", "CATERING", "SOFTWARE", "INTERNET", "WIFI", "DOMAIN", "HOSTING",
+            "BROADBAND", "MOBILE", "RECHARGE", "PENALTY", "LATE FEE", "SERVICE CHG", "SERVICE CHARGE"
+        ]
+
+        import dbf as dbf_lib
+        repaired_count = 0
+        repaired_names = []
+
+        with self.safe_cdx_context(m01_path):
+            t01 = dbf_lib.Table(m01_path)
+            t01.open(mode=dbf_lib.READ_WRITE)
+            try:
+                for record in t01:
+                    if not dbf_lib.is_deleted(record):
+                        name_up = str(record['FIELD02']).strip().upper()
+                        grp_code = str(record['FIELD05']).strip().upper()
+                        
+                        # If group code is currently G0000017 / G0000016 (Bank OCC / Loans) or empty, and ledger name is an expense:
+                        if grp_code in ('G0000017', 'G0000016', 'G0000002') or (grp_code == '' and any(kw in name_up for kw in expense_keywords)):
+                            if any(kw in name_up for kw in expense_keywords) and not any(b_kw in name_up for b_kw in ["BANK A/C", "BANK ACCOUNT", "HDFC", "ICICI", "SBI", "AXIS", "KOTAK", "BOB", "PNB"]):
+                                dbf_lib.write(record, FIELD05=indirect_exp_code)
+                                repaired_count += 1
+                                repaired_names.append(str(record['FIELD02']).strip())
+            finally:
+                t01.close()
+
+        logger.info(f"✅ [repair_expense_ledger_groups] Repaired {repaired_count} ledgers to group '{indirect_exp_code}': {repaired_names}")
+        return {"repaired_count": repaired_count, "repaired_ledgers": repaired_names, "target_group_code": indirect_exp_code}
 
     def repair_bank_closing_flags(self, year_folder: str | None = None):
         """Alias helper for repair_bank_entry_flags."""

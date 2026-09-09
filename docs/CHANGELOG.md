@@ -1,5 +1,36 @@
 # Miracle Auto-Entry Platform - Changelog
 
+### 190. Universal Sales & Purchase Ledger Sync & Cloud Upload Payload Attachment
+**The Problem Resolved:**
+When pushing vouchers to Miracle, vouchers were written successfully to `RKACCT41.DBF` on the client PC. However, when uploading Sales or Purchase PDFs for AI extraction, party ledgers were missing ("DATA NOT COME").
+
+**Root Cause:**
+1. In `frontend/app.js`, `ledgers_list` was ONLY attached to upload FormData if `currentModule === 'Bank Statements'` or `currentModule === 'Cash Entries'`. For Sales Vouchers and Purchase Vouchers, `ledgers_list` was omitted from upload payloads.
+2. The Cloud Server (`onrender.com`) tried reading `C:\Miracle` or calling `http://localhost:9123` from inside Render Cloud container, which failed because local DBF files live on the user's local PC hard drive.
+3. Because `ledgers_list` was missing and local DBFs were inaccessible to the server, `existing_ledgers` evaluated to empty `[]`, causing Gemini AI on the server to fail at party mapping.
+
+**Fixes Implemented:**
+1. **Universal Form Attachment ([app.js](file:///Users/jaydevnakum/Work%20Place/WORK/APP%20DETAILS/Mirracle%20Auto%20Entre%20Sale%20or%20Purchase%20or%20Bank/frontend/app.js#L2485)):** Updated `app.js` so `ledgers_list` is attached to upload FormData for ALL modules (Sales, Purchase, Bank Statements, Cash Entries).
+2. **Automatic Background Master Sync ([app.js](file:///Users/jaydevnakum/Work%20Place/WORK/APP%20DETAILS/Mirracle%20Auto%20Entre%20Sale%20or%20Purchase%20or%20Bank/frontend/app.js#L430)):** Added automatic background sync to `POST /api/bridge/sync-masters` upon `fetchLedgers()` completion, guaranteeing the Cloud Server memory always holds active client party ledgers.
+
+### 189. Multi-Drive Dynamic Path Discovery & Client PC Data Capture Diagnostics
+**The Problem Resolved:**
+On different client PCs, Miracle Accounting software is installed in varying drives or folders (e.g. `C:\Miracle`, `D:\Miracle`, `E:\Miracle_Data`, `C:\Miracle9070`). If the Miracle base path passed from the web app did not match where `CMPxxxx` client folders lived on a specific client PC, ledger fetching (`RKACCM01.DBF`) returned empty (`[]`), causing Sales, Purchase, and Bank Statement data capture / AI ledger mapping to fail.
+
+**Fixes & Architecture Implemented:**
+1. **Multi-Drive Automatic Path Discovery ([miracle_bridge_agent.py](file:///Users/jaydevnakum/Work%20Place/WORK/APP%20DETAILS/Mirracle%20Auto%20Entre%20Sale%20or%20Purchase%20or%20Bank/backend/miracle_bridge_agent.py#L240)):** Added `scan_all_miracle_paths()` to automatically scan all local drives (`C:`, `D:`, `E:`, `F:`, `G:`) and 1-level subdirectories for any folder containing Miracle `CMPxxxx` client directories.
+2. **Dynamic Client Path Resolution ([miracle_bridge_agent.py](file:///Users/jaydevnakum/Work%20Place/WORK/APP%20DETAILS/Mirracle%20Auto%20Entre%20Sale%20or%20Purchase%20or%20Bank/backend/miracle_bridge_agent.py#L295)):** Added `find_client_base_path(client_id, suggested_base_path)` which locates which drive or Miracle directory contains a specific `CMPxxxx` client folder on the PC automatically, fixing outdated base path parameters.
+3. **New Discovery Endpoint ([miracle_bridge_agent.py](file:///Users/jaydevnakum/Work%20Place/WORK/APP%20DETAILS/Mirracle%20Auto%20Entre%20Sale%20or%20Purchase%20or%20Bank/backend/miracle_bridge_agent.py#L305)):** Added `GET /api/discover-miracle-paths` endpoint to return all detected Miracle installation directories and client counts across local PC drives.
+4. **Client PC Diagnostic Tool ([verify_pc_miracle_connection.py](file:///Users/jaydevnakum/Work%20Place/WORK/APP%20DETAILS/Mirracle%20Auto%20Entre%20Sale%20or%20Purchase%20or%20Bank/scratch/verify_pc_miracle_connection.py)):** Updated diagnostic script to run multi-drive path discovery, test DBF reading (`RKACCM01.DBF`, `RKACCM11.DBF`), and verify local bridge status (`http://127.0.0.1:9123/status`).
+
+### 188. Sidebar Financial Year & Client Select Alignment & Formatting Fix
+**The Problem Resolved:**
+In the left navigation sidebar under **Financial Year** (`#yearSelect`) and **Active Client** (`#clientSelect`), long date labels (e.g. `01-Apr-2030 To 31-Mar-2031`) caused text clipping in the header badge, and empty folder options could render blank rows inside the dropdown box.
+
+**Fixes Implemented:**
+1. **Clean Badge Value Binding ([app.js](file:///Users/jaydevnakum/Work%20Place/WORK/APP%20DETAILS/Mirracle%20Auto%20Entre%20Sale%20or%20Purchase%20or%20Bank/frontend/app.js#L725)):** Updated `updateHeaderBadges()` so `#headerClientBadge` and `#headerYearBadge` cleanly display the compact client code (e.g. `CMP0021`) and year folder code (e.g. `YR31`), keeping the top badge indicators sleek and un-clipped.
+2. **Structured Option Labels ([app.js](file:///Users/jaydevnakum/Work%20Place/WORK/APP%20DETAILS/Mirracle%20Auto%20Entre%20Sale%20or%20Purchase%20or%20Bank/frontend/app.js#L680)):** Updated `fetchClientYears()` and `populateClientDropdowns()` to format select options as `YR31 — 01-Apr-2030 To 31-Mar-2031` with dark background (`bg-slate-900 text-slate-100 font-medium py-1`) and empty-option filter guards (`if (!fld) return`), preventing blank/transparent artifacts.
+
 ### 187. Miracle Bridge v1.2.0 Release: Dual-Mode Local Bridge Routing & Comprehensive Master Fallback for Products & Ledgers
 **The Problem Resolved:**
 When accessing the Miracle AI Auto-Entry tool via cloud deployment (`miracle-ai-autoentry.onrender.com`), both the **Party Ledger Mapping Modal** (`#mappingModal`) and **Product Item Mapping Modal** (`#productMappingModal`) displayed dropdowns with ONLY default options (`-- Select Miracle Ledger --`, `[Auto-Create B2B/B2C]`, `[Auto-Create 0% Product]`) and zero existing Miracle account ledgers or product masters.

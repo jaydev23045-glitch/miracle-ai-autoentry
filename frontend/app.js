@@ -388,12 +388,13 @@ document.addEventListener('DOMContentLoaded', () => {
         clients.forEach(client => {
             const cId = typeof client === 'object' ? client.id : client;
             const cName = typeof client === 'object' ? client.name : client;
+            if (!cId) return;
             const displayName = (cName && cName !== cId && cName !== 'Unknown Company') ? `${cId} — ${cName}` : cId;
 
             if (clientSelect) {
                 const opt1 = document.createElement('option');
                 opt1.value = cId;
-                opt1.className = 'bg-slate-800';
+                opt1.className = 'bg-slate-900 text-slate-100 font-medium py-1';
                 opt1.innerText = displayName;
                 if (cId === activeClientId) opt1.selected = true;
                 clientSelect.appendChild(opt1);
@@ -402,6 +403,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if (settingsActiveClient) {
                 const opt2 = document.createElement('option');
                 opt2.value = cId;
+                opt2.className = 'bg-slate-900 text-slate-100 font-medium py-1';
                 opt2.innerText = displayName;
                 if (cId === activeClientId) opt2.selected = true;
                 settingsActiveClient.appendChild(opt2);
@@ -425,6 +427,18 @@ document.addEventListener('DOMContentLoaded', () => {
             clientLedgers = data.data || data.ledgers || [];
             window.clientLedgers = clientLedgers; // Expose globally for Bank Statement module
             console.log(`Loaded ${clientLedgers.length} classified ledgers for financial year ${data.year || activeYearFolder}`);
+
+            // Automatically sync local PC ledgers to Cloud Server memory for seamless AI mapping
+            if (isLocalBridgeOnline && clientLedgers.length > 0) {
+                fetch(`${API_URL}/api/bridge/sync-masters`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        client_id: clientId,
+                        ledgers: clientLedgers
+                    })
+                }).catch(err => console.warn("Bridge master sync notice:", err));
+            }
 
             // Populate Target Cash Account dropdown
             const targetCashSelect = document.getElementById('targetCashAccount');
@@ -700,15 +714,17 @@ document.addEventListener('DOMContentLoaded', () => {
                 const opt = document.createElement('option');
                 opt.value = targetYear || 'YR31';
                 opt.innerText = targetYear || 'YR31';
-                opt.className = 'bg-slate-800';
+                opt.className = 'bg-slate-900 text-slate-100 font-medium py-1';
                 yearSelect.appendChild(opt);
             } else {
                 years.forEach(y => {
-                    const fld = (y.folder || '').toUpperCase();
+                    const fld = (y.folder || '').toUpperCase().trim();
+                    if (!fld) return;
                     const opt = document.createElement('option');
                     opt.value = fld;
-                    opt.innerText = y.label || fld;
-                    opt.className = 'bg-slate-800';
+                    const cleanLabel = (y.label || '').trim();
+                    opt.innerText = (cleanLabel && cleanLabel !== fld) ? `${fld} — ${cleanLabel}` : fld;
+                    opt.className = 'bg-slate-900 text-slate-100 font-medium py-1';
                     if (fld === targetYear) opt.selected = true;
                     yearSelect.appendChild(opt);
                 });
@@ -725,12 +741,11 @@ document.addEventListener('DOMContentLoaded', () => {
     function updateHeaderBadges() {
         const clientBadge = document.getElementById('headerClientBadge');
         const yearBadge = document.getElementById('headerYearBadge');
-        if (clientBadge && clientSelect && clientSelect.options && clientSelect.selectedIndex >= 0) {
-            const txt = clientSelect.options[clientSelect.selectedIndex].text;
-            clientBadge.innerText = txt || clientSelect.value;
+        if (clientBadge && clientSelect) {
+            clientBadge.innerText = clientSelect.value || 'Select Client';
         }
         if (yearBadge) {
-            let periodText = yearSelect && yearSelect.options && yearSelect.selectedIndex >= 0 ? yearSelect.options[yearSelect.selectedIndex].text : (activeYearFolder || 'YR31');
+            let periodText = yearSelect ? yearSelect.value : (activeYearFolder || 'YR31');
 
             if (currentExtractedData && Array.isArray(currentExtractedData) && currentExtractedData.length > 0) {
                 const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
@@ -2467,8 +2482,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 formData.append("module", currentModule);
                 formData.append("instruction", aiInstructionInput.value.trim());
 
-                if ((currentModule === 'Bank Statements' || currentModule === 'Cash Entries') && clientLedgers.length > 0) {
-                    const ledgerNames = clientLedgers.map(l => l.name).join(", ");
+                if (clientLedgers && clientLedgers.length > 0) {
+                    const ledgerNames = clientLedgers.map(l => l.name || l.print_name || '').filter(Boolean).join(", ");
                     formData.append("ledgers_list", ledgerNames);
                 }
 
@@ -2785,13 +2800,16 @@ document.addEventListener('DOMContentLoaded', () => {
                         const partyGstin = String(row.party_gstin || row.gstin || "").trim();
                         const isUnregistered = !partyGstin || /^(urd|unregistered|b2c|consumer|none|na|-)$/i.test(partyGstin);
 
-                        const partyStr = String(party).trim();
+                        let partyStr = String(party).trim();
+                        if (!partyStr || partyStr.toLowerCase() === 'nan' || partyStr.toLowerCase() === 'none' || partyStr.toLowerCase() === 'null' || partyStr.toLowerCase() === 'undefined') {
+                            partyStr = 'Unmapped Party';
+                        }
                         let finalParty = partyStr;
                         let status = 'Ready';
                         let isB2C = false;
                         let autoCreateB2B = false;
 
-                        if (partyStr.startsWith('UNKNOWN_PARTY:') || partyStr.startsWith('UNKNOWN_NARRATION:') || partyStr.includes('Missing') || partyStr === "") {
+                        if (partyStr.startsWith('UNKNOWN_PARTY:') || partyStr.startsWith('UNKNOWN_NARRATION:') || partyStr.includes('Missing') || partyStr === "" || partyStr === 'Unmapped Party') {
                             status = 'Review';
                         } else {
                             const cleanParty = partyStr.toUpperCase();
@@ -3016,7 +3034,10 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         unknownItems.forEach((item) => {
-            const rawLabel = item.party.replace('UNKNOWN_PARTY: ', '').replace('UNKNOWN_NARRATION: ', '');
+            let rawLabel = (item.party || '').replace('UNKNOWN_PARTY: ', '').replace('UNKNOWN_NARRATION: ', '').trim();
+            if (!rawLabel || rawLabel.toLowerCase() === 'nan' || rawLabel.toLowerCase() === 'none' || rawLabel.toLowerCase() === 'null' || rawLabel.toLowerCase() === 'undefined') {
+                rawLabel = 'Unmapped Party';
+            }
             const selectId = `select-${item.id}`;
             const optionsHtml = generateLedgerOptions("", item);
 
@@ -5036,7 +5057,20 @@ document.addEventListener('DOMContentLoaded', () => {
             return 'Indirect Expenses';
         }
 
-        // 1. TOP PRIORITY: Check master Miracle ledgers (clientLedgers) loaded from RKACCM01 DBF
+        // 1. EXPLICIT USER ROW HINT: If rowHint is explicitly passed (e.g. user selected Suspense Account, Sundry Creditors, etc. in UI dropdown),
+        // respect user selection 100%! Never let master DBF fallback or heuristics overwrite explicit user selection!
+        const hintUp = (rowHint || '').toUpperCase().trim();
+        const isSystemPlaceholder = !rowHint ||
+            hintUp === 'REVIEW' ||
+            hintUp === 'SUSPENSE ACCOUNT (REVIEW)' ||
+            hintUp === 'GRID MAPPED' ||
+            hintUp === 'AUTO-CREATE';
+
+        if (!isSystemPlaceholder) {
+            return normalizeAccountingGroup(rowHint);
+        }
+
+        // 2. Check master Miracle ledgers (clientLedgers) loaded from RKACCM01 DBF
         if (typeof clientLedgers !== 'undefined' && clientLedgers && clientLedgers.length > 0 && legUp && legUp !== 'SUSPENSE ACCOUNT') {
             const masterMatch = clientLedgers.find(l =>
                 (l.name || '').trim().toUpperCase() === legUp ||
@@ -5051,12 +5085,12 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         }
 
-        // 2. Check if autoCreateLedgerHints has an explicit user-defined group for this auto-create ledger
+        // 3. Check if autoCreateLedgerHints has an explicit user-defined group for this auto-create ledger
         if (typeof autoCreateLedgerHints !== 'undefined' && autoCreateLedgerHints && autoCreateLedgerHints[legUp]) {
             return normalizeAccountingGroup(autoCreateLedgerHints[legUp]);
         }
 
-        // 3. If mappedLedger is SUSPENSE ACCOUNT, empty, generic group header, or unmapped cheque descriptor, return Suspense Account
+        // 4. If mappedLedger is SUSPENSE ACCOUNT, empty, generic group header, or unmapped cheque descriptor, return Suspense Account
         const GENERIC_PARTY_DESCRIPTORS = [
             'SUNDRY DEBTORS', 'SUNDRY CREDITORS', 'INDIRECT EXPENSES', 'DIRECT EXPENSES',
             'INDIRECT INCOME', 'DIRECT INCOME', 'SALES ACCOUNTS', 'PURCHASE ACCOUNTS',
@@ -5066,26 +5100,6 @@ document.addEventListener('DOMContentLoaded', () => {
         ];
         if (!legUp || legUp === 'SUSPENSE ACCOUNT' || GENERIC_PARTY_DESCRIPTORS.includes(legUp) || /^CHEQUE DEPOSIT|^CHQ DEP|^CLEARING/i.test(legUp)) {
             return 'Suspense Account';
-        }
-
-        // 4. Check explicit custom user / rowHint override (ONLY if rowHint is NOT default 'Suspense Account' or 'Review')
-        const BAD_DR_GROUPS = ['Sales Accounts', 'Sales Accounts (Product Stock)', 'Direct Income', 'Sundry Debtors'];
-        const BAD_CR_GROUPS = ['Sundry Creditors', 'Purchase Accounts'];
-        const BAD_BANK_HINTS = ['Sales Accounts (Product Stock)', 'Sales Accounts', 'Trading Account', 'Purchase Accounts'];
-
-        const hintUp = (rowHint || '').toUpperCase().trim();
-        const isValidCustomHint = rowHint &&
-            hintUp !== 'SUSPENSE ACCOUNT' &&
-            hintUp !== 'SUSPENSE ACCOUNT (REVIEW)' &&
-            hintUp !== 'REVIEW' &&
-            hintUp !== 'GRID MAPPED' &&
-            hintUp !== 'AUTO-CREATE';
-
-        const hintViolatesDR = isPayment && BAD_DR_GROUPS.some(b => hintUp.includes(b.toUpperCase()));
-        const hintViolatesCR = isReceipt && BAD_CR_GROUPS.some(b => hintUp.includes(b.toUpperCase()));
-
-        if (isValidCustomHint && !BAD_BANK_HINTS.some(b => hintUp.includes(b.toUpperCase())) && !hintViolatesDR && !hintViolatesCR) {
-            return normalizeAccountingGroup(rowHint);
         }
 
         // 5. Hard Cash & Bank group overrides
@@ -5886,49 +5900,135 @@ document.addEventListener('DOMContentLoaded', () => {
                 });
             }
 
-            const triggerRecalc = () => {
+            const triggerRecalc = (e) => {
                 row.taxable = taxableInput ? parseCurrency(taxableInput.value) : 0;
-                row.gst = gstInput ? parseCurrency(gstInput.value) : 0;
                 row.discount = discountInput ? parseCurrency(discountInput.value) : 0;
                 row.freight = freightInput ? parseCurrency(freightInput.value) : 0;
                 row.tcs = tcsInput ? parseCurrency(tcsInput.value) : 0;
                 row.tds = tdsInput ? parseCurrency(tdsInput.value) : 0;
 
-                const expNet = (row.taxable + row.freight) + row.gst + row.tcs - row.tds;
-                const expGross = (row.taxable - row.discount + row.freight) + row.gst + row.tcs - row.tds;
+                const sourceEl = e ? e.target : null;
 
-                if (row.total > 0 && Math.abs(expNet - row.total) <= 2.00) {
-                    row.total = expNet;
-                } else if (row.total > 0 && Math.abs(expGross - row.total) <= 2.00) {
-                    row.total = expGross;
-                } else {
-                    row.total = (row.discount > 0 && row.taxable > row.discount + 10) ? expGross : expNet;
-                }
-
-                const gstBadge = tr.querySelector('.gst-pct-badge');
-                if (gstBadge) {
-                    if (row.taxable > 0 && row.gst > 0) {
+                if (sourceEl === gstInput) {
+                    // User explicitly edited GST Amount input field!
+                    row.gst = parseCurrency(gstInput.value);
+                    if (row.taxable > 0) {
                         const calcP = Math.round((row.gst / row.taxable) * 100 * 10) / 10;
                         const slabs = [0, 0.25, 1.5, 3, 5, 12, 18, 28];
                         const updatedPct = slabs.reduce((prev, curr) => Math.abs(curr - calcP) < Math.abs(prev - calcP) ? curr : prev);
                         row.gst_pct = updatedPct;
-                        gstBadge.innerText = `${updatedPct}%`;
+                        const gstBadge = tr.querySelector('.gst-pct-badge');
+                        if (gstBadge) gstBadge.innerText = `${updatedPct}%`;
+                    }
+                } else {
+                    // User edited Taxable Amount, Discount, Freight, TCS, or TDS!
+                    // Preserve current GST % and recalculate GST Amount!
+                    let pct = row.gst_pct;
+                    if (pct === undefined || pct === null || isNaN(pct)) {
+                        pct = 18.0;
+                    }
+                    row.gst_pct = pct;
+                    row.gst = Math.round((row.taxable * (pct / 100)) * 100) / 100;
+                    if (gstInput && document.activeElement !== gstInput) {
+                        gstInput.value = `₹${row.gst.toLocaleString('en-IN', { minimumFractionDigits: 2 })}`;
                     }
                 }
+
+                // Recalculate CGST, SGST, IGST breakdown
+                const partyGstinStr = String(row.party_gstin || '').trim();
+                const isIgst = row.is_interstate || (partyGstinStr.length >= 2 && !partyGstinStr.startsWith('24'));
+                if (isIgst) {
+                    row.igst = row.gst;
+                    row.cgst = 0;
+                    row.sgst = 0;
+                } else {
+                    row.cgst = Math.round((row.gst / 2) * 100) / 100;
+                    row.sgst = Math.round((row.gst / 2) * 100) / 100;
+                    row.igst = 0;
+                }
+
+                // Recalculate Total: Total = Taxable - Discount + Freight + GST + TCS - TDS
+                row.total = Math.round((row.taxable - row.discount + row.freight + row.gst + row.tcs - row.tds) * 100) / 100;
+                row.total_amount = row.total;
+                row.Total = row.total;
 
                 const totalCell = tr.querySelector('.total-cell');
                 if (totalCell) {
                     totalCell.innerText = `₹${row.total.toLocaleString('en-IN', { minimumFractionDigits: 2 })}`;
                 }
+
+                // Sync item array if row has items
+                if (row.items && Array.isArray(row.items) && row.items.length > 0) {
+                    const parsedQty = parseFloat(row.qty) || 1;
+                    row.items[0].taxable = row.taxable;
+                    row.items[0].amount = row.taxable;
+                    row.items[0].rate = parsedQty > 0 ? Math.round((row.taxable / parsedQty) * 100) / 100 : row.taxable;
+                    row.items[0].gst_pct = row.gst_pct;
+                    row.items[0].gst = row.gst;
+                }
+
                 recalcGrandTotals();
             };
 
-            if (taxableInput) taxableInput.addEventListener('input', triggerRecalc);
-            if (gstInput) gstInput.addEventListener('input', triggerRecalc);
-            if (discountInput) discountInput.addEventListener('input', triggerRecalc);
-            if (freightInput) freightInput.addEventListener('input', triggerRecalc);
-            if (tcsInput) tcsInput.addEventListener('input', triggerRecalc);
-            if (tdsInput) tdsInput.addEventListener('input', triggerRecalc);
+            if (taxableInput) {
+                taxableInput.addEventListener('focus', () => {
+                    const val = parseCurrency(taxableInput.value);
+                    if (val > 0) taxableInput.value = val;
+                });
+                taxableInput.addEventListener('input', triggerRecalc);
+                taxableInput.addEventListener('blur', () => {
+                    const val = parseCurrency(taxableInput.value);
+                    taxableInput.value = `₹${val.toLocaleString('en-IN', { minimumFractionDigits: 2 })}`;
+                });
+            }
+            if (gstInput) {
+                gstInput.addEventListener('focus', () => {
+                    const val = parseCurrency(gstInput.value);
+                    if (val > 0) gstInput.value = val;
+                });
+                gstInput.addEventListener('input', triggerRecalc);
+                gstInput.addEventListener('blur', () => {
+                    const val = parseCurrency(gstInput.value);
+                    gstInput.value = `₹${val.toLocaleString('en-IN', { minimumFractionDigits: 2 })}`;
+                });
+            }
+            if (discountInput) {
+                discountInput.addEventListener('input', triggerRecalc);
+                discountInput.addEventListener('blur', () => {
+                    const val = parseCurrency(discountInput.value);
+                    discountInput.value = `₹${val.toLocaleString('en-IN', { minimumFractionDigits: 2 })}`;
+                });
+            }
+            if (freightInput) {
+                freightInput.addEventListener('input', triggerRecalc);
+                freightInput.addEventListener('blur', () => {
+                    const val = parseCurrency(freightInput.value);
+                    freightInput.value = `₹${val.toLocaleString('en-IN', { minimumFractionDigits: 2 })}`;
+                });
+            }
+            if (tcsInput) {
+                tcsInput.addEventListener('input', triggerRecalc);
+            }
+            if (tdsInput) {
+                tdsInput.addEventListener('input', triggerRecalc);
+            }
+
+            // Wire GST % badge click to cycle through GST slabs
+            const gstBadge = tr.querySelector('.gst-pct-badge');
+            if (gstBadge) {
+                gstBadge.style.cursor = 'pointer';
+                gstBadge.title = 'Click to change GST Rate % (0%, 5%, 12%, 18%, 28%)';
+                gstBadge.addEventListener('click', () => {
+                    const slabs = [0, 5, 12, 18, 28];
+                    const currentP = parseFloat(row.gst_pct) || 0;
+                    let nextIdx = (slabs.indexOf(currentP) + 1) % slabs.length;
+                    if (nextIdx === -1) nextIdx = 3;
+                    const newPct = slabs[nextIdx];
+                    row.gst_pct = newPct;
+                    gstBadge.innerText = `${newPct}%`;
+                    triggerRecalc();
+                });
+            }
         }
 
         const delBtn = tr.querySelector('.delete-row-btn');

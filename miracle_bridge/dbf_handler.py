@@ -1386,7 +1386,7 @@ class MiracleDBFHandler:
             group_code, parent_group = find_group_by_name(["SUSPENSE ACCOUNT", "SUSPENSE"], 'G0000028', '')
         # 1b. Bank Charges & Service Fees overrides (MUST evaluate BEFORE Bank Accounts!)
         elif any(w in name_up for w in ["BANK CHARG", "BANK CHAG", "BANK CHARGES", "SMS CHARG", "INSTAALERT", "ALERTCHG", "SERVICE CHG", "SERVICE CHARGE", "SERVICE CHARGES", "CARD CHARG", "ATM CHG", "MDR RCVRY"]):
-            group_code, parent_group = find_group_by_name(["EXPENSE ACCOUNT", "INDIRECT EXPENSE", "EXPENSES (INDIRECT)", "INDIRECT EXPENSES", "EXPENSE"], 'G0000017', 'G0000002')
+            group_code, parent_group = find_group_by_name(["INDIRECT EXPENSES", "EXPENSES (INDIRECT)", "INDIRECT EXPENSE", "EXPENSE ACCOUNT", "EXPENSE"], 'G0000024', 'G0000023')
         # 2. Bank overrides (Only actual Bank A/cs like HDFC Bank, ICICI Bank, Axis Bank A/c)
         elif (any(w in name_up for w in ["BANK A/C", "BANK ACCOUNT", "CURRENT A/C", "SAVINGS A/C"]) or 
               any(w in name_up for w in ["HDFC", "ICICI", "SBI", "AXIS", "KOTAK", "BOB", "PNB", "UNION BANK", "CANARA"])) and not any(chg in name_up for chg in ["CHARGE", "CHARGES", "CHG", "CHGS", "INTEREST", "COMMISSION", "FEE", "FEES"]):
@@ -1422,23 +1422,23 @@ class MiracleDBFHandler:
             "HOTEL", "RESTAURANT", "CATERING", "SOFTWARE", "INTERNET", "WIFI", "DOMAIN", "HOSTING", "CLOUD",
             "BROADBAND", "MOBILE", "RECHARGE", "PENALTY", "LATE FEE", "SERVICE CHG", "SERVICE CHARGE", "SERVICE CHARGES"
         ]):
-            group_code, parent_group = find_group_by_name(["EXPENSE ACCOUNT", "INDIRECT EXPENSE", "EXPENSES (INDIRECT)", "INDIRECT EXPENSES", "EXPENSE"], 'G0000017', 'G0000002')
+            group_code, parent_group = find_group_by_name(["INDIRECT EXPENSES", "EXPENSES (INDIRECT)", "INDIRECT EXPENSE", "EXPENSE ACCOUNT", "EXPENSE"], 'G0000024', 'G0000023')
         # 9. Income overrides
         elif any(w in name_up for w in ["INCOME", "INTEREST RECEIVED", "COMMISSION RECEIVED", "RENT RECEIVED", "DIVIDEND"]):
-            group_code, parent_group = find_group_by_name(["INCOME (OTHER THEN SALES)", "INDIRECT INCOME", "INCOME"], 'G0000016', 'G0000002')
+            group_code, parent_group = find_group_by_name(["INDIRECT INCOME", "INCOME (OTHER THEN SALES)", "INCOME"], 'G0000022', '')
         # 10. Duties & Taxes overrides
         elif any(w in name_up for w in ["TAX", "GST", "CGST", "SGST", "IGST", "CESS", "DUTY", "DUTIES", "TDS", "TCS", "VAT"]):
-            group_code, parent_group = find_group_by_name(["DUTIES & TAXES", "DUTIES AND TAXES", "TAXES"], 'G0000003', 'G0000010')
+            group_code, parent_group = find_group_by_name(["DUTIES & TAXES", "DUTIES AND TAXES", "TAXES"], 'G0000014', 'G0000010')
             
         # If no name-based override matched, fall back to module and group_hint
         elif "INDIRECT EXPENSE" in group_hint_up or "EXPENSE" in group_hint_up:
-            group_code, parent_group = find_group_by_name(["EXPENSE ACCOUNT", "INDIRECT EXPENSE", "EXPENSE"], 'G0000017', 'G0000002')
+            group_code, parent_group = find_group_by_name(["INDIRECT EXPENSES", "EXPENSES (INDIRECT)", "INDIRECT EXPENSE", "EXPENSE ACCOUNT", "EXPENSE"], 'G0000024', 'G0000023')
         elif "DIRECT EXPENSE" in group_hint_up:
-            group_code, parent_group = find_group_by_name(["EXPENSES (DIRECT)", "DIRECT EXPENSE"], 'G0000014', 'G0000002')
+            group_code, parent_group = find_group_by_name(["EXPENSES (DIRECT)", "DIRECT EXPENSE"], 'G0000023', '')
         elif "INDIRECT INCOME" in group_hint_up or "INCOME" in group_hint_up:
-            group_code, parent_group = find_group_by_name(["INCOME (OTHER THEN SALES)", "INDIRECT INCOME", "INCOME"], 'G0000016', 'G0000002')
+            group_code, parent_group = find_group_by_name(["INDIRECT INCOME", "INCOME (OTHER THEN SALES)", "INCOME"], 'G0000022', '')
         elif "DIRECT INCOME" in group_hint_up:
-            group_code, parent_group = find_group_by_name(["INCOME (TRADING)", "DIRECT INCOME"], 'G0000015', 'G0000002')
+            group_code, parent_group = find_group_by_name(["SALES ACCOUNTS", "DIRECT INCOME", "INCOME (TRADING)"], 'G0000021', '')
         elif "FIXED ASSET" in group_hint_up:
             group_code, parent_group = find_group_by_name(["FIXED ASSETS", "FIXED ASSET"], 'G0000006', 'G0000003')
         elif "CAPITAL" in group_hint_up:
@@ -1656,14 +1656,18 @@ class MiracleDBFHandler:
             return "G0000009"
         if "SUNDRY CREDITORS" in gh or "CREDITOR" in gh or "SUPPLIER" in gh:
             return "G0000013"
-        if "INDIRECT EXPENSE" in gh or "EXPENSE" in gh or "INDIRECT EXP" in gh:
-            return "G0000017"
-        if "DIRECT EXPENSE" in gh:
-            return "G0000014"
-        if "INDIRECT INCOME" in gh or "INCOME" in gh:
-            return "G0000016"
-        if "DIRECT INCOME" in gh:
-            return "G0000015"
+        if "INDIRECT EXPENSE" in gh or "INDIRECT EXP" in gh or "EXPENSES (INDIRECT)" in gh:
+            return "G0000024"
+        if "DIRECT EXPENSE" in gh or "EXPENSES (DIRECT)" in gh:
+            return "G0000023"
+        if "EXPENSE" in gh:
+            return "G0000024"
+        if "INDIRECT INCOME" in gh or "OTHER THEN SALES" in gh:
+            return "G0000022"
+        if "DIRECT INCOME" in gh or "TRADING" in gh:
+            return "G0000021"
+        if "INCOME" in gh:
+            return "G0000022"
         if "BANK" in gh or "BANK ACCOUNTS" in gh:
             return "G0000004"
         if "CASH" in gh or "CASH-IN-HAND" in gh:

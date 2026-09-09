@@ -421,9 +421,11 @@ def parse_excel_to_json(file_path: str, company_state_code: str = '24', instruct
                         except ValueError:
                             pass
                             
-                party_name = str(first_row["party_name"]).strip()
+                party_name = str(first_row.get("party_name", "")).strip() if pd.notna(first_row.get("party_name")) else ""
+                if not party_name or party_name.lower() in ("nan", "none", "null", "undefined"):
+                    party_name = "Unmapped Party"
                 party_gstin = str(first_row.get("party_gstin", "")).strip() if pd.notna(first_row.get("party_gstin")) else ""
-                if party_gstin.lower() == "nan":
+                if party_gstin.lower() in ("nan", "none", "null", "undefined"):
                     party_gstin = ""
                     
                 inv_no = ""
@@ -600,9 +602,11 @@ def parse_excel_to_json(file_path: str, company_state_code: str = '24', instruct
                             break
                         except ValueError:
                             pass
-                party_name = str(row["party_name"]).strip()
+                party_name = str(row.get("party_name", "")).strip() if pd.notna(row.get("party_name")) else ""
+                if not party_name or party_name.lower() in ("nan", "none", "null", "undefined"):
+                    party_name = "Unmapped Party"
                 party_gstin = str(row.get("party_gstin", "")).strip() if pd.notna(row.get("party_gstin")) else ""
-                if party_gstin.lower() == "nan": party_gstin = ""
+                if party_gstin.lower() in ("nan", "none", "null", "undefined"): party_gstin = ""
 
                 inv_no = "" if str(group_key).startswith("NO_INV_") else str(group_key).rstrip(".0")
 
@@ -702,9 +706,11 @@ def parse_excel_to_json(file_path: str, company_state_code: str = '24', instruct
                     for fmt in ("%d/%m/%Y", "%d/%m/%y", "%Y-%m-%d", "%d-%m-%Y", "%d-%m-%y", "%Y/%m/%d"):
                         try: date_str = datetime.strptime(date_str, fmt).strftime("%Y-%m-%d"); break
                         except ValueError: pass
-                party_name = str(row.get("party_name", "")).strip()
+                party_name = str(row.get("party_name", "")).strip() if pd.notna(row.get("party_name")) else ""
+                if not party_name or party_name.lower() in ("nan", "none", "null", "undefined"):
+                    party_name = "Unmapped Party"
                 party_gstin = str(row.get("party_gstin", "")).strip() if pd.notna(row.get("party_gstin")) else ""
-                if party_gstin.lower() == "nan": party_gstin = ""
+                if party_gstin.lower() in ("nan", "none", "null", "undefined"): party_gstin = ""
                 inv_no = "" if str(row["Group_Key"]).startswith("NO_INV_") else str(row["Group_Key"]).rstrip(".0")
                 total_raw = safe_float(row.get("total_amt", 0.0)) if pd.notna(row.get("total_amt")) else 0.0
                 taxable_raw = safe_float(row.get("taxable_amt", 0.0)) if pd.notna(row.get("taxable_amt")) else 0.0

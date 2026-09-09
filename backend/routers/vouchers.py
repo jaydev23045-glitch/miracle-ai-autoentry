@@ -76,6 +76,16 @@ def get_handler_optional() -> Optional[MiracleDBFHandler]:
 _LEDGER_CACHE: dict = {}
 _LEDGER_CACHE_TTL_SECONDS = 60  # Refresh ledger list every 60 seconds
 
+# Cloud Synced Master Stores (pushed from local MiracleBridge agent)
+CLOUD_SYNCED_LEDGERS: Dict[str, List[Dict[str, Any]]] = {}
+CLOUD_SYNCED_PRODUCTS: Dict[str, List[Dict[str, Any]]] = {}
+
+class MasterSyncPayload(BaseModel):
+    client_id: str
+    year_folder: Optional[str] = None
+    ledgers: List[Dict[str, Any]] = []
+    products: List[Dict[str, Any]] = []
+
 def clean_gemini_error(e: Exception) -> str:
     error_msg = str(e)
     if "429" in error_msg or "RESOURCE_EXHAUSTED" in error_msg:
@@ -556,11 +566,14 @@ def normalize_confidence_and_flags(extracted_data: dict, module: str, client_mem
 
 @router.get("/api/ledgers")
 def get_ledgers(year: Optional[str] = None, handler: Optional[MiracleDBFHandler] = Depends(get_handler_optional)):
-    """Reads all accounting ledgers from the active Miracle DBF or queries Miracle Bridge."""
+    """Reads all accounting ledgers from the active Miracle DBF or queries Miracle Bridge / Cloud Synced memory."""
     try:
         if not handler or not handler.client_path or not os.path.exists(handler.client_path):
             settings = load_settings()
             client_id = settings.get("active_client_id", "CMP0013")
+            synced = CLOUD_SYNCED_LEDGERS.get(client_id, [])
+            if synced:
+                return {"status": "success", "year": year or "", "count": len(synced), "data": synced}
             import requests
             try:
                 r = requests.get(f"http://localhost:9123/api/local-ledgers?client_id={client_id}", timeout=3)
@@ -784,14 +797,33 @@ def refresh_ledgers(year: Optional[str] = None, handler: Optional[MiracleDBFHand
         print(f"[refresh_ledgers] Notice: {e}")
         return {"status": "success", "year": year or "", "count": 0, "data": []}
 
+@router.post("/api/bridge/sync-masters")
+@router.post("/api/bridge/sync-masters/")
+def sync_masters_from_bridge(payload: MasterSyncPayload):
+    """Receives local Miracle ledgers and products pushed from Miracle Bridge Agent on user's PC."""
+    client_id = payload.client_id or "CMP0013"
+    if payload.ledgers:
+        CLOUD_SYNCED_LEDGERS[client_id] = payload.ledgers
+    if payload.products:
+        CLOUD_SYNCED_PRODUCTS[client_id] = payload.products
+    return {
+        "status": "success",
+        "client_id": client_id,
+        "synced_ledgers_count": len(CLOUD_SYNCED_LEDGERS.get(client_id, [])),
+        "synced_products_count": len(CLOUD_SYNCED_PRODUCTS.get(client_id, []))
+    }
+
 @router.get("/api/products")
 @router.get("/api/products/")
 def get_products(year: Optional[str] = None, handler: Optional[MiracleDBFHandler] = Depends(get_handler_optional)):
-    """Reads all products from active Miracle DBFs across all financial years."""
+    """Reads all products from active Miracle DBFs across all financial years or Cloud Synced memory."""
     try:
         if not handler or not handler.client_path or not os.path.exists(handler.client_path):
             settings = load_settings()
             client_id = settings.get("active_client_id", "CMP0013")
+            synced = CLOUD_SYNCED_PRODUCTS.get(client_id, [])
+            if synced:
+                return {"status": "success", "year": year or "", "count": len(synced), "data": synced}
             import requests
             try:
                 r = requests.get(f"http://localhost:9123/api/local-products?client_id={client_id}&year_folder={year or ''}", timeout=3)
@@ -816,6 +848,9 @@ def refresh_products(year: Optional[str] = None, handler: Optional[MiracleDBFHan
         if not handler or not handler.client_path or not os.path.exists(handler.client_path):
             settings = load_settings()
             client_id = settings.get("active_client_id", "CMP0013")
+            synced = CLOUD_SYNCED_PRODUCTS.get(client_id, [])
+            if synced:
+                return {"status": "success", "year": year or "", "count": len(synced), "data": synced}
             import requests
             try:
                 r = requests.get(f"http://localhost:9123/api/local-products?client_id={client_id}&year_folder={year or ''}", timeout=3)
@@ -1684,6 +1719,31 @@ def repair_cdx_flags_endpoint(year: Optional[str] = None):
             raise
         except Exception as e:
             print(f"Error in repair_cdx_flags: {e}")
+            raise HTTPException(status_code=500, detail=str(e))
+
+@router.post("/api/repair-expense-groups")
+def repair_expense_groups_endpoint(year: Optional[str] = None):
+    """Scans RKACCM01.DBF and fixes expense ledgers wrongly assigned to Bank OCC a/c (G0000017) back to Indirect Expenses (G0000024)."""
+    settings = load_settings()
+    client_id = settings.get("active_client_id", "")
+    with get_client_lock(client_id):
+        client_path = os.path.join(settings["miracle_base_path"], client_id)
+        if not os.path.exists(client_path):
+            raise HTTPException(status_code=404, detail=f"Client folder not found at {client_path}")
+
+        try:
+            handler = MiracleDBFHandler(client_path)
+            target_yr = year.strip() if year else settings.get("active_year_folder", "")
+            res = handler.repair_expense_ledger_groups(target_yr)
+            # Invalidate ledger cache so frontend gets fresh data
+            _LEDGER_CACHE.pop(client_id, None)
+            return {
+                "status": "success",
+                "message": f"Repaired {res.get('repaired_count', 0)} expense ledgers in Miracle DBF database.",
+                "details": res
+            }
+        except Exception as e:
+            print(f"Error in repair_expense_groups: {e}")
             raise HTTPException(status_code=500, detail=str(e))
 
 class ResolveSuspensePayload(BaseModel):

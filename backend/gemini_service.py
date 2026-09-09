@@ -1422,15 +1422,13 @@ class GeminiService:
         # Tier 1 (High-Capacity Safety Net Backup, 500 RPD per key):
         #   - gemini-3.1-flash-lite, gemini-3.5-flash-lite, gemini-1.5-flash
         FALLBACK_MODELS = [
+            "gemini-3.1-flash-lite",
+            "gemini-3.5-flash-lite",
+            "gemini-2.5-flash",
+            "gemini-3.5-flash",
             "gemini-3.6-flash",
             "gemini-3.7-flash",
             "gemini-3.8-flash",
-            "gemini-3.5-flash",
-            "gemini-2.5-flash",
-            "gemini-2.5-flash-lite",
-            "gemini-3.1-flash-lite",
-            "gemini-3.5-flash-lite",
-            "gemini-1.5-flash",
         ]
 
         # Build candidate list starting from requested model
@@ -1465,6 +1463,7 @@ class GeminiService:
         )
 
         for active_model in models_to_try:
+            consecutive_503_count = 0
             for key_offset in range(len(keys_pool)):
                 actual_idx = (
                     self.current_key_idx + start_key_offset + key_offset
@@ -1517,11 +1516,17 @@ class GeminiService:
                         mark_model_quota_exhausted_today(active_model)
                         break
 
-                    # 503 Overloaded -> try next key / fallback
+                    # 503 Overloaded -> try next key / fallback immediately if model tier is overloaded
                     if "503" in err_msg or "unavailable" in err_msg:
+                        consecutive_503_count += 1
                         print(
-                            f"⚠️ Model '{active_model}' overloaded on Key #{actual_idx + 1}. Retrying next key/model..."
+                            f"⚠️ Model '{active_model}' overloaded on Key #{actual_idx + 1} ({consecutive_503_count}/2). Retrying next key/model..."
                         )
+                        if consecutive_503_count >= 2:
+                            print(
+                                f"⏩ Model '{active_model}' overloaded across multiple keys. Skipping to next model tier..."
+                            )
+                            break
                         time.sleep(0.3)
                         continue
 
@@ -3190,32 +3195,21 @@ Return the extracted data EXACTLY following this JSON schema. Do not output anyt
                 )
 
                 # Dynamic Chunk Size Adaptation based on Page Count & Line Density
-                # High-Speed Increased Chunking: Bank statements use max 15 pages to prevent JSON output truncation
-                if module == "Bank Statements":
-                    pages_per_chunk = max(
-                        5, min(15, 1200 // max(1, int(avg_lines_per_page)))
-                    )
+                # Optimal Chunking: Capped at max 8-10 pages/chunk for ultra-fast parallel extraction across worker threads
+                if module in ["Bank Statements", "Cash Entries"]:
+                    pages_per_chunk = max(3, min(8, 600 // max(1, int(avg_lines_per_page))))
                     print(
-                        f"🏦 Bank Statement chunk size set to max {pages_per_chunk} pages/chunk to guarantee 0 JSON output truncation."
+                        f"🏦 Statement chunk size set to {pages_per_chunk} pages/chunk for ultra-fast parallel extraction."
                     )
-                elif avg_lines_per_page > 150:
-                    pages_per_chunk = max(
-                        10, min(25, 2500 // max(1, int(avg_lines_per_page)))
-                    )
-                    print(
-                        f"⚡ Ultra-dense PDF detected (~{int(avg_lines_per_page)} lines/page)! Setting pages_per_chunk = {pages_per_chunk}."
-                    )
-                elif total_pages <= 30:
+                elif total_pages <= 5:
                     pages_per_chunk = total_pages
                     print(
-                        f"🚀 High-Speed Small PDF ({total_pages} pages): Processing all pages in 1 single API call!"
+                        f"🚀 Small PDF ({total_pages} pages): Processing all pages in 1 single API call!"
                     )
                 else:
-                    pages_per_chunk = max(
-                        20, min(50, 3500 // max(1, int(avg_lines_per_page)))
-                    )
+                    pages_per_chunk = max(4, min(10, 800 // max(1, int(avg_lines_per_page))))
                     print(
-                        f"🚀 High-Speed Large PDF ({total_pages} pages): Setting pages_per_chunk = {pages_per_chunk}."
+                        f"🚀 High-Speed Parallel PDF ({total_pages} pages): Setting pages_per_chunk = {pages_per_chunk} across rotating API key pool."
                     )
 
                 chronology = (
