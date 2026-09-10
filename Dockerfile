@@ -10,7 +10,11 @@ RUN pip install --no-cache-dir -r /app/backend/requirements.txt
 COPY backend /app/backend
 COPY frontend /app/frontend
 
+ENV PYTHONUNBUFFERED=1
+ENV MALLOC_TRIM_THRESHOLD_=65536
+
 EXPOSE 8000
 
 WORKDIR /app/backend
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "1", "--limit-concurrency", "10", "--backlog", "100"]
+

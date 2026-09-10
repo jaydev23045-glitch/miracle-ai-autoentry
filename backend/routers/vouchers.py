@@ -1258,7 +1258,13 @@ async def upload_document(
         raise HTTPException(status_code=status_code, detail=error_detail)
     finally:
         if os.path.exists(temp_file_path):
-            os.remove(temp_file_path)
+            try:
+                os.remove(temp_file_path)
+            except Exception:
+                pass
+        import gc
+        gc.collect()
+
 
 class FindMatchingBillPayload(BaseModel):
     party_name: str

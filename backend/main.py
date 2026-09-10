@@ -64,13 +64,28 @@ async def add_no_cache_headers(request, call_next):
     response.headers["Expires"] = "0"
     return response
 
+from core.utils import get_server_health_metrics, get_process_memory_mb
+import gc
+
 @app.get("/health")
 def health_check():
+    """Live 512 MB RAM & Server Health Monitoring Endpoint."""
+    return get_server_health_metrics()
+
+@app.post("/api/admin/gc")
+def trigger_garbage_collection():
+    """Manual administrator endpoint to force garbage collection pass & reclaim RAM."""
+    before_mb = get_process_memory_mb()
+    gc.collect()
+    after_mb = get_process_memory_mb()
     return {
-        "status": "online",
-        "service": "Miracle AI Server",
-        "mode": "cloud_server"
+        "status": "success",
+        "freed_mb": round(max(0.0, before_mb - after_mb), 2),
+        "before_mb": before_mb,
+        "after_mb": after_mb,
+        "current_memory": get_server_health_metrics()["memory"]
     }
+
 
 # Include separated routers
 app.include_router(settings_router)

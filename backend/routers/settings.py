@@ -37,7 +37,9 @@ def test_all_keys_endpoint():
 
 @router.get("/api/health")
 def read_health():
-    return {"status": "Miracle AI Backend is running."}
+    from core.utils import get_server_health_metrics
+    return get_server_health_metrics()
+
 
 @router.get("/api/upload-status")
 @router.post("/api/upload-status")

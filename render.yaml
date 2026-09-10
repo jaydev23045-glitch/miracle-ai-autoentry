@@ -5,7 +5,12 @@ services:
     region: singapore
     plan: free
     buildCommand: "pip install -r backend/requirements.txt"
-    startCommand: "cd backend && uvicorn main:app --host 0.0.0.0 --port $PORT"
+    startCommand: "cd backend && uvicorn main:app --host 0.0.0.0 --port $PORT --workers 1 --limit-concurrency 10 --backlog 100 --timeout-keep-alive 30"
     envVars:
       - key: GEMINI_API_KEY
         sync: false
+      - key: PYTHONUNBUFFERED
+        value: "1"
+      - key: MALLOC_TRIM_THRESHOLD_
+        value: "65536"
+
