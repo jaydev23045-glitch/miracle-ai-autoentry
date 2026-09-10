@@ -5844,7 +5844,7 @@ class MiracleDBFHandler:
                 logger.warning(f"Could not load RKACCM11.DBF in repair_expense_ledger_groups: {ex}")
 
         expense_keywords = [
-            "EXPENSE", "EXPENSES", "CHARGE", "CHARGES", "RENT", "SALARY", "SALARIES", "INTEREST", "FEES", "FEE",
+            "EXPENSE", "EXPENSES", "EXP", "MISC", "PERSONAL", "PAYTM", "DRAWINGS", "CHARGE", "CHARGES", "RENT", "SALARY", "SALARIES", "INTEREST", "FEES", "FEE",
             "TELEPHONE", "ELECTRICITY", "POWER", "FUEL", "PETROL", "DIESEL", "CONVEYANCE", "TRAVEL", "TRAVELLING",
             "OFFICE", "PRINTING", "STATIONERY", "REPAIR", "REPAIRS", "MAINTENANCE", "COMMISSION", "BROKERAGE",
             "PROFESSIONAL", "AUDIT", "POSTAGE", "COURIER", "SUBSCRIPTION", "ADVERTISEMENT", "ADVERTISING",
@@ -5875,8 +5875,8 @@ class MiracleDBFHandler:
                             repaired_count += 1
                             repaired_names.append(f"{str(record['FIELD02']).strip()} (Moved to Cash-in-Hand)")
 
-                        # If group code is currently G0000017 / G0000016 (Bank OCC / Loans) or empty, and ledger name is an expense:
-                        elif grp_code in ('G0000017', 'G0000016', 'G0000002') or (grp_code == '' and any(kw in name_up for kw in expense_keywords)):
+                        # If group code is currently G0000017 / G0000016 (Bank OCC / Loans) or G0000004 (Bank Accounts) or empty, and ledger name is an expense:
+                        elif grp_code in ('G0000017', 'G0000016', 'G0000002', 'G0000004') or (grp_code == '' and any(kw in name_up for kw in expense_keywords)):
                             if any(kw in name_up for kw in expense_keywords) and not any(b_kw in name_up for b_kw in ["BANK A/C", "BANK ACCOUNT", "HDFC", "ICICI", "SBI", "AXIS", "KOTAK", "BOB", "PNB"]):
                                 dbf_lib.write(record, FIELD05=indirect_exp_code)
                                 repaired_count += 1

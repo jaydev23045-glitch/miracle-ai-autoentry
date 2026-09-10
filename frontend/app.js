@@ -2090,7 +2090,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 const name = (r.mapped_ledger || '').trim();
                 if (name && name.toUpperCase() !== 'SUSPENSE ACCOUNT' && !seenNames.has(name.toUpperCase())) {
                     seenNames.add(name.toUpperCase());
-                    const hint = r.group_hint || inferExpenseGroupHint(name, r.transaction_type);
+                    const hint = inferExpenseGroupHint(name, r.transaction_type, r.group_hint);
                     allCandidates.push({
                         name: name,
                         group_name: hint || 'Grid Mapped',
@@ -4197,6 +4197,9 @@ document.addEventListener('DOMContentLoaded', () => {
             });
         }
 
+        if (currentModule === 'Bank Statements' || currentModule === 'Cash Entries') {
+            calculateRollingBalances();
+        }
         renderVirtualGridRows();
         // Defer recalc until AFTER browser paints all virtual rows — prevents race conditions
         requestAnimationFrame(() => recalcGrandTotals());
@@ -4210,13 +4213,18 @@ document.addEventListener('DOMContentLoaded', () => {
     function getRowGroupAndAccount(r) {
         const m_ledger = (r.mapped_ledger || "").trim();
         const isSuspense = !m_ledger || m_ledger.toUpperCase() === 'SUSPENSE ACCOUNT' || m_ledger.toUpperCase() === 'SUSPENSE';
-        let rawGrp = (r.group_hint || "").trim();
-        if (!rawGrp) {
-            if (!isSuspense) {
-                rawGrp = inferExpenseGroupHint(r.mapped_ledger, r.transaction_type, r.group_hint);
-            } else {
-                rawGrp = 'Suspense Account';
-            }
+        let rawGrp;
+        if (isSuspense) {
+            rawGrp = 'Suspense Account';
+        } else {
+            // ✅ ALWAYS run inferExpenseGroupHint — not just when group_hint is empty.
+            // This ensures filter counts (groupCounts) match exactly what the table displays.
+            // Previously, the raw backend group_hint (e.g. "Duties & Taxes") was used for counting
+            // while the table display applied inferExpenseGroupHint (e.g. "Sundry Creditors"),
+            // causing filter label ≠ table value mismatch.
+            rawGrp = inferExpenseGroupHint(r.mapped_ledger, r.transaction_type || r.type, r.group_hint);
+            // Fallback: if inferExpenseGroupHint returned empty, use normalised group_hint
+            if (!rawGrp) rawGrp = normalizeAccountingGroup(r.group_hint || 'Suspense Account');
         }
         const rawAcc = isSuspense ? 'Suspense Account' : m_ledger;
         return { group: rawGrp, account: rawAcc, isSuspense: isSuspense };
@@ -4431,7 +4439,9 @@ document.addEventListener('DOMContentLoaded', () => {
             const txType = (row.transaction_type || row.Transaction_Type || 'Receipt').toLowerCase();
 
             if (currentGridGroupFilter && currentGridGroupFilter !== 'all') {
-                if (info.group.toUpperCase() !== currentGridGroupFilter.trim().toUpperCase()) return false;
+                const cleanRowGrp = (info.group || '').replace(/\s*\(.*?\)/g, '').trim().toUpperCase();
+                const cleanFilterGrp = (currentGridGroupFilter || '').replace(/\s*\(.*?\)/g, '').trim().toUpperCase();
+                if (cleanRowGrp !== cleanFilterGrp && info.group.toUpperCase() !== currentGridGroupFilter.trim().toUpperCase()) return false;
             }
 
             if (currentGridAccountFilter && currentGridAccountFilter !== 'all') {
@@ -4691,7 +4701,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     const key = name.toUpperCase();
                     if (!seen.has(key)) {
                         seen.add(key);
-                        const grp = r.group_hint || inferExpenseGroupHint(name, r.transaction_type, null);
+                        const grp = inferExpenseGroupHint(name, r.transaction_type, r.group_hint);
                         optionsHtml += `<option value="${name}">${grp}</option>`;
                     }
                 }
@@ -5166,8 +5176,8 @@ document.addEventListener('DOMContentLoaded', () => {
         if (gUp.includes('CREDITOR') || gUp.includes('SUPPLIER') || gUp === 'G0000013') return 'Sundry Creditors';
         if (gUp.includes('DEBTOR') || gUp.includes('CUSTOMER') || gUp === 'G0000009') return 'Sundry Debtors';
 
-        // Statutory & Taxes
-        if (gUp.includes('DUTIES') || gUp.includes('TAX') || gUp.includes('GST') || gUp === 'G0000014') return 'Duties & Taxes';
+        // Statutory & Taxes — use precise checks ONLY, not broad .includes('TAX') which would match 'EXACT TRADERS'
+        if (gUp.includes('DUTIES') || gUp === 'DUTIES & TAXES' || gUp.includes('TAX LIABILIT') || gUp.includes('GST LIABILIT') || gUp === 'G0000014') return 'Duties & Taxes';
 
         // Banks & Cash
         if (gUp.includes('CASH') || gUp === 'G0000005') return 'Cash in Hand';
@@ -5204,13 +5214,14 @@ document.addEventListener('DOMContentLoaded', () => {
             return 'Indirect Expenses';
         }
 
-        // 1. Commercial Business Entity Check (Industries, Traders, Enterprises, Pvt Ltd, LLP, Products)
-        const isCommercialEntity = /\b(INDUSTRIES|TRADERS|ENTERPRISES|ENTERPRISE|PVT|PRIVATE|LIMITED|LTD|LLP|DISTRIBUTORS|PRODUCTS|AGENCIES|SUPPLIERS|MART|STORE|STORES|MANUFACTURING|CORP|CO)\b/i.test(legUp);
-        if (isCommercialEntity) {
-            return isReceipt ? 'Sundry Debtors' : 'Sundry Creditors';
+        // 0.1 ABSOLUTE TOP PRIORITY: Bank Interest, Interest Received, Savings Interest (Indirect Income for Receipts)
+        if (/\b(INT|INTREST|INTEREST|BANK INTREST|BANK INTEREST|CREDIT INT|SAVINGS INT|FD INT)\b/i.test(legUp)) {
+            return isPayment ? 'Indirect Expenses' : 'Indirect Income';
         }
 
         // 2. Check master Miracle ledgers (clientLedgers) loaded from RKACCM01 DBF (Ground Truth)
+        // Uses 'classification' from RKACCM11 group hierarchy walk (Bank, Expense, Debtor, Creditor, Investment, etc.)
+        // NO hardcoded keyword lists — the accounting group nature IS the truth.
         if (typeof clientLedgers !== 'undefined' && clientLedgers && clientLedgers.length > 0 && legUp && legUp !== 'SUSPENSE ACCOUNT') {
             const masterMatch = clientLedgers.find(l =>
                 (l.name || '').trim().toUpperCase() === legUp ||
@@ -5218,15 +5229,37 @@ document.addEventListener('DOMContentLoaded', () => {
             );
             if (masterMatch && masterMatch.group_name && masterMatch.group_name.toUpperCase() !== 'UNKNOWN' && masterMatch.group_name.toUpperCase() !== 'MIRACLE MASTER') {
                 const normGroup = normalizeAccountingGroup(masterMatch.group_name);
-                if (/BANK CHARG|BANK CHAG|SMS CHARG|ALERTCHG|INSTAALERT/i.test(legUp)) {
-                    return 'Indirect Expenses';
+                // Read the DBF hierarchy-resolved classification (Bank/Expense/Debtor/Creditor/Investment/Capital/Cash...)
+                const dbfClass = (masterMatch.classification || '').trim();
+
+                // 🏦 BANK IDENTITY GUARD — trust RKACCM11 hierarchy walk above all else:
+                // If the DBF hierarchy walk resolved this ledger as 'Bank', it IS a real bank account.
+                // Many clients have bank ledgers wrongly assigned to incorrect groups in Miracle (e.g. "Direct Income"),
+                // but the RKACCM11 parent-chain walk correctly identifies them as Bank via group ancestry.
+                // RULE: dbfClass='Bank' → ALWAYS Bank Accounts (bank ledger is bank ledger, regardless of wrong group_name in client books).
+                if (dbfClass === 'Bank') {
+                    return 'Bank Accounts';
                 }
-                // Double-Entry Guard on master match: A Receipt cannot be an expense group
+
+                // 💵 CASH IDENTITY GUARD — similarly trust Cash classification
+                if (dbfClass === 'Cash') {
+                    return 'Cash-in-Hand';
+                }
+
+                // 🛡️ DOUBLE-ENTRY DIRECTION GUARD (accounting invariant — no keywords needed):
+                // CR (Receipt) can NEVER be an Expense group — override to Sundry Debtors
                 if (isReceipt && (normGroup === 'Indirect Expenses' || normGroup === 'Direct Expenses' || normGroup === 'Purchase Accounts')) {
                     if (!/REFUND|REVERSAL|CASHBACK|RETURN/i.test(legUp)) {
                         return 'Sundry Debtors';
                     }
                 }
+                // DR (Payment) can NEVER be an Income group — override to Sundry Creditors
+                if (isPayment && (normGroup === 'Indirect Income' || normGroup === 'Direct Income' || normGroup === 'Sales Accounts')) {
+                    if (!/REFUND|REVERSAL|RETURN/i.test(legUp)) {
+                        return 'Sundry Creditors';
+                    }
+                }
+
                 return normGroup;
             }
         }
@@ -5276,7 +5309,7 @@ document.addEventListener('DOMContentLoaded', () => {
         // 8. Regex signals for expenses/utilities/parking/transport/investments/banks
         const isKnownExpense = /\b(PARKING|PARKING CHG|PARKING CHARGES|PARKING FEE|PARKING EXPENSE|TOLL|TOLL TAX|FASTAG|NETC FASTAG|TPT|TRANS|TRANSPORT|EXPENSE|EXPENSES|OTHER EXPENSE|KASAR|SALARY|SALARIES|WAGES|STIPEND|BONUS|PF|ESI|REMUNERATION|PETROL|DIESEL|FUEL|RENT|ELECTRICITY|POWER|WATER|TELEPHONE|MOBILE|INTERNET|BROADBAND|PRINTING|STATIONERY|FOOD|SNACKS|STAFF|REPAIR|SERVICE|MAINTENANCE|CONVEYANCE|COURIER|ADVERTISEMENT|MARKETING|SOFTWARE|AUDIT|LEGAL|BANK CHARG|CHARGES|DISCOUNT|ZOMATO|SWIGGY|BLINKIT|ZEPTO|INSTAMART|CRED|DUNZO|BIGBASKET|URBAN COMPANY|URBANCLAP|HOUSEJOY|SULEKHA|MILKBASKET)\b/i.test(legUp);
         const isKnownBankCharge = /NACH CHARGE|ECS CHARGE|ACH CHARGE|MANDATE CHARGE|BILL PAYMENT|INSURANCE PREMIUM|NACH DEBIT/i.test(legUp);
-        const isKnownInvestment = /\b(GROWW|ZERODHA|UPSTOX|SHARE KHAN|ANGEL BROKING|KOTAK SEC|ICICI DIRECT|HDFC SEC|PAYTM MONEY|MUTUAL FUND|SIP AUTO|DEMAT|NEXTBILLION|INDIAN CLEARING|CLEARING CORP|NSCCL|BSCCL|ICCL)\b/i.test(legUp);
+        const isKnownInvestment = /\b(GROWW|ZERODHA|UPSTOX|SHAREKHAN|SHARE KHAN|ANGEL BROKING|ANGEL ONE|5PAISA|KOTAK SEC|ICICI DIRECT|HDFC SEC|PAYTM MONEY|SMALLCASE|INDMONEY|ETMONEY|MUTUAL FUND|MUTUAL FUNDS|MF|SIP|SIP AUTO|DEMAT|NEXTBILLION|INDIAN CLEARING|CLEARING CORP|NSCCL|BSCCL|ICCL|CAMS|KFINTECH|KARVY|CDSL|NSDL|NIPPON|PARAG PARIKH|PPFAS|MIRAE ASSET|MOTILAL OSWAL|DSP|SUNDARAM|UTI|QUANT|BANDHAN|FIXED DEPOSIT|TERM DEPOSIT|FD|SGB|SOVEREIGN GOLD|PPF|SUKANYA|KVP|NSC)\b/i.test(legUp);
         const isKnownBank = /^(HDFC|ICICI|AXIS|SBI|IDFC|KOTAK|INDUSIND|BANK OF BARODA|UNION BANK|CANARA BANK|PUNJAB NATIONAL|CENTRAL BANK|BANK OF INDIA)/i.test(legUp);
         const isEcom = /\b(AMAZON|FLIPKART|MYNTRA|MEESHO|SNAPDEAL|NYKAA|AJIO)\b/i.test(legUp);
 
@@ -5298,7 +5331,11 @@ document.addEventListener('DOMContentLoaded', () => {
             resolvedGroup = 'Trading Account';
         } else if (/RESERVES & SURPLUS|RESERVE & SURPLUS/i.test(legUp)) {
             resolvedGroup = 'Reserves & Surplus';
-        } else if (/DRAWING|PERSONAL|CAPITAL|MOM|WIFE|SELF|FAMILY|LIC|MEDICLAIM/i.test(legUp)) {
+        } else if (/\b(HOME LOAN|AUTO LOAN|CAR LOAN|PERSONAL LOAN|BANK LOAN|TERM LOAN|MORTGAGE|HOUSING LOAN)\b/i.test(legUp)) {
+            resolvedGroup = 'Secured Loans';
+        } else if (/\b(LIC|LIC OF INDIA|LIFE INSURANCE|INSURANCE PREMIUM|MEDICLAIM|HEALTH INSURANCE)\b/i.test(legUp)) {
+            resolvedGroup = isPayment ? 'Capital Account / Drawings' : 'Indirect Income';
+        } else if (/DRAWING|PERSONAL|CAPITAL|MOM|WIFE|SELF|FAMILY/i.test(legUp)) {
             resolvedGroup = 'Capital Account / Drawings';
         } else {
             // EXPLICIT USER ROW HINT: Respect explicit non-placeholder row hints
@@ -5312,7 +5349,13 @@ document.addEventListener('DOMContentLoaded', () => {
             if (!isSystemPlaceholder) {
                 resolvedGroup = normalizeAccountingGroup(rowHint);
             } else {
-                resolvedGroup = isPayment ? 'Sundry Creditors' : 'Sundry Debtors';
+                // Commercial Business Entity Fallback Check (Industries, Traders, Enterprises, Pvt Ltd, LLP)
+                const isCommercialEntity = /\b(INDUSTRIES|TRADERS|ENTERPRISES|ENTERPRISE|PVT|PRIVATE|LIMITED|LTD|LLP|DISTRIBUTORS|PRODUCTS|AGENCIES|SUPPLIERS|MART|STORE|STORES|MANUFACTURING|CORP|CO)\b/i.test(legUp);
+                if (isCommercialEntity) {
+                    resolvedGroup = isReceipt ? 'Sundry Debtors' : 'Sundry Creditors';
+                } else {
+                    resolvedGroup = isPayment ? 'Sundry Creditors' : 'Sundry Debtors';
+                }
             }
         }
 
@@ -5325,6 +5368,10 @@ document.addEventListener('DOMContentLoaded', () => {
         } else if (isPayment && (resolvedGroup === 'Indirect Income' || resolvedGroup === 'Direct Income' || resolvedGroup === 'Sales Accounts')) {
             if (!/REFUND|REVERSAL|RETURN/i.test(legUp)) {
                 resolvedGroup = legUp ? 'Sundry Creditors' : 'Indirect Expenses';
+            }
+        } else if (isPayment && resolvedGroup === 'Sundry Debtors') {
+            if (!/REFUND|ADVANCE|LOAN|REVERSAL|RETURN/i.test(legUp)) {
+                resolvedGroup = 'Sundry Creditors';
             }
         }
 
@@ -5424,15 +5471,23 @@ document.addEventListener('DOMContentLoaded', () => {
 
         let flagsHtml = '';
         if (row.flags && row.flags.length > 0) {
-            flagsHtml = `
-                <div class="mt-1 flex flex-wrap gap-1 justify-center max-w-[150px]">
-                    ${row.flags.map(f => `
-                        <span class="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold bg-red-500/10 text-red-400 border border-red-500/15" title="${f}">
-                            ${f}
-                        </span>
-                    `).join('')}
-                </div>
-            `;
+            const activeFlags = row.flags.filter(f => {
+                if (f.includes('Low Confidence') && (cScore >= 80 || row.status === 'Ready' || (row.mapped_ledger && row.mapped_ledger !== 'Suspense Account'))) {
+                    return false;
+                }
+                return true;
+            });
+            if (activeFlags.length > 0) {
+                flagsHtml = `
+                    <div class="mt-1 flex flex-wrap gap-1 justify-center max-w-[150px]">
+                        ${activeFlags.map(f => `
+                            <span class="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold bg-red-500/10 text-red-400 border border-red-500/15" title="${f}">
+                                ${f}
+                            </span>
+                        `).join('')}
+                    </div>
+                `;
+            }
         }
 
         let statusColor = 'text-amber-500 bg-amber-500/10 border-amber-500/20';
@@ -5586,7 +5641,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 ? (Math.abs(row.calculated_balance).toLocaleString('en-IN', { minimumFractionDigits: 2 }) + (row.calculated_balance > 0 ? ' Dr' : (row.calculated_balance < 0 ? ' Cr' : '')))
                 : '0.00';
             const balColor = row.calculated_balance > 0 ? 'text-emerald-400 font-bold' : (row.calculated_balance < 0 ? 'text-rose-400 font-bold' : 'text-slate-400');
-            const rowGroup = row.group_hint || inferExpenseGroupHint(row.mapped_ledger, row.transaction_type, autoCreateLedgerHints[(row.mapped_ledger || '').toUpperCase().trim()]);
+            const rowGroup = inferExpenseGroupHint(row.mapped_ledger, row.transaction_type, row.group_hint || autoCreateLedgerHints[(row.mapped_ledger || '').toUpperCase().trim()]);
+            row.group_hint = rowGroup;
 
             html = `
                 <td class="px-2 py-2 text-center border-r border-slate-800/30" style="width:40px;min-width:40px">

@@ -84,8 +84,12 @@ class BankEntityRecognizer:
                 continue
             tokens.append(w)
         
-        # Single Short Word Specificity Guard: Reject generic single words < 5 chars (e.g. 'RAM', 'JAY', 'ROY')
-        if len(tokens) == 1 and len(tokens[0]) < 5 and tokens[0].upper() not in ('CRED', 'PGCL'):
+        # Single Short Word Specificity Guard: Preserve valid accounting entities (LIC, LOAN, TDS, TAX, RENT, FUEL, EMI, PF, ESI, GST, etc.)
+        valid_short_entities = (
+            'CRED', 'PGCL', 'LIC', 'LOAN', 'TDS', 'TAX', 'RENT', 'FUEL', 'EMI',
+            'PF', 'ESI', 'GST', 'CASH', 'AUTO', 'IOCL', 'BPCL', 'HPCL', 'AMUL', 'DTH'
+        )
+        if len(tokens) == 1 and len(tokens[0]) < 5 and tokens[0].upper() not in valid_short_entities:
             clean_vendor = ""
         else:
             clean_vendor = " ".join(tokens).title()

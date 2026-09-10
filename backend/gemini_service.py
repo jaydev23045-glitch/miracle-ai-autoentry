@@ -86,8 +86,6 @@ def _save_exhausted_models_cache(cache: dict):
 
 _EXHAUSTED_MODELS_CACHE = _load_exhausted_models_cache()
 
-import hashlib
-
 
 def _make_key_model_cache_key(api_key: str | None, model_name: str) -> str:
     k_hash = hashlib.md5((api_key or "default").encode("utf-8")).hexdigest()[:12]
@@ -173,8 +171,18 @@ class LegacyGenerativeAIClientWrapper:
         def generate_content(self, model: str, contents, config=None):
             if genai and hasattr(genai, "GenerativeModel"):
                 m = genai.GenerativeModel(model_name=model)
-                res = m.generate_content(contents)
-                return res
+                gen_config = None
+                if config:
+                    mime = getattr(config, "response_mime_type", None) or (
+                        config.get("response_mime_type")
+                        if isinstance(config, dict)
+                        else None
+                    )
+                    if mime:
+                        gen_config = {"response_mime_type": mime}
+                if gen_config:
+                    return m.generate_content(contents, generation_config=gen_config)
+                return m.generate_content(contents)
             raise RuntimeError("Gemini SDK not available")
 
     @property
@@ -191,28 +199,23 @@ class LegacyGenerativeAIClientWrapper:
         )
 
 
-# Bounded Thread-Safe Spec File Cache: {md5_hash: distilled_rules_text}
-_SPEC_FILE_CACHE: dict = {}
-_SPEC_FILE_CACHE_LOCK = threading.Lock()
-_SPEC_FILE_CACHE_MAX_SIZE = 100
-
-def _get_cached_spec(file_hash: str) -> str | None:
-    with _SPEC_FILE_CACHE_LOCK:
-        return _SPEC_FILE_CACHE.get(file_hash)
-
-def _store_cached_spec(file_hash: str, result_text: str):
-    with _SPEC_FILE_CACHE_LOCK:
-        if len(_SPEC_FILE_CACHE) >= _SPEC_FILE_CACHE_MAX_SIZE:
-            # Evict oldest entry (LRU simple pop)
-            try:
-                first_key = next(iter(_SPEC_FILE_CACHE))
-                del _SPEC_FILE_CACHE[first_key]
-            except Exception:
-                _SPEC_FILE_CACHE.clear()
-        _SPEC_FILE_CACHE[file_hash] = result_text
+# Bounded Thread-Safe Spec File Cache & Modular Submodule Imports
+from gemini_utils import (
+    get_cached_spec as _get_cached_spec,
+    store_cached_spec as _store_cached_spec,
+    repair_json_string,
+    is_valid_ledger_match,
+    get_cached_prompt_static_parts,
+)
+from transaction_classifier import classify_transaction_nature
+from party_extractor import extract_clean_party_from_narration
 
 
 class GeminiService:
+    repair_json_string = staticmethod(repair_json_string)
+    _is_valid_ledger_match = staticmethod(is_valid_ledger_match)
+    extract_clean_party_from_narration = staticmethod(extract_clean_party_from_narration)
+    classify_transaction_nature = staticmethod(classify_transaction_nature)
     def __init__(
         self,
         api_key: str | None = None,
@@ -1165,7 +1168,7 @@ class GeminiService:
                         return "Secured Loans"
                     return "Bank Accounts"
                 else:
-                    if any(k in text for k in ["INTEREST", "INT CR", "CREDIT INT"]):
+                    if any(k in text or k in p_upper for k in ["INTEREST", "INTREST", "INT CR", "CREDIT INT", "INT ", "INT/", "INT-", "INT.", "BANK INT"]):
                         return "Indirect Income"
                     if is_large_amt and is_round_amt:
                         return "Secured Loans"  # Likely loan disbursement
@@ -1608,6 +1611,14 @@ class GeminiService:
                         res = active_client.models.generate_content(
                             model=active_model, contents=contents
                         )
+                    # Token usage logging (Issue #17 Fix)
+                    if hasattr(res, "usage_metadata") and res.usage_metadata:
+                        p_tok = getattr(res.usage_metadata, "prompt_token_count", 0)
+                        c_tok = getattr(res.usage_metadata, "candidates_token_count", 0)
+                        t_tok = getattr(res.usage_metadata, "total_token_count", 0)
+                        print(
+                            f"📊 [Token Usage] Model: '{active_model}' | Prompt: {p_tok} | Output: {c_tok} | Total: {t_tok}"
+                        )
                     # Update active key index on clean success with thread safety to rotate keys dynamically
                     with self._key_lock:
                         self.current_key_idx = (actual_idx + 1) % len(keys_pool)
@@ -1721,10 +1732,17 @@ class GeminiService:
                     )
 
                     if is_transient:
-                        print(
-                            f"⚠️ Key #{actual_idx + 1} transient network error: {e}. Retrying next key..."
+                        network_retry_count = getattr(self, "_net_retry_cnt", 0) + 1
+                        self._net_retry_cnt = network_retry_count
+                        backoff = min(
+                            initial_backoff * (2 ** (network_retry_count - 1))
+                            + random.uniform(0, 0.5),
+                            30.0,
                         )
-                        time.sleep(0.3)
+                        print(
+                            f"⚠️ Key #{actual_idx + 1} transient network error: {e}. Exponential backoff {backoff:.2f}s (Attempt #{network_retry_count}). Retrying..."
+                        )
+                        time.sleep(backoff)
                         continue
                     else:
                         raise e
@@ -2254,44 +2272,42 @@ Return your response ONLY as a JSON object matching this schema:
 
         pdf_extracted = False
         try:
-            import pdfplumber
+            import pypdf
 
-            with pdfplumber.open(file_path) as pdf:
-                total_p = len(pdf.pages)
-                if total_p < 2:
-                    return "forward"
+            reader = pypdf.PdfReader(file_path)
+            total_p = len(reader.pages)
+            if total_p < 2:
+                return "forward"
 
-                # Check first page
-                first_txt = pdf.pages[0].extract_text() or ""
-                first_page_dates = extract_dates(first_txt)
+            first_txt = reader.pages[0].extract_text() or ""
+            first_page_dates = extract_dates(first_txt)
 
-                # Scan backwards from the end to find the first page that contains any dates
-                for idx in range(total_p - 1, -1, -1):
-                    last_txt = pdf.pages[idx].extract_text() or ""
-                    last_page_dates = extract_dates(last_txt)
-                    if last_page_dates:
-                        break
-                pdf_extracted = True
-        except Exception:
+            for idx in range(total_p - 1, -1, -1):
+                last_txt = reader.pages[idx].extract_text() or ""
+                last_page_dates = extract_dates(last_txt)
+                if last_page_dates:
+                    break
+            pdf_extracted = True
+        except Exception as e:
             pdf_extracted = False
 
         if not pdf_extracted:
             try:
-                import pypdf
+                import pdfplumber
 
-                reader = pypdf.PdfReader(file_path)
-                total_p = len(reader.pages)
-                if total_p < 2:
-                    return "forward"
+                with pdfplumber.open(file_path) as pdf:
+                    total_p = len(pdf.pages)
+                    if total_p < 2:
+                        return "forward"
 
-                first_txt = reader.pages[0].extract_text() or ""
-                first_page_dates = extract_dates(first_txt)
+                    first_txt = pdf.pages[0].extract_text() or ""
+                    first_page_dates = extract_dates(first_txt)
 
-                for idx in range(total_p - 1, -1, -1):
-                    last_txt = reader.pages[idx].extract_text() or ""
-                    last_page_dates = extract_dates(last_txt)
-                    if last_page_dates:
-                        break
+                    for idx in range(total_p - 1, -1, -1):
+                        last_txt = pdf.pages[idx].extract_text() or ""
+                        last_page_dates = extract_dates(last_txt)
+                        if last_page_dates:
+                            break
             except Exception as e:
                 print(f"⚠️ Chronology detection failed: {e}")
                 return "unknown"
@@ -2607,7 +2623,8 @@ Return your response ONLY as a JSON object matching this schema:
             except Exception as _cat_err:
                 print(f"  [Catalog Injection] Skipped: {_cat_err}")
 
-        prompt = f"""You are an Expert AI Accountant extracting structured financial data for the '{module}' module.
+        header, _ = get_cached_prompt_static_parts(module, rules_str, schema_str)
+        prompt = f"""{header}
 
 {rules_str}
 {catalog_injection}
@@ -2771,7 +2788,8 @@ Return the extracted data EXACTLY following this JSON schema. Do not output anyt
                                         return False, msg
                                 if cur_date:
                                     prev_date = cur_date
-                    except:
+                    except Exception as _ex:
+                        print(f"   [Chunk Math Check Exception] Error verifying row {idx+1}: {_ex}")
                         pass
                 return True, ""
 
@@ -4282,13 +4300,16 @@ Return ONLY valid JSON.
             "BANK TRANSFER",
         }
 
-        ledger_group_map = {}  # UPPER -> Exact Group Name from Miracle DBF
+        ledger_group_map = {}          # UPPER -> Exact Group Name from Miracle DBF
+        ledger_classification_map = {}  # UPPER -> DBF classification (Bank/Expense/Debtor/Creditor/...) from RKACCM11 hierarchy walk
         for leg in existing_ledgers:
             name = ""
             group_name = ""
+            dbf_classification = ""
             if isinstance(leg, dict):
                 name = leg.get("name", "").strip()
                 group_name = str(leg.get("group_name", "")).strip()
+                dbf_classification = str(leg.get("classification", "")).strip()
             elif isinstance(leg, str):
                 name = leg.strip()
             if name:
@@ -4337,6 +4358,9 @@ Return ONLY valid JSON.
                 if group_name:
                     ledger_group_map[name_up] = group_name
                     ledger_group_map[display_name.upper()] = group_name
+                if dbf_classification:
+                    ledger_classification_map[name_up] = dbf_classification
+                    ledger_classification_map[display_name.upper()] = dbf_classification
 
         if not ledger_names:
             ledger_names = [
@@ -4424,6 +4448,14 @@ Return ONLY valid JSON.
 
         # ── Expanded Banking Keyword Intelligence (25 categories) ─────────────
         KEYWORD_RULES = [
+            (
+                ["SBIMOPS", "MOPS", "E-CHALLAN SBIMOPS", "SBIMOPS SBIN", "MOPS PAYMENT"],
+                ["SBIMOPS", "INDIRECT EXPENSES", "DUTIES & TAXES"],
+            ),
+            (
+                ["GOOGLE PLAY", "PLAY STORE", "GOOGLE PLAYSTORE", "APP STORE", "ITUNES", "MICROSOFT", "ADOBE"],
+                ["Google Play", "SOFTWARE SUBSCRIPTION", "INDIRECT EXPENSES"],
+            ),
             (
                 [
                     "PETROL",
@@ -4814,6 +4846,14 @@ Return ONLY valid JSON.
                 if stmt_brand and stmt_brand in name_up and "BANK" in name_up:
                     continue
 
+                # Semantic Mismatch Guard: Prevent matching App Store / Digital Expenses ("PLAY", "PLAYSTORE", "APPSTORE") to Payment Wallets ("GOOGLE PAY", "PAYTM")
+                if ("PLAY" in entity_up or "APP STORE" in entity_up) and ("PAY" in name_up and "PLAY" not in name_up):
+                    continue
+
+                # Semantic Mismatch Guard: Prevent matching Govt Tax / Portal Fees ("SBIMOPS", "MOPS", "CHALLAN") to Bank Account Ledgers
+                if any(gkw in entity_up for gkw in ["SBIMOPS", "MOPS", "CHALLAN", "GSTPMT"]) and any(bkw in name_up for bkw in ["BANK", "A/C", "ACCOUNT"]):
+                    continue
+
                 # a) Token Jaccard
                 ledger_tokens = set(w for w in name_up.split() if len(w) >= 3)
                 if not ledger_tokens:
@@ -5106,9 +5146,17 @@ Return ONLY valid JSON.
                         narr, matched_ledger, tx_type, amount=float(row.get("amount", 0) or 0)
                     )
 
-                # Strict Accounting Group Guard: Block Bank Accounts (G0000004) from counterparty auto-creation
+                # 🏦 BANK IDENTITY GUARD — trust RKACCM11 hierarchy classification above all else:
+                # If dbf_cls='Bank' → this ledger IS a real bank account (e.g. Saurashtra Gramin Bank).
+                # Client may have assigned wrong group_name in Miracle, but the RKACCM11 walk correctly identifies it.
+                # RULE: dbf_cls='Bank' → keep group_hint as Bank Accounts regardless of group_name in client's books.
                 gh_upper = str(row.get("group_hint", "")).upper()
-                if "BANK" in gh_upper and not any(b in matched_ledger.upper() for b in ["HDFC", "ICICI", "SBI", "AXIS", "KOTAK", "CANARA", "UNION", "BARODA", "PNB", "IDBI", "FEDERAL", "INDUSIND", "BANK OF"]):
+                dbf_cls_for_matched = ledger_classification_map.get(matched_ledger.upper(), "")
+                if dbf_cls_for_matched == "Bank":
+                    # Real bank ledger — ensure group_hint reflects Bank Accounts
+                    row["group_hint"] = "Bank Accounts"
+                elif "BANK" in gh_upper and dbf_cls_for_matched not in ("Bank", ""):
+                    # group_hint says Bank but DBF hierarchy says it is NOT a bank → re-route by direction
                     row["group_hint"] = "Sundry Creditors" if tx_type == "Payment" else "Sundry Debtors"
 
                 # Cash Accounting Guard: Force Cash in Hand for cash deposits/withdrawals/received
@@ -6118,17 +6166,21 @@ INSTRUCTIONS:
                 narr = str(r.get("narration") or "").strip()
                 tx_type = str(r.get("type") or "Receipt").strip()
 
-                # Build map of existing master ledgers to their Miracle DBF groups
+                # Build map of existing master ledgers to their Miracle DBF groups and classifications
                 ledger_group_map = {}
+                ledger_classification_map = {}  # UPPER -> DBF classification from RKACCM11 hierarchy walk
                 for leg in existing_ledgers:
                     if (
                         isinstance(leg, dict)
                         and leg.get("name")
                         and leg.get("group_name")
                     ):
-                        ledger_group_map[leg["name"].strip().upper()] = str(
+                        leg_key = leg["name"].strip().upper()
+                        ledger_group_map[leg_key] = str(
                             leg["group_name"]
                         ).strip()
+                        if leg.get("classification"):
+                            ledger_classification_map[leg_key] = str(leg["classification"]).strip()
 
                 # 1. First try Gemini AI resolved mapping with strict 80% CA Confidence Safeguard & Generic Group Rejection
                 mapped_success = False
