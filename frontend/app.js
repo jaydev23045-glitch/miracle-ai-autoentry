@@ -4321,100 +4321,212 @@ document.addEventListener('DOMContentLoaded', () => {
     function renderFilterBadgesForModule() {
         const group = document.getElementById('filterBadgesGroup');
         const searchInput = document.getElementById('gridSearchInput');
+        const resetBtn = document.getElementById('resetGridFiltersBtn');
+        const clearSearchBtn = document.getElementById('clearGridSearchBtn');
         if (!group) return;
+
+        // Show/hide reset button based on whether any filter is active
+        const isFiltered = (currentGridFilter && currentGridFilter !== 'all') ||
+                           (currentGridSearch && currentGridSearch !== '') ||
+                           (currentGridGroupFilter && currentGridGroupFilter !== 'all') ||
+                           (currentGridAccountFilter && currentGridAccountFilter !== 'all');
+        if (resetBtn) {
+            if (isFiltered) resetBtn.classList.remove('hidden');
+            else resetBtn.classList.add('hidden');
+        }
+
+        if (clearSearchBtn) {
+            if (currentGridSearch && currentGridSearch !== '') clearSearchBtn.classList.remove('hidden');
+            else clearSearchBtn.classList.add('hidden');
+        }
+
+        const createBadge = (filterKey, icon, label, countId, activeStyle, defaultStyle, countActiveStyle, countDefaultStyle) => {
+            const isActive = currentGridFilter === filterKey;
+            const style = isActive ? activeStyle : defaultStyle;
+            const countStyle = isActive ? countActiveStyle : countDefaultStyle;
+            return `
+                <button class="grid-filter-btn group ${style} text-xs font-bold px-3 py-1.5 rounded-full border transition-all duration-200 whitespace-nowrap flex items-center gap-1.5 shrink-0 select-none cursor-pointer" data-filter="${filterKey}">
+                    <i class="${icon}"></i>
+                    <span>${label}</span>
+                    <span id="${countId}" class="px-2 py-0.5 text-[10px] font-black rounded-full transition-colors duration-200 ${countStyle}">0</span>
+                </button>
+            `;
+        };
+
+        const divider = `<div class="h-4 w-px bg-slate-800/80 my-auto shrink-0 mx-0.5"></div>`;
 
         let badgesHtml = '';
         if (currentModule === 'Sales') {
             if (searchInput) searchInput.placeholder = "Search invoice #, party, GSTIN, HSN, amount...";
-            badgesHtml = `
-                <button class="grid-filter-btn ${currentGridFilter === 'all' ? 'active bg-brand-600/20 text-brand-400 border-brand-500/30' : 'border-slate-800 text-slate-400 hover:text-white'} text-xs font-bold px-2.5 py-1 rounded-lg border transition whitespace-nowrap" data-filter="all">
-                    All Sales (<span id="countFilterAll">0</span>)
-                </button>
-                <button class="grid-filter-btn ${currentGridFilter === 'b2b' ? 'active bg-brand-600/20 text-brand-400 border-brand-500/30' : 'border-slate-800 text-slate-400 hover:text-white'} text-xs font-bold px-2.5 py-1 rounded-lg border transition whitespace-nowrap" data-filter="b2b">
-                    <i class="fa-solid fa-building-circle-check text-cyan-400 mr-1"></i> B2B Registered (<span id="countFilterB2B">0</span>)
-                </button>
-                <button class="grid-filter-btn ${currentGridFilter === 'b2c' ? 'active bg-brand-600/20 text-brand-400 border-brand-500/30' : 'border-slate-800 text-slate-400 hover:text-white'} text-xs font-bold px-2.5 py-1 rounded-lg border transition whitespace-nowrap" data-filter="b2c">
-                    <i class="fa-solid fa-user text-indigo-400 mr-1"></i> B2C Retail (<span id="countFilterB2C">0</span>)
-                </button>
-                <button class="grid-filter-btn ${currentGridFilter === 'discount' ? 'active bg-brand-600/20 text-brand-400 border-brand-500/30' : 'border-slate-800 text-slate-400 hover:text-white'} text-xs font-bold px-2.5 py-1 rounded-lg border transition whitespace-nowrap" data-filter="discount">
-                    <i class="fa-solid fa-percent text-emerald-400 mr-1"></i> With Discount (<span id="countFilterDiscount">0</span>)
-                </button>
-                <button class="grid-filter-btn ${currentGridFilter === 'gst_5' ? 'active bg-brand-600/20 text-brand-400 border-brand-500/30' : 'border-slate-800 text-slate-400 hover:text-white'} text-xs font-bold px-2.5 py-1 rounded-lg border transition whitespace-nowrap" data-filter="gst_5">
-                    <i class="fa-solid fa-tag text-cyan-400 mr-1"></i> 5% GST (<span id="countFilterGst5">0</span>)
-                </button>
-                <button class="grid-filter-btn ${currentGridFilter === 'gst_0' ? 'active bg-brand-600/20 text-brand-400 border-brand-500/30' : 'border-slate-800 text-slate-400 hover:text-white'} text-xs font-bold px-2.5 py-1 rounded-lg border transition whitespace-nowrap" data-filter="gst_0">
-                    <i class="fa-solid fa-ban text-slate-400 mr-1"></i> 0% Exempt (<span id="countFilterGst0">0</span>)
-                </button>
-                <button class="grid-filter-btn ${currentGridFilter === 'igst' ? 'active bg-brand-600/20 text-brand-400 border-brand-500/30' : 'border-slate-800 text-slate-400 hover:text-white'} text-xs font-bold px-2.5 py-1 rounded-lg border transition whitespace-nowrap" data-filter="igst">
-                    <i class="fa-solid fa-plane-departure text-purple-400 mr-1"></i> Inter-State IGST (<span id="countFilterIGST">0</span>)
-                </button>
-                <button class="grid-filter-btn ${currentGridFilter === 'gst_mismatch' ? 'active bg-rose-600/20 text-rose-400 border-rose-500/30' : 'border-slate-800 text-slate-400 hover:text-white'} text-xs font-bold px-2.5 py-1 rounded-lg border transition whitespace-nowrap" data-filter="gst_mismatch">
-                    <i class="fa-solid fa-triangle-exclamation text-rose-400 mr-1"></i> GST Mismatch (<span id="countFilterGstMismatch">0</span>)
-                </button>
-                <button class="grid-filter-btn ${currentGridFilter === 'autocreate_item' ? 'active bg-cyan-600/20 text-cyan-400 border-cyan-500/30' : 'border-slate-800 text-slate-400 hover:text-white'} text-xs font-bold px-2.5 py-1 rounded-lg border transition whitespace-nowrap" data-filter="autocreate_item">
-                    <i class="fa-solid fa-boxes-packing text-cyan-400 mr-1"></i> Unmapped Items (<span id="countFilterAutoItem">0</span>)
-                </button>
-                <button class="grid-filter-btn ${currentGridFilter === 'review' ? 'active bg-brand-600/20 text-brand-400 border-brand-500/30' : 'border-slate-800 text-slate-400 hover:text-white'} text-xs font-bold px-2.5 py-1 rounded-lg border transition whitespace-nowrap" data-filter="review">
-                    <i class="fa-solid fa-triangle-exclamation text-amber-400 mr-1"></i> Review (<span id="countFilterReview">0</span>)
-                </button>
-            `;
+            badgesHtml = [
+                // All Sales
+                createBadge('all', 'fa-solid fa-list-check text-brand-400', 'All Sales', 'countFilterAll',
+                    'active bg-brand-600/25 text-brand-300 border-brand-500/60 shadow-lg shadow-brand-500/10 ring-1 ring-brand-500/40',
+                    'bg-slate-900/80 border-slate-800 text-slate-300 hover:text-white hover:border-slate-700 hover:bg-slate-800/80',
+                    'bg-brand-500/30 text-brand-200 border border-brand-400/40',
+                    'bg-slate-800/90 text-slate-400 border border-slate-700/60'),
+
+                divider,
+
+                // Party Types
+                createBadge('b2b', 'fa-solid fa-building-circle-check text-cyan-400', 'B2B Registered', 'countFilterB2B',
+                    'active bg-cyan-950/70 text-cyan-300 border-cyan-500/60 shadow-lg shadow-cyan-500/10 ring-1 ring-cyan-500/40',
+                    'bg-slate-900/80 border-slate-800 text-slate-400 hover:text-cyan-300 hover:border-cyan-800/60 hover:bg-slate-800/80',
+                    'bg-cyan-500/30 text-cyan-200 border border-cyan-400/40',
+                    'bg-slate-800/90 text-slate-400 border border-slate-700/60'),
+
+                createBadge('b2c', 'fa-solid fa-user text-indigo-400', 'B2C Retail', 'countFilterB2C',
+                    'active bg-indigo-950/70 text-indigo-300 border-indigo-500/60 shadow-lg shadow-indigo-500/10 ring-1 ring-indigo-500/40',
+                    'bg-slate-900/80 border-slate-800 text-slate-400 hover:text-indigo-300 hover:border-indigo-800/60 hover:bg-slate-800/80',
+                    'bg-indigo-500/30 text-indigo-200 border border-indigo-400/40',
+                    'bg-slate-800/90 text-slate-400 border border-slate-700/60'),
+
+                divider,
+
+                // GST Rates
+                createBadge('gst_5', 'fa-solid fa-tag text-sky-400', '5% GST', 'countFilterGst5',
+                    'active bg-sky-950/70 text-sky-300 border-sky-500/60 shadow-lg shadow-sky-500/10 ring-1 ring-sky-500/40',
+                    'bg-slate-900/80 border-slate-800 text-slate-400 hover:text-sky-300 hover:border-sky-800/60 hover:bg-slate-800/80',
+                    'bg-sky-500/30 text-sky-200 border border-sky-400/40',
+                    'bg-slate-800/90 text-slate-400 border border-slate-700/60'),
+
+                createBadge('gst_0', 'fa-solid fa-ban text-slate-400', '0% Exempt', 'countFilterGst0',
+                    'active bg-slate-800 text-slate-200 border-slate-600 shadow-lg shadow-slate-700/10 ring-1 ring-slate-500/40',
+                    'bg-slate-900/80 border-slate-800 text-slate-400 hover:text-slate-200 hover:border-slate-700 hover:bg-slate-800/80',
+                    'bg-slate-700/60 text-slate-200 border border-slate-600/40',
+                    'bg-slate-800/90 text-slate-400 border border-slate-700/60'),
+
+                createBadge('igst', 'fa-solid fa-plane-departure text-purple-400', 'Inter-State IGST', 'countFilterIGST',
+                    'active bg-purple-950/70 text-purple-300 border-purple-500/60 shadow-lg shadow-purple-500/10 ring-1 ring-purple-500/40',
+                    'bg-slate-900/80 border-slate-800 text-slate-400 hover:text-purple-300 hover:border-purple-800/60 hover:bg-slate-800/80',
+                    'bg-purple-500/30 text-purple-200 border border-purple-400/40',
+                    'bg-slate-800/90 text-slate-400 border border-slate-700/60'),
+
+                divider,
+
+                // Discounts
+                createBadge('discount', 'fa-solid fa-percent text-emerald-400', 'With Discount', 'countFilterDiscount',
+                    'active bg-emerald-950/70 text-emerald-300 border-emerald-500/60 shadow-lg shadow-emerald-500/10 ring-1 ring-emerald-500/40',
+                    'bg-slate-900/80 border-slate-800 text-slate-400 hover:text-emerald-300 hover:border-emerald-800/60 hover:bg-slate-800/80',
+                    'bg-emerald-500/30 text-emerald-200 border border-emerald-400/40',
+                    'bg-slate-800/90 text-slate-400 border border-slate-700/60'),
+
+                divider,
+
+                // Risk & Validation Flags
+                createBadge('gst_mismatch', 'fa-solid fa-triangle-exclamation text-rose-400', 'GST Mismatch', 'countFilterGstMismatch',
+                    'active bg-rose-950/70 text-rose-300 border-rose-500/60 shadow-lg shadow-rose-500/10 ring-1 ring-rose-500/40',
+                    'bg-slate-900/80 border-slate-800 text-slate-400 hover:text-rose-300 hover:border-rose-800/60 hover:bg-slate-800/80',
+                    'bg-rose-500/30 text-rose-200 border border-rose-400/40',
+                    'bg-slate-800/90 text-slate-400 border border-slate-700/60'),
+
+                createBadge('autocreate_item', 'fa-solid fa-boxes-packing text-teal-400', 'Unmapped Items', 'countFilterAutoItem',
+                    'active bg-teal-950/70 text-teal-300 border-teal-500/60 shadow-lg shadow-teal-500/10 ring-1 ring-teal-500/40',
+                    'bg-slate-900/80 border-slate-800 text-slate-400 hover:text-teal-300 hover:border-teal-800/60 hover:bg-slate-800/80',
+                    'bg-teal-500/30 text-teal-200 border border-teal-400/40',
+                    'bg-slate-800/90 text-slate-400 border border-slate-700/60'),
+
+                createBadge('review', 'fa-solid fa-triangle-exclamation text-amber-400', 'Review Needed', 'countFilterReview',
+                    'active bg-amber-950/70 text-amber-300 border-amber-500/60 shadow-lg shadow-amber-500/10 ring-1 ring-amber-500/40',
+                    'bg-slate-900/80 border-slate-800 text-slate-400 hover:text-amber-300 hover:border-amber-800/60 hover:bg-slate-800/80',
+                    'bg-amber-500/30 text-amber-200 border border-amber-400/40',
+                    'bg-slate-800/90 text-slate-400 border border-slate-700/60')
+            ].join('');
         } else if (currentModule === 'Purchases') {
             if (searchInput) searchInput.placeholder = "Search bill #, supplier, GSTIN, HSN, amount...";
-            badgesHtml = `
-                <button class="grid-filter-btn ${currentGridFilter === 'all' ? 'active bg-brand-600/20 text-brand-400 border-brand-500/30' : 'border-slate-800 text-slate-400 hover:text-white'} text-xs font-bold px-2.5 py-1 rounded-lg border transition whitespace-nowrap" data-filter="all">
-                    All Purchases (<span id="countFilterAll">0</span>)
-                </button>
-                <button class="grid-filter-btn ${currentGridFilter === 'b2b' ? 'active bg-brand-600/20 text-brand-400 border-brand-500/30' : 'border-slate-800 text-slate-400 hover:text-white'} text-xs font-bold px-2.5 py-1 rounded-lg border transition whitespace-nowrap" data-filter="b2b">
-                    <i class="fa-solid fa-truck-field text-emerald-400 mr-1"></i> B2B Vendors (<span id="countFilterB2B">0</span>)
-                </button>
-                <button class="grid-filter-btn ${currentGridFilter === 'b2c' ? 'active bg-brand-600/20 text-brand-400 border-brand-500/30' : 'border-slate-800 text-slate-400 hover:text-white'} text-xs font-bold px-2.5 py-1 rounded-lg border transition whitespace-nowrap" data-filter="b2c">
-                    <i class="fa-solid fa-cash-register text-amber-400 mr-1"></i> Unregistered / Cash (<span id="countFilterB2C">0</span>)
-                </button>
-                <button class="grid-filter-btn ${currentGridFilter === 'freight' ? 'active bg-brand-600/20 text-brand-400 border-brand-500/30' : 'border-slate-800 text-slate-400 hover:text-white'} text-xs font-bold px-2.5 py-1 rounded-lg border transition whitespace-nowrap" data-filter="freight">
-                    <i class="fa-solid fa-box text-cyan-400 mr-1"></i> Freight & Addons (<span id="countFilterFreight">0</span>)
-                </button>
-                <button class="grid-filter-btn ${currentGridFilter === 'review' ? 'active bg-brand-600/20 text-brand-400 border-brand-500/30' : 'border-slate-800 text-slate-400 hover:text-white'} text-xs font-bold px-2.5 py-1 rounded-lg border transition whitespace-nowrap" data-filter="review">
-                    <i class="fa-solid fa-triangle-exclamation text-amber-400 mr-1"></i> Review (<span id="countFilterReview">0</span>)
-                </button>
-            `;
+            badgesHtml = [
+                createBadge('all', 'fa-solid fa-list-check text-brand-400', 'All Purchases', 'countFilterAll',
+                    'active bg-brand-600/25 text-brand-300 border-brand-500/60 shadow-lg shadow-brand-500/10 ring-1 ring-brand-500/40',
+                    'bg-slate-900/80 border-slate-800 text-slate-300 hover:text-white hover:border-slate-700 hover:bg-slate-800/80',
+                    'bg-brand-500/30 text-brand-200 border border-brand-400/40',
+                    'bg-slate-800/90 text-slate-400 border border-slate-700/60'),
+
+                divider,
+
+                createBadge('b2b', 'fa-solid fa-truck-field text-emerald-400', 'B2B Vendors', 'countFilterB2B',
+                    'active bg-emerald-950/70 text-emerald-300 border-emerald-500/60 shadow-lg shadow-emerald-500/10 ring-1 ring-emerald-500/40',
+                    'bg-slate-900/80 border-slate-800 text-slate-400 hover:text-emerald-300 hover:border-emerald-800/60 hover:bg-slate-800/80',
+                    'bg-emerald-500/30 text-emerald-200 border border-emerald-400/40',
+                    'bg-slate-800/90 text-slate-400 border border-slate-700/60'),
+
+                createBadge('b2c', 'fa-solid fa-cash-register text-amber-400', 'Unregistered / Cash', 'countFilterB2C',
+                    'active bg-amber-950/70 text-amber-300 border-amber-500/60 shadow-lg shadow-amber-500/10 ring-1 ring-amber-500/40',
+                    'bg-slate-900/80 border-slate-800 text-slate-400 hover:text-amber-300 hover:border-amber-800/60 hover:bg-slate-800/80',
+                    'bg-amber-500/30 text-amber-200 border border-amber-400/40',
+                    'bg-slate-800/90 text-slate-400 border border-slate-700/60'),
+
+                divider,
+
+                createBadge('freight', 'fa-solid fa-box text-cyan-400', 'Freight & Addons', 'countFilterFreight',
+                    'active bg-cyan-950/70 text-cyan-300 border-cyan-500/60 shadow-lg shadow-cyan-500/10 ring-1 ring-cyan-500/40',
+                    'bg-slate-900/80 border-slate-800 text-slate-400 hover:text-cyan-300 hover:border-cyan-800/60 hover:bg-slate-800/80',
+                    'bg-cyan-500/30 text-cyan-200 border border-cyan-400/40',
+                    'bg-slate-800/90 text-slate-400 border border-slate-700/60'),
+
+                divider,
+
+                createBadge('review', 'fa-solid fa-triangle-exclamation text-amber-400', 'Review Needed', 'countFilterReview',
+                    'active bg-amber-950/70 text-amber-300 border-amber-500/60 shadow-lg shadow-amber-500/10 ring-1 ring-amber-500/40',
+                    'bg-slate-900/80 border-slate-800 text-slate-400 hover:text-amber-300 hover:border-amber-800/60 hover:bg-slate-800/80',
+                    'bg-amber-500/30 text-amber-200 border border-amber-400/40',
+                    'bg-slate-800/90 text-slate-400 border border-slate-700/60')
+            ].join('');
         } else {
             if (searchInput) searchInput.placeholder = "Search narration, ref/UTR, party, amount...";
-            badgesHtml = `
-                <button class="grid-filter-btn ${currentGridFilter === 'all' ? 'active bg-brand-600/20 text-brand-400 border-brand-500/30' : 'border-slate-800 text-slate-400 hover:text-white'} text-xs font-bold px-2.5 py-1 rounded-lg border transition whitespace-nowrap" data-filter="all">
-                    All (<span id="countFilterAll">0</span>)
-                </button>
-                <button class="grid-filter-btn ${currentGridFilter === 'receipts' ? 'active bg-emerald-600/20 text-emerald-400 border-emerald-500/30' : 'border-slate-800 text-slate-400 hover:text-white'} text-xs font-bold px-2.5 py-1 rounded-lg border transition whitespace-nowrap" data-filter="receipts">
-                    <i class="fa-solid fa-arrow-down-left text-emerald-400 mr-1"></i> Receipts (<span id="countFilterReceipts">0</span>)
-                </button>
-                <button class="grid-filter-btn ${currentGridFilter === 'payments' ? 'active bg-rose-600/20 text-rose-400 border-rose-500/30' : 'border-slate-800 text-slate-400 hover:text-white'} text-xs font-bold px-2.5 py-1 rounded-lg border transition whitespace-nowrap" data-filter="payments">
-                    <i class="fa-solid fa-arrow-up-right text-rose-400 mr-1"></i> Payments (<span id="countFilterPayments">0</span>)
-                </button>
-                <button class="grid-filter-btn ${currentGridFilter === 'mapped' ? 'active bg-brand-600/20 text-brand-400 border-brand-500/30' : 'border-slate-800 text-slate-400 hover:text-white'} text-xs font-bold px-2.5 py-1 rounded-lg border transition whitespace-nowrap" data-filter="mapped">
-                    <i class="fa-solid fa-circle-check text-emerald-400 mr-1"></i> Mapped (<span id="countFilterMapped">0</span>)
-                </button>
-                <button class="grid-filter-btn ${currentGridFilter === 'autocreate' ? 'active bg-brand-600/20 text-brand-400 border-brand-500/30' : 'border-slate-800 text-slate-400 hover:text-white'} text-xs font-bold px-2.5 py-1 rounded-lg border transition whitespace-nowrap" data-filter="autocreate">
-                    <i class="fa-solid fa-circle-plus text-cyan-400 mr-1"></i> Auto-Create (<span id="countFilterAutoCreate">0</span>)
-                </button>
-                <button class="grid-filter-btn ${currentGridFilter === 'review' ? 'active bg-brand-600/20 text-brand-400 border-brand-500/30' : 'border-slate-800 text-slate-400 hover:text-white'} text-xs font-bold px-2.5 py-1 rounded-lg border transition" data-filter="review">
-                    <i class="fa-solid fa-triangle-exclamation text-amber-400 mr-1"></i> Review (<span id="countFilterReview">0</span>)
-                </button>
-            `;
+            badgesHtml = [
+                createBadge('all', 'fa-solid fa-list-check text-brand-400', 'All Entries', 'countFilterAll',
+                    'active bg-brand-600/25 text-brand-300 border-brand-500/60 shadow-lg shadow-brand-500/10 ring-1 ring-brand-500/40',
+                    'bg-slate-900/80 border-slate-800 text-slate-300 hover:text-white hover:border-slate-700 hover:bg-slate-800/80',
+                    'bg-brand-500/30 text-brand-200 border border-brand-400/40',
+                    'bg-slate-800/90 text-slate-400 border border-slate-700/60'),
+
+                divider,
+
+                createBadge('receipts', 'fa-solid fa-arrow-down-left text-emerald-400', 'Receipts', 'countFilterReceipts',
+                    'active bg-emerald-950/70 text-emerald-300 border-emerald-500/60 shadow-lg shadow-emerald-500/10 ring-1 ring-emerald-500/40',
+                    'bg-slate-900/80 border-slate-800 text-slate-400 hover:text-emerald-300 hover:border-emerald-800/60 hover:bg-slate-800/80',
+                    'bg-emerald-500/30 text-emerald-200 border border-emerald-400/40',
+                    'bg-slate-800/90 text-slate-400 border border-slate-700/60'),
+
+                createBadge('payments', 'fa-solid fa-arrow-up-right text-rose-400', 'Payments', 'countFilterPayments',
+                    'active bg-rose-950/70 text-rose-300 border-rose-500/60 shadow-lg shadow-rose-500/10 ring-1 ring-rose-500/40',
+                    'bg-slate-900/80 border-slate-800 text-slate-400 hover:text-rose-300 hover:border-rose-800/60 hover:bg-slate-800/80',
+                    'bg-rose-500/30 text-rose-200 border border-rose-400/40',
+                    'bg-slate-800/90 text-slate-400 border border-slate-700/60'),
+
+                divider,
+
+                createBadge('mapped', 'fa-solid fa-circle-check text-brand-400', 'Mapped', 'countFilterMapped',
+                    'active bg-brand-600/25 text-brand-300 border-brand-500/60 shadow-lg shadow-brand-500/10 ring-1 ring-brand-500/40',
+                    'bg-slate-900/80 border-slate-800 text-slate-400 hover:text-brand-300 hover:border-brand-800/60 hover:bg-slate-800/80',
+                    'bg-brand-500/30 text-brand-200 border border-brand-400/40',
+                    'bg-slate-800/90 text-slate-400 border border-slate-700/60'),
+
+                createBadge('autocreate', 'fa-solid fa-circle-plus text-cyan-400', 'Auto-Create', 'countFilterAutoCreate',
+                    'active bg-cyan-950/70 text-cyan-300 border-cyan-500/60 shadow-lg shadow-cyan-500/10 ring-1 ring-cyan-500/40',
+                    'bg-slate-900/80 border-slate-800 text-slate-400 hover:text-cyan-300 hover:border-cyan-800/60 hover:bg-slate-800/80',
+                    'bg-cyan-500/30 text-cyan-200 border border-cyan-400/40',
+                    'bg-slate-800/90 text-slate-400 border border-slate-700/60'),
+
+                divider,
+
+                createBadge('review', 'fa-solid fa-triangle-exclamation text-amber-400', 'Review Needed', 'countFilterReview',
+                    'active bg-amber-950/70 text-amber-300 border-amber-500/60 shadow-lg shadow-amber-500/10 ring-1 ring-amber-500/40',
+                    'bg-slate-900/80 border-slate-800 text-slate-400 hover:text-amber-300 hover:border-amber-800/60 hover:bg-slate-800/80',
+                    'bg-amber-500/30 text-amber-200 border border-amber-400/40',
+                    'bg-slate-800/90 text-slate-400 border border-slate-700/60')
+            ].join('');
         }
 
         group.innerHTML = badgesHtml;
 
         // Immediately update counts now that badge spans exist in DOM
-        requestAnimationFrame(() => recalcGrandTotals());
+        requestAnimationFrame(() => updateFilterCounts());
 
         group.querySelectorAll('.grid-filter-btn').forEach(btn => {
             btn.addEventListener('click', () => {
-                group.querySelectorAll('.grid-filter-btn').forEach(b => {
-                    b.classList.remove('active', 'bg-brand-600/20', 'text-brand-400', 'border-brand-500/30', 'bg-emerald-600/20', 'text-emerald-400', 'border-emerald-500/30', 'bg-rose-600/20', 'text-rose-400', 'border-rose-500/30');
-                    b.classList.add('border-slate-800', 'text-slate-400');
-                });
-                btn.classList.add('active', 'bg-brand-600/20', 'text-brand-400', 'border-brand-500/30');
-                btn.classList.remove('border-slate-800', 'text-slate-400');
                 currentGridFilter = btn.getAttribute('data-filter') || 'all';
+                renderFilterBadgesForModule();
                 if (gridBody) gridBody.dataset.needsFullRender = 'true';
                 recalcGrandTotals();
                 renderVirtualGridRows();
@@ -5399,17 +5511,42 @@ document.addEventListener('DOMContentLoaded', () => {
             'INWARD CHEQUE', 'OUTWARD CHEQUE', 'NEFT DEPOSIT', 'RTGS DEPOSIT', 'IMPS DEPOSIT',
             'UNKNOWN', 'UNKNOWN_EXPENSE', 'UNKNOWN_PARTY'
         ];
-        const isUnmappedGeneric = !cleanLegUp || (row.status !== 'Ready' && (GENERIC_BAD_LIST.includes(cleanLegUp) || cleanGrpUp === 'UNKNOWN' || /^CHEQUE DEPOSIT|^CHQ DEP|^CLEARING/i.test(cleanLegUp)));
-        if (isUnmappedGeneric) {
-            row.mapped_ledger = 'Suspense Account';
-            row.party_name = 'Suspense Account';
-            row.party = 'Suspense Account';
-            row.group_hint = 'Suspense Account';
-            row.confidence_score = 40;
-            cScore = 40;
-            row.status = 'Review';
-            if (!row.flags) row.flags = [];
-            if (!row.flags.includes('Unmapped Narration')) row.flags.push('Unmapped Narration');
+
+        if (currentModule === 'Bank Statements' || currentModule === 'Cash Entries') {
+            const isUnmappedGeneric = !cleanLegUp || (row.status !== 'Ready' && (GENERIC_BAD_LIST.includes(cleanLegUp) || cleanGrpUp === 'UNKNOWN' || /^CHEQUE DEPOSIT|^CHQ DEP|^CLEARING/i.test(cleanLegUp)));
+            if (isUnmappedGeneric) {
+                row.mapped_ledger = 'Suspense Account';
+                row.party_name = 'Suspense Account';
+                row.party = 'Suspense Account';
+                row.group_hint = 'Suspense Account';
+                row.confidence_score = 40;
+                cScore = 40;
+                row.status = 'Review';
+                if (!row.flags) row.flags = [];
+                if (!row.flags.includes('Unmapped Narration')) row.flags.push('Unmapped Narration');
+            }
+        } else if (currentModule === 'Sales' || currentModule === 'Purchases') {
+            const existingParty = String(row.party || row.party_name || "").trim();
+            if (existingParty.startsWith('UNKNOWN_PARTY:')) {
+                const cleanName = existingParty.replace(/^UNKNOWN_PARTY:\s*/i, '').trim();
+                row.party = cleanName;
+                row.party_name = cleanName;
+                if (!row.mapped_ledger || row.mapped_ledger === 'Suspense Account' || row.mapped_ledger.startsWith('UNKNOWN_PARTY:')) {
+                    row.mapped_ledger = cleanName;
+                }
+            } else if (!existingParty || existingParty.toUpperCase() === 'UNMAPPED PARTY' || existingParty.toUpperCase() === 'MISSING') {
+                row.party = 'Suspense Account';
+                row.party_name = 'Suspense Account';
+                row.mapped_ledger = 'Suspense Account';
+                row.group_hint = 'Suspense Account';
+            } else {
+                // Ensure row.party and row.party_name retain the real extracted party name
+                row.party = existingParty;
+                row.party_name = existingParty;
+                if (!row.mapped_ledger || row.mapped_ledger === 'Suspense Account') {
+                    row.mapped_ledger = existingParty;
+                }
+            }
         }
 
         // 🚨 DBF Product GST Mismatch Check (Rule 35) 🚨
@@ -7553,7 +7690,57 @@ document.addEventListener('DOMContentLoaded', () => {
     if (gridSearchInput) {
         gridSearchInput.addEventListener('input', (e) => {
             currentGridSearch = e.target.value.trim();
+            const clearBtn = document.getElementById('clearGridSearchBtn');
+            if (clearBtn) {
+                if (currentGridSearch.length > 0) clearBtn.classList.remove('hidden');
+                else clearBtn.classList.add('hidden');
+            }
             if (gridBody) gridBody.dataset.needsFullRender = 'true';
+            renderFilterBadgesForModule();
+            recalcGrandTotals();
+            renderVirtualGridRows();
+        });
+    }
+
+    const clearGridSearchBtn = document.getElementById('clearGridSearchBtn');
+    if (clearGridSearchBtn) {
+        clearGridSearchBtn.addEventListener('click', () => {
+            currentGridSearch = '';
+            const searchInput = document.getElementById('gridSearchInput');
+            if (searchInput) {
+                searchInput.value = '';
+                searchInput.focus();
+            }
+            clearGridSearchBtn.classList.add('hidden');
+            if (gridBody) gridBody.dataset.needsFullRender = 'true';
+            renderFilterBadgesForModule();
+            recalcGrandTotals();
+            renderVirtualGridRows();
+        });
+    }
+
+    const resetGridFiltersBtn = document.getElementById('resetGridFiltersBtn');
+    if (resetGridFiltersBtn) {
+        resetGridFiltersBtn.addEventListener('click', () => {
+            currentGridFilter = 'all';
+            currentGridSearch = '';
+            currentGridGroupFilter = 'all';
+            currentGridAccountFilter = 'all';
+
+            const searchInput = document.getElementById('gridSearchInput');
+            if (searchInput) searchInput.value = '';
+
+            const grpSelect = document.getElementById('gridGroupFilterSelect');
+            if (grpSelect) grpSelect.value = 'all';
+
+            const accSelect = document.getElementById('gridAccountFilterSelect');
+            if (accSelect) accSelect.value = 'all';
+
+            const clearBtn = document.getElementById('clearGridSearchBtn');
+            if (clearBtn) clearBtn.classList.add('hidden');
+
+            if (gridBody) gridBody.dataset.needsFullRender = 'true';
+            renderFilterBadgesForModule();
             recalcGrandTotals();
             renderVirtualGridRows();
         });
@@ -7564,6 +7751,7 @@ document.addEventListener('DOMContentLoaded', () => {
         gridGroupFilterSelect.addEventListener('change', (e) => {
             currentGridGroupFilter = e.target.value;
             if (gridBody) gridBody.dataset.needsFullRender = 'true';
+            renderFilterBadgesForModule();
             recalcGrandTotals();
             renderVirtualGridRows();
         });
@@ -7574,6 +7762,7 @@ document.addEventListener('DOMContentLoaded', () => {
         gridAccountFilterSelect.addEventListener('change', (e) => {
             currentGridAccountFilter = e.target.value;
             if (gridBody) gridBody.dataset.needsFullRender = 'true';
+            renderFilterBadgesForModule();
             recalcGrandTotals();
             renderVirtualGridRows();
         });

@@ -214,9 +214,13 @@ def parse_excel_to_json(file_path: str, company_state_code: str = '24', instruct
                         df_raw = find_and_clean_header(df_raw)
                         if len(df_raw) > 0:
                             df_norm, resolved = normalize_sheet_columns(df_raw)
-                            for col_name in ["date", "bill_no", "party_name", "party_gstin"]:
+                            for col_name in ["date", "bill_no"]:
                                 if col_name in df_norm.columns:
                                     df_norm[col_name] = df_norm[col_name].ffill()
+                            if "bill_no" in df_norm.columns:
+                                for col_name in ["party_name", "party_gstin"]:
+                                    if col_name in df_norm.columns:
+                                        df_norm[col_name] = df_norm.groupby("bill_no")[col_name].ffill()
                             requested_sheet_data.append((s, df_norm))
                             print(f"🎯 User specified sheet '{s}' via prompt instruction '{instruction}'. Reading this sheet directly.")
                             break
@@ -234,9 +238,13 @@ def parse_excel_to_json(file_path: str, company_state_code: str = '24', instruct
                     if len(df_raw) > 0:
                         df_norm, resolved = normalize_sheet_columns(df_raw)
                         if resolved["bill_no"] and resolved["date"] and resolved["party_name"]:
-                            for col_name in ["date", "bill_no", "party_name", "party_gstin"]:
+                            for col_name in ["date", "bill_no"]:
                                 if col_name in df_norm.columns:
                                     df_norm[col_name] = df_norm[col_name].ffill()
+                            if "bill_no" in df_norm.columns:
+                                for col_name in ["party_name", "party_gstin"]:
+                                    if col_name in df_norm.columns:
+                                        df_norm[col_name] = df_norm.groupby("bill_no")[col_name].ffill()
                             miracle_sheets_data.append((m_sheet, df_norm))
                 except Exception:
                     pass
@@ -270,13 +278,19 @@ def parse_excel_to_json(file_path: str, company_state_code: str = '24', instruct
                     df_rep, res_rep = normalize_sheet_columns(df_rep_raw)
                     df_item, res_item = normalize_sheet_columns(df_item_raw)
 
-                    # Forward fill ONLY date and bill_no within df_item (NEVER party_name across different bills)
+                    # Forward fill ONLY date and bill_no within df_item (NEVER party_name across different bills globally)
                     for col_name in ["date", "bill_no"]:
                         if col_name in df_rep.columns: df_rep[col_name] = df_rep[col_name].ffill()
                         if col_name in df_item.columns: df_item[col_name] = df_item[col_name].ffill()
 
-                    if "party_name" in df_rep.columns: df_rep["party_name"] = df_rep["party_name"].ffill()
-                    if "party_gstin" in df_rep.columns: df_rep["party_gstin"] = df_rep["party_gstin"].ffill()
+                    # Only forward fill party_name and party_gstin within the SAME bill_no
+                    if "bill_no" in df_rep.columns:
+                        if "party_name" in df_rep.columns: df_rep["party_name"] = df_rep.groupby("bill_no")["party_name"].ffill()
+                        if "party_gstin" in df_rep.columns: df_rep["party_gstin"] = df_rep.groupby("bill_no")["party_gstin"].ffill()
+
+                    if "bill_no" in df_item.columns:
+                        if "party_name" in df_item.columns: df_item["party_name"] = df_item.groupby("bill_no")["party_name"].ffill()
+                        if "party_gstin" in df_item.columns: df_item["party_gstin"] = df_item.groupby("bill_no")["party_gstin"].ffill()
 
                     # Build authoritative metadata dictionary from Report sheet keyed by bill_no
                     report_meta = {}
@@ -285,9 +299,9 @@ def parse_excel_to_json(file_path: str, company_state_code: str = '24', instruct
                         if b_no and b_no.lower() != "nan":
                             if b_no.endswith(".0"): b_no = b_no[:-2]
                             gstin_val = str(r_row.get("party_gstin", "")).strip() if pd.notna(r_row.get("party_gstin")) else ""
-                            if gstin_val.lower() == "nan": gstin_val = ""
+                            if gstin_val.lower() in ("nan", "none", "null", "undefined"): gstin_val = ""
                             p_name = str(r_row.get("party_name", "")).strip() if pd.notna(r_row.get("party_name")) else ""
-                            if p_name.lower() == "nan": p_name = ""
+                            if p_name.lower() in ("nan", "none", "null", "undefined", "unmapped party", "suspense account"): p_name = ""
                             pay_type = str(r_row.get("payment_type", "")).strip() if pd.notna(r_row.get("payment_type")) else ""
                             report_meta[b_no] = {
                                 "party_gstin": gstin_val,
@@ -296,7 +310,7 @@ def parse_excel_to_json(file_path: str, company_state_code: str = '24', instruct
                                 "date": r_row.get("date")
                             }
 
-                    # Authoritatively assign Party Name, GSTIN, and Date from Report Sheet (Sheet 1) into Items Sheet (Sheet 2) per bill_no
+                    # Authoritatively assign Party Name, GSTIN, and Date per bill_no
                     party_list = []
                     gstin_list = []
                     date_list = []
@@ -306,16 +320,26 @@ def parse_excel_to_json(file_path: str, company_state_code: str = '24', instruct
                         
                         meta = report_meta.get(b_no, {})
                         
-                        # Party Name from Report sheet takes precedence over item sheet
-                        rep_party = meta.get("party_name", "")
+                        rep_party = meta.get("party_name", "").strip()
                         item_party = str(i_row.get("party_name", "")).strip() if pd.notna(i_row.get("party_name")) else ""
-                        final_party = rep_party if rep_party and rep_party.lower() != "nan" else item_party
+                        if item_party.lower() in ("nan", "none", "null", "undefined", "unmapped party", "suspense account"):
+                            item_party = ""
+
+                        # Party Name from Item sheet takes priority if valid, otherwise Report sheet
+                        if item_party:
+                            final_party = item_party
+                        elif rep_party:
+                            final_party = rep_party
+                        else:
+                            final_party = ""
                         party_list.append(final_party)
                         
-                        # GSTIN
-                        rep_gstin = meta.get("party_gstin", "")
+                        # GSTIN from Item sheet or Report sheet
+                        rep_gstin = meta.get("party_gstin", "").strip()
                         item_gstin = str(i_row.get("party_gstin", "")).strip() if pd.notna(i_row.get("party_gstin")) else ""
-                        final_gstin = rep_gstin if rep_gstin and rep_gstin.lower() != "nan" else item_gstin
+                        if item_gstin.lower() in ("nan", "none", "null", "undefined"):
+                            item_gstin = ""
+                        final_gstin = item_gstin if item_gstin else rep_gstin
                         gstin_list.append(final_gstin)
                         
                         # Date
@@ -341,9 +365,13 @@ def parse_excel_to_json(file_path: str, company_state_code: str = '24', instruct
                         df_raw = find_and_clean_header(df_raw)
                         df_norm, resolved = normalize_sheet_columns(df_raw)
                         if resolved["bill_no"] and resolved["date"] and resolved["party_name"]:
-                            for col_name in ["date", "bill_no", "party_name", "party_gstin"]:
+                            for col_name in ["date", "bill_no"]:
                                 if col_name in df_norm.columns:
                                     df_norm[col_name] = df_norm[col_name].ffill()
+                            if "bill_no" in df_norm.columns:
+                                for col_name in ["party_name", "party_gstin"]:
+                                    if col_name in df_norm.columns:
+                                        df_norm[col_name] = df_norm.groupby("bill_no")[col_name].ffill()
                             
                             if resolved["item_name"]:
                                 flat_sheets_data.append((sheet, df_norm))
@@ -421,12 +449,27 @@ def parse_excel_to_json(file_path: str, company_state_code: str = '24', instruct
                         except ValueError:
                             pass
                             
-                party_name = str(first_row.get("party_name", "")).strip() if pd.notna(first_row.get("party_name")) else ""
+                party_name = ""
+                party_gstin = ""
+                for _, g_row in group.iterrows():
+                    p_val = str(g_row.get("party_name", "")).strip() if pd.notna(g_row.get("party_name")) else ""
+                    if p_val and p_val.lower() not in ("nan", "none", "null", "undefined", "unmapped party", "suspense account"):
+                        party_name = p_val
+                        break
+                if not party_name:
+                    for _, g_row in group.iterrows():
+                        p_val = str(g_row.get("party_name", "")).strip() if pd.notna(g_row.get("party_name")) else ""
+                        if p_val and p_val.lower() not in ("nan", "none", "null", "undefined"):
+                            party_name = p_val
+                            break
                 if not party_name or party_name.lower() in ("nan", "none", "null", "undefined"):
                     party_name = "Unmapped Party"
-                party_gstin = str(first_row.get("party_gstin", "")).strip() if pd.notna(first_row.get("party_gstin")) else ""
-                if party_gstin.lower() in ("nan", "none", "null", "undefined"):
-                    party_gstin = ""
+
+                for _, g_row in group.iterrows():
+                    gst_val = str(g_row.get("party_gstin", "")).strip() if pd.notna(g_row.get("party_gstin")) else ""
+                    if gst_val and gst_val.lower() not in ("nan", "none", "null", "undefined"):
+                        party_gstin = gst_val
+                        break
                     
                 inv_no = ""
                 if not str(group_key).startswith("NO_INV_"):
