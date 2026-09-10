@@ -49,7 +49,7 @@ def clean_extracted_bill_no(val: str, party_name: str = "") -> str:
     
     val_upper = val_str.upper()
 
-    # Extract trailing number if bill_no has slash/dash/space separator (e.g. "BYLNCH/3355", "NDIA/3364", "LABINDIA/3364", "Shridhar Ganeshan/3354")
+    # Extract trailing number if bill_no has slash/dash/space separator (e.g. "BYLNCH/3355", "NDIA/3364", "LABINDIA/3364", "Shridhar Ganeshan/3354", "SG/3354")
     sep_match = re.search(r'^(.*?)([\/\-_\s]+)(\d{1,8})$', val_str)
     if sep_match:
         prefix_part = sep_match.group(1).strip()
@@ -57,39 +57,19 @@ def clean_extracted_bill_no(val: str, party_name: str = "") -> str:
         prefix_upper = prefix_part.upper()
         prefix_words = set(re.findall(r'[A-Z]{2,}', prefix_upper))
 
-        # Check if prefix is a standard invoice prefix or year pattern
+        # Check if prefix is a standard invoice prefix or year pattern (e.g. "INV-3354", "SS/3354", "2026-27/3354")
         is_standard_inv = bool(prefix_words.intersection(STANDARD_INV_PREFIXES)) or bool(re.match(r'^(?:INV|GST|BILL|VCH|SS|PP|PB|PU|SL|SR|SA|SB|SC|SD|20\d\d|\d{2}-\d{2})$', prefix_upper))
 
         if not is_standard_inv:
-            # 1. Compare prefix against party_name
-            if party_name:
-                p_upper = party_name.upper()
-                p_clean = re.sub(r'[^A-Z0-9]', '', p_upper)
-                prefix_clean = re.sub(r'[^A-Z0-9]', '', prefix_upper)
-                if p_clean and prefix_clean:
-                    if (len(prefix_clean) >= 2 and prefix_clean in p_clean) or (len(p_clean) >= 2 and p_clean in prefix_clean):
-                        return num_part
-                    p_words = set(re.findall(r'[A-Z]{2,}', p_upper))
-                    if prefix_words and p_words:
-                        for pw in prefix_words:
-                            if any(pw in pw_target or pw_target in pw for pw_target in p_words):
-                                return num_part
-                    # Check capital initials / acronym of party_name
-                    p_initials = "".join(re.findall(r'\b[A-Z]', p_upper))
-                    if len(p_initials) >= 2:
-                        p_initials_clean = re.sub(r'[^A-Z0-9]', '', p_initials)
-                        if prefix_clean in p_initials_clean or p_initials_clean in prefix_clean:
-                            return num_part
+            return num_part
 
-            # 2. Check if prefix matches general party keywords or non-invoice words
-            if prefix_words and prefix_words.intersection(PARTY_KEYWORDS_UPPER):
-                return num_part
+    # If string is pure alpha text with NO digits (e.g. "B Y L NAIR CHARITABLE", "Sundry Debtors"), it is a party name leak, not a bill number
+    digits_only = re.sub(r'\D', '', val_str)
+    alpha_only = re.sub(r'[^A-Za-z]', '', val_str)
+    if len(alpha_only) >= 3 and not digits_only:
+        return ""
 
-            # 3. If prefix is not a standard invoice series, treat non-standard prefix as party name leak / extra prefix
-            if len(re.sub(r'[^A-Z0-9]', '', prefix_upper)) >= 2:
-                return num_part
-
-    # Check standalone party name match without separator
+    # Check standalone party name match
     if party_name:
         p_clean = re.sub(r'[^A-Z0-9]', '', party_name.upper())
         v_clean = re.sub(r'[^A-Z0-9]', '', val_upper)
@@ -100,6 +80,7 @@ def clean_extracted_bill_no(val: str, party_name: str = "") -> str:
             return ""
 
     return val_str
+
 
 def ensure_writable_recursive(target_path: str) -> None:
     """
@@ -3179,13 +3160,14 @@ class MiracleDBFHandler:
                 except:
                     pass
 
-    def _inject_sales(self, vouchers: list, year_folder: str = "", setup_id: int = 5, sales_prefix: str = "SS,SS") -> int:
+    def _inject_sales(self, vouchers: list, year_folder: str = "", setup_id: int = 5, sales_prefix: str = "SS,SS", force_push: bool = False) -> int:
         """Helper alias for injecting Sales vouchers directly."""
-        return self.inject_vouchers("Sales", vouchers, year_folder=year_folder, sales_setup_id=setup_id, sales_prefix=sales_prefix)
+        return self.inject_vouchers("Sales", vouchers, year_folder=year_folder, sales_setup_id=setup_id, sales_prefix=sales_prefix, force_push=force_push)
 
-    def _inject_purchases(self, vouchers: list, year_folder: str = "", setup_id: int = 6, purchase_prefix: str = "PP,PP") -> int:
+    def _inject_purchases(self, vouchers: list, year_folder: str = "", setup_id: int = 6, purchase_prefix: str = "PP,PP", force_push: bool = False) -> int:
         """Helper alias for injecting Purchase vouchers directly."""
-        return self.inject_vouchers("Purchases", vouchers, year_folder=year_folder, purchase_setup_id=setup_id, purchase_prefix=purchase_prefix)
+        return self.inject_vouchers("Purchases", vouchers, year_folder=year_folder, purchase_setup_id=setup_id, purchase_prefix=purchase_prefix, force_push=force_push)
+
 
     def push_opening_balances(self, vouchers: list, year_folder: str = "") -> dict:
         """Helper alias for injecting opening balances."""
@@ -3468,11 +3450,23 @@ class MiracleDBFHandler:
                             if clean_num not in existing_records_by_bno:
                                 existing_records_by_bno[clean_num] = []
                             existing_records_by_bno[clean_num].append((r, v_id, p_code, v_dt))
-                            
+
                             key = (clean_num, p_code)
                             if key not in existing_records_by_key:
                                 existing_records_by_key[key] = []
                             existing_records_by_key[key].append((r, v_id, v_dt))
+
+                            num_digits = re.sub(r'\D', '', clean_num)
+                            if num_digits and num_digits != clean_num:
+                                if num_digits not in existing_records_by_bno:
+                                    existing_records_by_bno[num_digits] = []
+                                existing_records_by_bno[num_digits].append((r, v_id, p_code, v_dt))
+
+                                key_digits = (num_digits, p_code)
+                                if key_digits not in existing_records_by_key:
+                                    existing_records_by_key[key_digits] = []
+                                existing_records_by_key[key_digits].append((r, v_id, v_dt))
+
             except Exception as e:
                 logger.error(f"Error indexing existing vouchers: {e}")
                     
@@ -3721,17 +3715,52 @@ class MiracleDBFHandler:
                             is_fuzzy_dup = True
 
                     matching_existing = []
+                    num_digits_bno = re.sub(r'\D', '', clean_b_no)
+
                     if clean_b_no:
                         if (clean_b_no, party_code) in existing_records_by_key:
                             matching_existing.extend(existing_records_by_key[(clean_b_no, party_code)])
+                        elif num_digits_bno and (num_digits_bno, party_code) in existing_records_by_key:
+                            matching_existing.extend(existing_records_by_key[(num_digits_bno, party_code)])
                         elif clean_b_no in existing_records_by_bno:
                             for item in existing_records_by_bno[clean_b_no]:
                                 matching_existing.append((item[0], item[1], item[3]))
+                        elif num_digits_bno and num_digits_bno in existing_records_by_bno:
+                            for item in existing_records_by_bno[num_digits_bno]:
+                                matching_existing.append((item[0], item[1], item[3]))
+
+                    # Fallback Direct Scan if exact/fuzzy dup flagged but matching_existing is empty
+                    if (is_exact_dup or is_fuzzy_dup) and not matching_existing:
+
+                        for r41_item in t41:
+                            if dbf.is_deleted(r41_item):
+                                continue
+                            ex_v_id_scan = str(r41_item['FIELD01']).strip()
+                            ex_b_no_scan = str(r41_item['T41FVNO']).strip()
+                            ex_f10_scan = str(r41_item['FIELD10']).strip()
+                            ex_f12_scan = str(r41_item['FIELD12']).strip()
+                            ex_dt_scan = str(r41_item['FIELD02']).strip()[:10]
+                            ex_p_code_scan = str(r41_item['FIELD04']).strip()
+                            ex_amt_scan = float(r41_item['FIELD06'] or 0)
+
+                            ex_clean_bno_scan = clean_extracted_bill_no(ex_f12_scan or ex_f10_scan or ex_b_no_scan).strip()
+                            ex_digits_scan = re.sub(r'\D', '', ex_clean_bno_scan)
+
+                            is_match_scan = False
+                            if clean_b_no and ex_clean_bno_scan and (clean_b_no == ex_clean_bno_scan or (num_digits_bno and num_digits_bno == ex_digits_scan)):
+                                is_match_scan = True
+                            elif ex_dt_scan == v_date_str and party_code and ex_p_code_scan == party_code:
+                                is_match_scan = True
+                            elif ex_dt_scan == v_date_str and total > 0 and abs(total - ex_amt_scan) <= 1.0:
+                                is_match_scan = True
+
+                            if is_match_scan:
+                                matching_existing.append((r41_item, ex_v_id_scan, ex_dt_scan))
 
                     if is_exact_dup or is_fuzzy_dup or matching_existing:
                         if force_push:
                             # 🔄 FORCE OVERWRITE IMPLEMENTATION:
-                            # Delete existing matching records in RKACCT41, RKACCT02, RKACCT52, RKACCT40 before inserting update
+                            # Complete clean wipe of existing matching records in RKACCT41, RKACCT01, RKACCT02, RKACCT52, RKACCT40
                             deleted_ids = set()
                             for ex_item in matching_existing:
                                 ex_rec, ex_v_id = ex_item[0], ex_item[1]
@@ -3742,6 +3771,12 @@ class MiracleDBFHandler:
                                             dbf.delete(ex_rec)
                                     except Exception as ex_err:
                                         logger.warning(f"⚠️ Could not delete T41 record {ex_v_id}: {ex_err}")
+                                    try:
+                                        for r01 in t01:
+                                            if not dbf.is_deleted(r01) and str(r01['FIELD01']).strip() == ex_v_id:
+                                                dbf.delete(r01)
+                                    except Exception as ex_err:
+                                        logger.warning(f"⚠️ Could not delete T01 records for {ex_v_id}: {ex_err}")
                                     try:
                                         for r02 in t02:
                                             if not dbf.is_deleted(r02) and str(r02['FIELD01']).strip() == ex_v_id:
@@ -3766,6 +3801,9 @@ class MiracleDBFHandler:
                             if clean_b_no:
                                 existing_records_by_key.pop((clean_b_no, party_code), None)
                                 existing_records_by_bno.pop(clean_b_no, None)
+                                if num_digits_bno:
+                                    existing_records_by_key.pop((num_digits_bno, party_code), None)
+                                    existing_records_by_bno.pop(num_digits_bno, None)
                         else:
                             dup_reason = "Exact Match (Bill No + Date + Party)" if is_exact_dup else "Matching Bill/Amount in Miracle"
                             logger.warning(f"Skipping duplicate voucher ({dup_reason}): Bill {bill_no} for Party {party_code} on {v_date}")

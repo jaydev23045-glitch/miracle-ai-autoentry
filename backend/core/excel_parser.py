@@ -11,7 +11,7 @@ COLUMN_MAPS = {
     "date": ["date", "invoicedate", "billdate", "voucherdate", "vchdate", "bill/invoicedate", "invoicedt", "billdt", "invoice_date"],
     "party_name": ["partyname", "party", "party_name", "customername", "suppliername", "vendorname", "customer", "vendor", "supplier", "accountname", "ledgername", "partysname", "party's_name"],
     "party_gstin": ["partysgstinno", "partysgstin", "gstin", "gstno", "partygst", "tin", "gstinno", "partygstin", "partygstinno", "party's_gstin_no."],
-    "item_name": ["itemname", "item", "productname", "product", "stockitem", "stockname", "item_name"],
+    "item_name": ["itemname", "item", "productname", "product", "stockitem", "stockname", "item_name", "particulars", "particular", "itemdescription", "descriptionofgoods", "goods", "items", "productdescription", "itemdetails", "productdetails", "stock", "stockitemname", "billingitem", "item/service", "product/service", "description", "material", "itemname&description", "name", "service", "servicedescription"],
     "hsn": ["hsnsac", "hsn", "sac", "hsncode", "saccode", "hsn/sac", "hsn_code"],
     "qty": ["quantity", "qty", "qnty", "nos", "pieces", "volume"],
     "rate": ["price/unit", "price", "rate", "unitprice", "rate/unit", "unitrate", "price_unit"],
@@ -116,7 +116,7 @@ def clean_extracted_bill_no(val: str, party_name: str = "") -> str:
     
     val_upper = val_str.upper()
 
-    # Extract trailing number if bill_no has slash/dash/space separator (e.g. "BYLNCH/3355", "NDIA/3364", "LABINDIA/3364", "Shridhar Ganeshan/3354")
+    # Extract trailing number if bill_no has slash/dash/space separator (e.g. "BYLNCH/3355", "NDIA/3364", "LABINDIA/3364", "Shridhar Ganeshan/3354", "SG/3354")
     sep_match = re.search(r'^(.*?)([\/\-_\s]+)(\d{1,8})$', val_str)
     if sep_match:
         prefix_part = sep_match.group(1).strip()
@@ -124,39 +124,19 @@ def clean_extracted_bill_no(val: str, party_name: str = "") -> str:
         prefix_upper = prefix_part.upper()
         prefix_words = set(re.findall(r'[A-Z]{2,}', prefix_upper))
 
-        # Check if prefix is a standard invoice prefix or year pattern
+        # Check if prefix is a standard invoice prefix or year pattern (e.g. "INV-3354", "SS/3354", "2026-27/3354")
         is_standard_inv = bool(prefix_words.intersection(STANDARD_INV_PREFIXES)) or bool(re.match(r'^(?:INV|GST|BILL|VCH|SS|PP|PB|PU|SL|SR|SA|SB|SC|SD|20\d\d|\d{2}-\d{2})$', prefix_upper))
 
         if not is_standard_inv:
-            # 1. Compare prefix against party_name
-            if party_name:
-                p_upper = party_name.upper()
-                p_clean = re.sub(r'[^A-Z0-9]', '', p_upper)
-                prefix_clean = re.sub(r'[^A-Z0-9]', '', prefix_upper)
-                if p_clean and prefix_clean:
-                    if (len(prefix_clean) >= 2 and prefix_clean in p_clean) or (len(p_clean) >= 2 and p_clean in prefix_clean):
-                        return num_part
-                    p_words = set(re.findall(r'[A-Z]{2,}', p_upper))
-                    if prefix_words and p_words:
-                        for pw in prefix_words:
-                            if any(pw in pw_target or pw_target in pw for pw_target in p_words):
-                                return num_part
-                    # Check capital initials / acronym of party_name
-                    p_initials = "".join(re.findall(r'\b[A-Z]', p_upper))
-                    if len(p_initials) >= 2:
-                        p_initials_clean = re.sub(r'[^A-Z0-9]', '', p_initials)
-                        if prefix_clean in p_initials_clean or p_initials_clean in prefix_clean:
-                            return num_part
+            return num_part
 
-            # 2. Check if prefix matches general party keywords or non-invoice words
-            if prefix_words and prefix_words.intersection(PARTY_KEYWORDS_UPPER):
-                return num_part
+    # If string is pure alpha text with NO digits (e.g. "B Y L NAIR CHARITABLE", "Sundry Debtors"), it is a party name leak, not a bill number
+    digits_only = re.sub(r'\D', '', val_str)
+    alpha_only = re.sub(r'[^A-Za-z]', '', val_str)
+    if len(alpha_only) >= 3 and not digits_only:
+        return ""
 
-            # 3. If prefix is not a standard invoice series, treat non-standard prefix as party name leak / extra prefix
-            if len(re.sub(r'[^A-Z0-9]', '', prefix_upper)) >= 2:
-                return num_part
-
-    # Check standalone party name match without separator
+    # Check standalone party name match
     if party_name:
         p_clean = re.sub(r'[^A-Z0-9]', '', party_name.upper())
         v_clean = re.sub(r'[^A-Z0-9]', '', val_upper)
@@ -167,6 +147,7 @@ def clean_extracted_bill_no(val: str, party_name: str = "") -> str:
             return ""
 
     return val_str
+
 
 def normalize_sheet_columns(df):
     def clean_str(s):
@@ -232,7 +213,22 @@ def normalize_sheet_columns(df):
                 print(f"🎯 Substring Column Match: '{c}' mapped to 'date'")
                 break
 
+    if not resolved.get("item_name"):
+        item_keywords = ["particular", "item", "product", "description", "goods", "stock", "material", "service"]
+        for c in df_copy.columns:
+            if c in used_orig_cols: continue
+            c_clean = clean_str(c)
+            if any(p_kw in c_clean for p_kw in ["party", "customer", "vendor", "supplier", "account", "ledger"]):
+                continue
+            if any(kw in c_clean for kw in item_keywords):
+                resolved["item_name"] = c
+                rename_dict[c] = "item_name"
+                used_orig_cols.add(c)
+                print(f"🎯 Substring Column Match: '{c}' mapped to 'item_name'")
+                break
+
     # Pass 3: Data Content Pattern Fallback for bill_no if header was custom or unmapped
+
     if not resolved.get("bill_no"):
         inv_pattern = re.compile(r'^[A-Za-z0-9\-_]{2,10}[/\-][A-Za-z0-9\-_]{1,12}$|^INV[-_]?\d+|^BILL[-_]?\d+', re.I)
         for c in df_copy.columns:
@@ -577,12 +573,28 @@ def parse_excel_to_json(file_path: str, company_state_code: str = '24', instruct
                         raw_desc_val = item_row.get("description")
                         item_name = str(raw_desc_val).strip() if pd.notna(raw_desc_val) else ""
                     if not item_name or item_name.lower() == "nan":
-                        item_name = "SALES"
-                    
+                        raw_part_val = item_row.get("particulars")
+                        item_name = str(raw_part_val).strip() if pd.notna(raw_part_val) else ""
+
+                    qty = safe_float(item_row.get("qty", 1.0)) if pd.notna(item_row.get("qty")) else 1.0
+                    rate = safe_float(item_row.get("rate", 0.0)) if pd.notna(item_row.get("rate")) else 0.0
+                    taxable_val = safe_float(item_row.get("taxable_amt", 0.0)) if pd.notna(item_row.get("taxable_amt")) else 0.0
+                    total_val = safe_float(item_row.get("total_amt", 0.0)) if pd.notna(item_row.get("total_amt")) else 0.0
+
+                    if not item_name or item_name.lower() == "nan":
+                        if qty > 0 or rate > 0 or taxable_val > 0 or total_val > 0:
+                            item_name = "General Product"
+                        else:
+                            continue
+
                     item_norm = item_name.lower().replace(" ", "").replace(".", "").replace("_", "")
                     if item_norm in INVALID_ITEM_WORDS:
-                        print(f"⚠️ Skipping invalid item name (transaction type): '{item_name}'")
-                        continue
+                        if qty <= 0 and rate <= 0 and taxable_val <= 0 and total_val <= 0:
+                            print(f"⚠️ Skipping invalid item header/summary row: '{item_name}'")
+                            continue
+                        else:
+                            item_name = "General Product"
+
                         
                     hsn = str(item_row.get("hsn", "")).strip() if pd.notna(item_row.get("hsn")) else ""
                     if hsn.endswith(".0"): hsn = hsn[:-2]
@@ -936,12 +948,29 @@ def parse_excel_to_json(file_path: str, company_state_code: str = '24', instruct
             for _, item_row in inv_items.iterrows():
                 item_name = str(item_row.get("item_name", "")).strip()
                 if not item_name or item_name.lower() == "nan":
-                    continue
-                
+                    item_name = str(item_row.get("description", "")).strip()
+                if not item_name or item_name.lower() == "nan":
+                    item_name = str(item_row.get("particulars", "")).strip()
+
+                qty = safe_float(item_row.get("qty", 1.0)) if pd.notna(item_row.get("qty")) else 1.0
+                rate = safe_float(item_row.get("rate", 0.0)) if pd.notna(item_row.get("rate")) else 0.0
+                taxable_val = safe_float(item_row.get("taxable_amt", 0.0)) if pd.notna(item_row.get("taxable_amt")) else 0.0
+                total_val = safe_float(item_row.get("total_amt", 0.0)) if pd.notna(item_row.get("total_amt")) else 0.0
+
+                if not item_name or item_name.lower() == "nan":
+                    if qty > 0 or rate > 0 or taxable_val > 0 or total_val > 0:
+                        item_name = "General Product"
+                    else:
+                        continue
+
                 item_norm = item_name.lower().replace(" ", "").replace(".", "").replace("_", "")
                 if item_norm in INVALID_ITEM_WORDS:
-                    print(f"⚠️ Skipping invalid item name (transaction type): '{item_name}'")
-                    continue
+                    if qty <= 0 and rate <= 0 and taxable_val <= 0 and total_val <= 0:
+                        print(f"⚠️ Skipping invalid item header/summary row: '{item_name}'")
+                        continue
+                    else:
+                        item_name = "General Product"
+
                     
                 hsn = str(item_row.get("hsn", "")).strip() if pd.notna(item_row.get("hsn")) else ""
                 if hsn.endswith(".0"): hsn = hsn[:-2]

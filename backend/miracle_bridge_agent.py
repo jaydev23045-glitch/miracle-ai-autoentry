@@ -280,6 +280,8 @@ class InjectRequestPayload(BaseModel):
     target_bank_code: Optional[str] = None
     target_cash_code: Optional[str] = "ACASHACT"
     backup_path: Optional[str] = ""
+    force_push: Optional[bool] = False
+
 
 @app.get("/health")
 @app.get("/status")
@@ -668,31 +670,35 @@ def inject_vouchers(payload: InjectRequestPayload):
             
             # Delegate injection based on module type with robust string matching
             m_type = (module_type or "").strip().lower()
+            is_force = bool(getattr(payload, "force_push", False))
             if m_type in ("bank", "bank_statements", "bank statements"):
                 b_name = getattr(payload, "target_bank_name", None) or "Bank Account"
                 b_code = getattr(payload, "target_bank_code", None) or ""
-                res = handler._inject_bank_statements(vouchers, b_name, active_year_folder, payload_bank_code=b_code)
+                res = handler._inject_bank_statements(vouchers, b_name, active_year_folder, force_push=is_force, payload_bank_code=b_code)
             elif m_type in ("sales", "sale"):
                 res = handler._inject_sales(
                     vouchers, 
                     active_year_folder, 
                     setup_id=payload.sales_setup_id, 
-                    sales_prefix=payload.sales_prefix
+                    sales_prefix=payload.sales_prefix,
+                    force_push=is_force
                 )
             elif m_type in ("purchase", "purchases"):
                 res = handler._inject_purchases(
                     vouchers, 
                     active_year_folder, 
                     setup_id=payload.purchase_setup_id, 
-                    purchase_prefix=payload.purchase_prefix
+                    purchase_prefix=payload.purchase_prefix,
+                    force_push=is_force
                 )
             elif m_type in ("cash", "cash_entries", "cash entries"):
                 c_code = getattr(payload, "target_cash_code", None) or "ACASHACT"
-                res = handler._inject_cash_entries(vouchers, c_code, active_year_folder)
+                res = handler._inject_cash_entries(vouchers, c_code, active_year_folder, force_push=is_force)
             elif m_type in ("opening_balance", "opening_balances", "opening balance"):
                 res = handler.push_opening_balances(vouchers, active_year_folder)
             else:
                 raise HTTPException(status_code=400, detail=f"Unsupported module_type '{module_type}'")
+
 
             audit_rep = handler.audit_report if hasattr(handler, 'audit_report') else {}
             return {
