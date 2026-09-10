@@ -1882,6 +1882,30 @@ class MiracleDBFHandler:
         if updated_m02:
             print(f"Dynamically updated details for party {party_code} in RKACCM02/01.")
             
+    def _find_service_commodity(self, gst_pct: float, year_folder: str | None = None) -> str | None:
+        """Looks up an existing Service Commodity (M14F03 == 'S') in RKACCM14.DBF matching gst_pct."""
+        if not year_folder:
+            year_folder = self.get_latest_year_folder()
+        m14_path = self._get_table_path('RKACCM14.DBF', year_folder)
+        if not os.path.exists(m14_path): m14_path = self._get_table_path('rkaccm14.dbf', year_folder)
+        if not os.path.exists(m14_path): return None
+        import dbf
+        try:
+            m14 = dbf.Table(m14_path)
+            m14.open(mode=dbf.READ_ONLY)
+            for r in m14:
+                if dbf.is_deleted(r): continue
+                if str(r['M14F03']).strip().upper() == 'S':
+                    r_pct = float(r['M14F10'] or 0.0)
+                    if abs(r_pct - gst_pct) < 0.1:
+                        code = str(r['M14F01']).strip()
+                        m14.close()
+                        return code
+            m14.close()
+        except Exception as e:
+            print(f"Error searching RKACCM14 for service commodity: {e}")
+        return None
+
     def get_or_create_gst_commodity(self, hsn: str, gst_pct: float, is_service: bool, year_folder: str | None = None) -> str:
         """
         Checks if HSN code is already registered in RKACCM14.DBF.
@@ -1899,6 +1923,9 @@ class MiracleDBFHandler:
         
         if not os.path.exists(m14_path) or not os.path.exists(m18_path):
             print("Warning: Commodity tables not found, falling back to generic commodity")
+            if is_service:
+                s_code = self._find_service_commodity(gst_pct, year_folder)
+                if s_code: return s_code
             return "CNGT" if gst_pct <= 0 else "C004"
             
         import dbf
@@ -1908,6 +1935,9 @@ class MiracleDBFHandler:
         
         hsn_clean = hsn.strip()
         if not hsn_clean or hsn_clean == 'XXXXXXXX':
+            if is_service:
+                s_code = self._find_service_commodity(gst_pct, year_folder)
+                if s_code: return s_code
             return "CNGT" if gst_pct <= 0 else "C004"
             
         # 1. Search for existing commodity matching this HSN in RKACCM14
@@ -2047,21 +2077,30 @@ class MiracleDBFHandler:
         short_uom = uom_clean if uom_clean in ["PCS", "NOS", "KG", "KGS", "BAG", "BOX", "BTL", "LTR", "MTR", "SET", "TON", "UNT"] else ("OTH" if is_service else "UNT")
 
         pct = pct_to_use
-        if hsn_clean and hsn_clean != 'XXXXXXXX':
-            commodity_code = self.get_or_create_gst_commodity(hsn_clean, pct, is_service, year_folder)
-        else:
-            if pct <= 0:
-                commodity_code = "CNGT"
-            elif pct <= 3:
-                commodity_code = "C006"
-            elif pct <= 5:
-                commodity_code = "C002"
-            elif pct <= 12:
-                commodity_code = "C003"
-            elif pct <= 18:
-                commodity_code = "C004"
+        if is_service:
+            service_comm = self._find_service_commodity(pct, year_folder=year_folder)
+            if service_comm:
+                commodity_code = service_comm
+            elif hsn_clean and hsn_clean != 'XXXXXXXX':
+                commodity_code = self.get_or_create_gst_commodity(hsn_clean, pct, is_service=True, year_folder=year_folder)
             else:
-                commodity_code = "C005"
+                commodity_code = "CNGT" if pct <= 0 else "C004"
+        else:
+            if hsn_clean and hsn_clean != 'XXXXXXXX':
+                commodity_code = self.get_or_create_gst_commodity(hsn_clean, pct, is_service=False, year_folder=year_folder)
+            else:
+                if pct <= 0:
+                    commodity_code = "CNGT"
+                elif pct <= 3:
+                    commodity_code = "C006"
+                elif pct <= 5:
+                    commodity_code = "C002"
+                elif pct <= 12:
+                    commodity_code = "C003"
+                elif pct <= 18:
+                    commodity_code = "C004"
+                else:
+                    commodity_code = "C005"
 
         # 1. Search for existing product (Exact or Space/Punctuation-insensitive) safely under CDX bypass
         def clean_an(s): return re.sub(r'[^A-Z0-9]', '', str(s).upper())
@@ -2094,12 +2133,17 @@ class MiracleDBFHandler:
                             needs_update = False
                             update_kwargs = {}
                             
+                            if current_m21f26 == 'S' or is_service:
+                                if current_commodity in ('', 'CNGT', 'C001', 'C002', 'C003', 'C004', 'C005', 'C006'):
+                                    if commodity_code and commodity_code not in ('', 'CNGT', 'C001', 'C002', 'C003', 'C004', 'C005', 'C006'):
+                                        update_kwargs['M21F27'] = commodity_code
+                                        needs_update = True
                             if extracted_pct is not None:
                                 if current_commodity != commodity_code:
                                     update_kwargs['M21F27'] = commodity_code
                                     needs_update = True
                             else:
-                                if current_commodity == '':
+                                if current_commodity in ('', 'CNGT') and gst_pct > 0:
                                     update_kwargs['M21F27'] = commodity_code
                                     needs_update = True
                                 
@@ -3310,12 +3354,14 @@ class MiracleDBFHandler:
                     items = v.get('items', [])
                     default_qty = float(v.get('qty') or 1.0)
                     if not items:
+                        default_gst = 18.0 if (cgst + sgst + igst) > 0 else 0.0
+                        default_name = f"SALES GST {int(default_gst)}%" if module == "Sales" and default_gst > 0 else (f"PURCHASES GST {int(default_gst)}%" if module == "Purchases" and default_gst > 0 else ("SALES EXEMPT" if module == "Sales" else "PURCHASES EXEMPT"))
                         items = [{
-                            "name": "CONSULTING SERVICE",
+                            "name": default_name,
                             "qty": default_qty,
                             "rate": taxable,
                             "amount": taxable,
-                            "gst_pct": 18.0
+                            "gst_pct": default_gst
                         }]
 
                     # Process items and calculate values first (to allow exact matching/scaling)
@@ -3388,23 +3434,25 @@ class MiracleDBFHandler:
                         
                         hsn_code = str(item.get('hsn_code') or '').strip()
                         uom_code = str(item.get('uom') or '').strip()
-                        master_gst = self.get_product_master_gst_rate(item_name, year_folder)
-                        if master_gst is not None:
-                            item_gst_pct = master_gst
+
+                        # 1. Determine invoice row GST percentage first (invoice header tax takes precedence over 0% master lookup)
+                        raw_gst_pct = item.get('gst_pct')
+                        if raw_gst_pct is not None and float(raw_gst_pct) > 0:
+                            item_gst_pct = float(raw_gst_pct)
+                        elif header_tax > 0 and header_taxable > 0:
+                            item_gst_pct = float(round((header_tax / header_taxable) * 100))
                         else:
-                            raw_gst_pct = item.get('gst_pct')
-                            if raw_gst_pct is not None:
-                                item_gst_pct = float(raw_gst_pct)
+                            master_gst = self.get_product_master_gst_rate(item_name, year_folder)
+                            if master_gst is not None:
+                                item_gst_pct = master_gst
                             else:
                                 item_gst_pct = 18.0 if header_tax > 0.0 else 0.0
 
-                        # Fall back to standard GST rate product if item_name is empty or matches party name
-                        if not item_name or item_name.upper() == party_name_clean or item_name.upper() in ("AUTO_CREATE_PRODUCT", "CONSULTING SERVICE", "UNKNOWN_ITEM"):
+                        # 2. Fall back to standard GST rate product ONLY if item_name is empty or an internal placeholder code
+                        INVALID_DUMMY_ITEMS = ("AUTO_CREATE_PRODUCT", "AUTO_CREATE", "UNKNOWN_ITEM", "UNKNOWN", "AUTO_CREATE_PRODUCT_B2B", "AUTO_CREATE_PRODUCT_B2C")
+                        if not item_name or item_name.upper() == party_name_clean or item_name.upper() in INVALID_DUMMY_ITEMS:
                             default_base = "SALES" if module == "Sales" else "PURCHASES"
                             item_name = f"{default_base} GST {int(item_gst_pct)}%" if item_gst_pct > 0 else f"{default_base} EXEMPT"
-                            
-                        if item_gst_pct <= 0.0 and header_tax > 0 and header_taxable > 0:
-                            item_gst_pct = round((header_tax / header_taxable) * 100)
                         
                         product_code = self.get_or_create_product(item_name, hsn=hsn_code, uom=uom_code, gst_pct=item_gst_pct, year_folder=year_folder)
                         
@@ -3454,6 +3502,8 @@ class MiracleDBFHandler:
                         factor = total_voucher_tax / total_items_gst
                         for p in processed_items:
                             p["gst"] = round(p["gst"] * factor, 2)
+                            if p.get("gst_pct", 0) > 0 and abs(p["gst"] - round(p["taxable"] * (p["gst_pct"] / 100.0), 2)) > 1.0:
+                                p["taxable"] = round(p["gst"] / (p["gst_pct"] / 100.0), 2)
                             
                         # Adjust rounding differences on first item
                         new_sum = sum(p["gst"] for p in processed_items)
@@ -3799,7 +3849,7 @@ class MiracleDBFHandler:
                         
                         item_gst = p["gst"]
                         item_gst_pct = p["gst_pct"]
-                        item_has_gst = has_gst and (item_gst_pct > 0) and (item_gst > 0)
+                        item_has_gst = has_gst and ((item_gst_pct > 0) or (item_gst > 0))
                         
                         t02_rec['T02F97'] = '01' if item_has_gst else ('02' if has_gst else '')
                         

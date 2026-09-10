@@ -195,13 +195,23 @@ def validate_vouchers_pre_push(
                         p_up = party_name.upper().strip()
                         is_generic_descriptor = p_up in GENERIC_PARTY_DESCRIPTORS or any(p_up.startswith(g) for g in ['CHEQUE DEPOSIT', 'CHQ DEP', 'CLEARING', 'CHQ RET', 'CHEQUE RET'])
 
-                        is_expense_keyword = (p_up in GENERIC_EXPENSES) or any(
+                        COMMERCIAL_ENTITY_KWS = {
+                            'INDUSTRIES', 'TRADERS', 'ENTERPRISES', 'ENTERPRISE', 'PVT', 'PRIVATE',
+                            'LIMITED', 'LTD', 'LLP', 'DISTRIBUTORS', 'DISTRIBUTOR', 'PRODUCTS', 'PRODUCT',
+                            'AGENCIES', 'AGENCY', 'SUPPLIERS', 'SUPPLIER', 'MART', 'MANUFACTURING',
+                            'PHARMA', 'MILLS', 'CORP', 'CORPORATION', 'SOLUTIONS', 'TECHNOLOGIES',
+                            'SERVICES', 'INFRA', 'EXPORTS', 'IMPORTS', 'HARDWARE', 'MOTORS', 'AUTO',
+                            'STEEL', 'CHEMICALS', 'TEXTILES', 'TRADING', 'COMMERCE', 'LOGISTICS'
+                        }
+                        is_commercial_entity = any(w in p_up.split() for w in COMMERCIAL_ENTITY_KWS)
+
+                        is_expense_keyword = not is_commercial_entity and ((p_up in GENERIC_EXPENSES) or any(
                             kw in p_up for kw in [
                                 'EXPENSE', 'EXP', 'CHARGES', 'CHGS', 'FEE', 'FEES', 'RENT', 'SALARY',
                                 'MAINTENANCE', 'REPAIR', 'TAX', 'INTEREST', 'COMMISSION', 'INSURANCE',
                                 'PETROL', 'DIESEL', 'FUEL', 'STATIONERY', 'WELFARE', 'ADVERTISEMENT'
                             ]
-                        )
+                        ))
 
                         if is_expense_keyword:
                             v['group_hint'] = 'Indirect Expenses'
@@ -227,12 +237,14 @@ def validate_vouchers_pre_push(
             # ── CRITICAL DOUBLE-ENTRY ACCOUNTING NATURE GUARD ────────────────────────
             tx_type = str(v.get('transaction_type', 'Payment')).strip().capitalize()
             gh = str(v.get('group_hint') or '').upper()
-            if tx_type == 'Payment' and any(bad in gh for bad in ['SALES ACCOUNTS', 'DIRECT INCOME', 'INDIRECT INCOME', 'TRADING ACCOUNT']):
-                healed_group = 'Indirect Expenses' if 'INDIRECT' in gh else 'Direct Expenses'
+            has_party = bool(party_name and party_name.upper() not in ('BANK CHARGES', 'CASH', 'CASH ACCOUNT', 'UNKNOWN'))
+
+            if tx_type == 'Payment' and any(bad in gh for bad in ['SALES ACCOUNTS', 'DIRECT INCOME', 'INDIRECT INCOME', 'TRADING ACCOUNT', 'SUNDRY DEBTORS']):
+                healed_group = 'Sundry Creditors' if has_party else ('Indirect Expenses' if 'INDIRECT' in gh else 'Direct Expenses')
                 print(f"  ⚖️ [Auto-Heal Accounting Nature] {row_label}: Converted Payment from '{v.get('group_hint')}' to '{healed_group}'")
                 v['group_hint'] = healed_group
             elif tx_type == 'Receipt' and any(bad in gh for bad in ['PURCHASE ACCOUNTS', 'DIRECT EXPENSES', 'INDIRECT EXPENSES', 'SUNDRY CREDITORS']):
-                healed_group = 'Indirect Income' if 'INDIRECT' in gh else 'Direct Income'
+                healed_group = 'Sundry Debtors' if has_party else ('Indirect Income' if 'INDIRECT' in gh else 'Direct Income')
                 print(f"  ⚖️ [Auto-Heal Accounting Nature] {row_label}: Converted Receipt from '{v.get('group_hint')}' to '{healed_group}'")
                 v['group_hint'] = healed_group
 

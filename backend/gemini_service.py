@@ -344,18 +344,62 @@ class GeminiService:
         mapped_upper = mapped_name.upper().strip()
         narr_upper = narr.upper().strip()
 
-        # 0. Anti-Dummy & Generic Filler Ledger Guard: Never accept dummy filler words (REMARK, DUMMY, etc.) as valid party ledgers!
+        # 0. Anti-Dummy & Generic Filler Ledger Guard: Never accept dummy filler words (REMARK, DUMMY, etc.) or generic group headers as valid party ledgers!
         BANNED_DUMMY_LEDGERS = {
             "REMARK",
             "REMARKS",
             "SUSPENSE",
+            "SUSPENSE ACCOUNT",
+            "SUSPENSE A/C",
             "DUMMY",
             "UNKNOWN",
+            "UNKNOWN_EXPENSE",
+            "UNKNOWN_PARTY",
             "PART PAYMENT",
             "NARRATION",
             "NOTE",
             "PAYMENT",
             "RECEIPT",
+            "SUNDRY DEBTORS",
+            "SUNDRY CREDITORS",
+            "INDIRECT EXPENSES",
+            "DIRECT EXPENSES",
+            "INDIRECT INCOME",
+            "DIRECT INCOME",
+            "SALES ACCOUNTS",
+            "PURCHASE ACCOUNTS",
+            "BANK ACCOUNTS",
+            "CASH-IN-HAND",
+            "CASH ACCOUNT",
+            "LOANS & ADVANCES",
+            "LOANS & ADVANCES (ASSET)",
+            "UNSECURED LOANS",
+            "SECURED LOANS",
+            "CAPITAL ACCOUNT",
+            "CAPITAL ACCOUNT / DRAWINGS",
+            "DUTIES & TAXES",
+            "PROVISIONS",
+            "CURRENT LIABILITIES",
+            "CURRENT ASSETS",
+            "FIXED ASSETS",
+            "INVESTMENTS",
+            "BRANCH / DIVISIONS",
+            "CHEQUE DEPOSIT",
+            "CHQ DEP",
+            "CHQ DEPOSIT",
+            "CHEQUE CLEARING",
+            "CLEARING DEPOSIT",
+            "CLEARING",
+            "CLG DEPOSIT",
+            "CHQ RETURN",
+            "CHEQUE RETURN",
+            "CHQ RET",
+            "CHEQUE BOUNCE",
+            "INWARD CHEQUE",
+            "OUTWARD CHEQUE",
+            "NEFT DEPOSIT",
+            "RTGS DEPOSIT",
+            "IMPS DEPOSIT",
         }
         if mapped_upper in BANNED_DUMMY_LEDGERS:
             return False
@@ -437,8 +481,10 @@ class GeminiService:
         try:
             from modules.bank.parser import BankEntityRecognizer
             clean_entity, _ = BankEntityRecognizer.extract_vendor_entity(narr_str)
-            if clean_entity and len(clean_entity) >= 3 and not clean_entity.isdigit():
-                return clean_entity
+            if clean_entity:
+                sanitized = _sanitize_party(clean_entity)
+                if sanitized and len(sanitized) >= 3 and not sanitized.isdigit():
+                    return sanitized
         except Exception:
             pass
 
@@ -752,12 +798,25 @@ class GeminiService:
             if not clean_raw:
                 return ""
 
-            # Cryptic reference IDs (e.g. DU82848, TXN12345, REF99281) or pure numbers/short noise are NOT party names!
+            # Cryptic reference IDs (e.g. DU82848, TXN12345, REF99281) or generic group headers/dummy words are NOT party names!
             # Reject them (return "") so they automatically route to Suspense Account for manual/AI review.
+            BANNED_PARTY_WORDS = {
+                "REMARK", "REMARKS", "SUSPENSE", "SUSPENSE ACCOUNT", "SUSPENSE A/C", "DUMMY", "UNKNOWN",
+                "UNKNOWN_EXPENSE", "UNKNOWN_PARTY", "PART PAYMENT", "NARRATION", "NOTE", "PAYMENT", "RECEIPT",
+                "SUNDRY DEBTORS", "SUNDRY CREDITORS", "INDIRECT EXPENSES", "DIRECT EXPENSES",
+                "INDIRECT INCOME", "DIRECT INCOME", "SALES ACCOUNTS", "PURCHASE ACCOUNTS",
+                "BANK ACCOUNTS", "CASH-IN-HAND", "CASH ACCOUNT", "LOANS & ADVANCES", "LOANS & ADVANCES (ASSET)",
+                "UNSECURED LOANS", "SECURED LOANS", "CAPITAL ACCOUNT", "CAPITAL ACCOUNT / DRAWINGS",
+                "DUTIES & TAXES", "PROVISIONS", "CURRENT LIABILITIES", "CURRENT ASSETS", "FIXED ASSETS",
+                "INVESTMENTS", "BRANCH / DIVISIONS", "CHEQUE DEPOSIT", "CHQ DEP", "CHQ DEPOSIT",
+                "CHEQUE CLEARING", "CLEARING DEPOSIT", "CLEARING", "CLG DEPOSIT", "CHQ RETURN",
+                "CHEQUE RETURN", "CHQ RET", "CHEQUE BOUNCE", "INWARD CHEQUE", "OUTWARD CHEQUE"
+            }
             if (
                 re.match(r"^[A-Z]{1,4}\d{4,12}$", clean_raw, re.IGNORECASE)
                 or clean_raw.isdigit()
                 or len(clean_raw) < 3
+                or clean_raw.upper() in BANNED_PARTY_WORDS
             ):
                 return ""
 
@@ -1386,16 +1445,13 @@ class GeminiService:
         is_company = any(
             b in text
             for b in [
-                "LTD",
-                "LIMITED",
-                "PVT",
-                "PRIVATE",
-                "CORP",
-                "TRADERS",
-                "ENTERPRISE",
-                "INDUSTRIES",
-                "INC",
-                "LLC",
+                "LTD", "LIMITED", "PVT", "PRIVATE", "CORP", "CORPORATION",
+                "TRADERS", "TRADER", "ENTERPRISE", "ENTERPRISES", "INDUSTRIES", "INDUSTRY",
+                "INC", "LLC", "DISTRIBUTOR", "DISTRIBUTORS", "PRODUCTS", "PRODUCT",
+                "AGENCIES", "AGENCY", "SUPPLIERS", "SUPPLIER", "MART", "MANUFACTURING",
+                "PHARMA", "MILLS", "SOLUTIONS", "TECHNOLOGIES", "SERVICES", "INFRA",
+                "EXPORTS", "IMPORTS", "HARDWARE", "MOTORS", "AUTO", "STEEL", "CHEMICALS",
+                "TEXTILES", "TRADING", "COMMERCE", "LOGISTICS"
             ]
         )
         if is_human and not is_company:
@@ -1410,16 +1466,33 @@ class GeminiService:
                 ]
             )
             if not has_expense_descriptor:
-                return "Loans & Advances (Asset)" if is_payment else "Unsecured Loans"
+                res_group = "Loans & Advances (Asset)" if is_payment else "Unsecured Loans"
             else:
-                return "Indirect Expenses" if is_payment else "Indirect Income"
-
-        # ── STEP 16: FINAL DR/CR DIRECTION GATE (when no keyword matched) ───
-        # Counterparty payments map to Sundry Creditors (or Expenses); receipts map to Sundry Debtors
-        if is_payment:
-            return "Sundry Creditors"  # Counterparty payment = vendor/party (payable)
+                res_group = "Indirect Expenses" if is_payment else "Indirect Income"
+        elif is_company and party_name and party_name.upper().strip() not in ("BANK CHARGES", "CASH"):
+            res_group = "Sundry Creditors" if is_payment else "Sundry Debtors"
         else:
-            return "Sundry Debtors"  # Counterparty receipt = customer/party (receivable)
+            # ── STEP 16: FINAL DR/CR DIRECTION GATE (when no keyword matched) ───
+            res_group = "Sundry Creditors" if is_payment else "Sundry Debtors"
+
+        # ── DOUBLE-ENTRY ACCOUNTING NATURE GUARD ────────────────────────────────
+        # CR (Receipts) CANNOT be Expenses/Purchases unless explicit refund/reversal
+        has_reversal_kw = any(rk in text for rk in ["REFUND", "REVERSAL", "CASHBACK", "REIMBURSEMENT", "CLAIM", "DISCOUNT", "CREDIT NOTE", "CN "])
+        if is_receipt and res_group in ("Indirect Expenses", "Direct Expenses", "Purchase Accounts", "Sundry Creditors") and not has_reversal_kw:
+            p_clean = (party_name or "").upper().strip()
+            if p_clean and p_clean not in ("BANK CHARGES", "CASH", "CASH ACCOUNT", "UNKNOWN"):
+                return "Sundry Debtors"
+            return "Indirect Income"
+
+        # DR (Payments) CANNOT be Sales/Income unless explicit debit note/chargeback
+        has_dn_kw = any(rk in text for rk in ["DEBIT NOTE", "DN ", "CHARGEBACK"])
+        if is_payment and res_group in ("Sales Accounts", "Direct Income", "Indirect Income", "Sundry Debtors") and not has_dn_kw:
+            p_clean = (party_name or "").upper().strip()
+            if p_clean and p_clean not in ("BANK CHARGES", "CASH", "CASH ACCOUNT", "UNKNOWN"):
+                return "Sundry Creditors"
+            return "Indirect Expenses"
+
+        return res_group
 
     def _update_status(self, filename, part, total, message):
         try:
@@ -4030,6 +4103,21 @@ Return ONLY valid JSON.
             base_score = 90
         elif "S0-FuzzyMem" in stage_str or "S3-Keyword" in stage_str:
             base_score = 85
+        elif "S3.5-DBFJaccard(" in stage_str:
+            # High-confidence DBF Jaccard match (score >= 0.85)
+            # Extract embedded score for precise confidence calculation
+            import re as _re
+            _m = _re.search(r"score=([0-9.]+)", stage_str)
+            _jaccard_score = float(_m.group(1)) if _m else 0.85
+            base_score = int(70 + (_jaccard_score * 25))  # maps 0.85→91, 0.95→93, 1.0→95
+            base_score = max(82, min(95, base_score))
+        elif "S3.5-DBFJaccardLow" in stage_str:
+            # Lower-confidence DBF Jaccard match (score 0.70–0.84) — flagged for review
+            import re as _re
+            _m = _re.search(r"score=([0-9.]+)", stage_str)
+            _jaccard_score = float(_m.group(1)) if _m else 0.72
+            base_score = int(55 + (_jaccard_score * 30))  # maps 0.70→76, 0.84→80
+            base_score = max(70, min(81, base_score))
         elif "S2a-DirectSub" in stage_str or "S2b-LetterSub" in stage_str or "S4-PartyToken" in stage_str:
             base_score = 80
         elif "Clean Party Auto-Extraction" in stage_str:
@@ -4687,6 +4775,73 @@ Return ONLY valid JSON.
                         return target_options[0]
             return None
 
+        # ── Stage 3.5 Helper: DBF Token Jaccard + SequenceMatcher Scorer ──────
+        # This function scores a cleaned narration entity against ALL live DBF ledger
+        # names using a weighted blend:
+        #   35% Token Jaccard intersection  (word-order independent, partial-name robust)
+        #   55% SequenceMatcher ratio        (handles typos, truncations, suffix mismatches)
+        #   +0.15 partial substring bonus   (e.g. "SURYA TRADE" inside "SURYA TRADERS")
+        # Returns (matched_ledger_exact_name, combined_score: float 0.0–1.0)
+        # Only ledgers NOT in RESERVED_GENERIC_WORDS are candidates.
+        _S35_CANDIDATES = [
+            (name_up, exact)
+            for name_up, exact in ledger_lookup.items()
+            if name_up not in RESERVED_GENERIC_WORDS and len(name_up) >= 4
+        ]
+
+        def score_narration_against_dbf(clean_entity: str) -> tuple[str, float]:
+            """
+            Score clean_entity (output of clean_mapping_key / BankEntityRecognizer)
+            against every eligible DBF ledger name.  Returns (exact_ledger_name, best_score).
+            Score ranges:
+              >= 0.85  → high confidence auto-map
+              0.70–0.84 → accepted with Low Confidence flag
+              <  0.70  → no match (returns '', 0.0)
+            """
+            if not clean_entity or len(clean_entity) < 4:
+                return ("", 0.0)
+
+            entity_up = clean_entity.upper()
+            entity_tokens = set(w for w in entity_up.split() if len(w) >= 3)
+            if not entity_tokens:
+                return ("", 0.0)
+
+            best_score = 0.0
+            best_name = ""
+
+            for name_up, exact in _S35_CANDIDATES:
+                # Skip if this ledger name is the statement's own bank brand (brand-swap guard)
+                if stmt_brand and stmt_brand in name_up and "BANK" in name_up:
+                    continue
+
+                # a) Token Jaccard
+                ledger_tokens = set(w for w in name_up.split() if len(w) >= 3)
+                if not ledger_tokens:
+                    continue
+                intersection = entity_tokens & ledger_tokens
+                union = entity_tokens | ledger_tokens
+                jaccard = len(intersection) / len(union) if union else 0.0
+
+                # b) SequenceMatcher (Levenshtein-like ratio)
+                lev_sim = difflib.SequenceMatcher(None, entity_up, name_up).ratio()
+
+                # c) Partial substring containment bonus
+                partial_bonus = 0.15 if (entity_up in name_up or name_up in entity_up) else 0.0
+
+                combined = (jaccard * 0.35) + (lev_sim * 0.55) + partial_bonus
+
+                # Boost multi-token exact-token overlaps (e.g. "SURYA" AND "TRADERS" both present)
+                if len(intersection) >= 2:
+                    combined = min(1.0, combined + 0.05)
+
+                if combined > best_score:
+                    best_score = combined
+                    best_name = exact
+
+            if best_score >= 0.70:
+                return (best_name, round(best_score, 3))
+            return ("", 0.0)
+
         # ── Per-row mapping ────────────────────────────────────────────────────
         import time
 
@@ -4822,6 +4977,24 @@ Return ONLY valid JSON.
                 matched_ledger = find_best_keyword_match(narr_upper)
                 if matched_ledger:
                     match_stage = "S3-Keyword"
+
+            # ── STAGE 3.5: DBF Token Jaccard + SequenceMatcher Match ─────────
+            # Scores the cleaned narration entity against ALL live RKACCM01.DBF
+            # ledger names using a weighted Jaccard + Levenshtein blend.
+            # This stage fires BEFORE party extraction so that known party names
+            # with minor spelling variations (e.g. 'SURYA TRADE' vs 'SURYA TRADERS')
+            # are resolved directly from the master ledger list — avoiding unnecessary
+            # Suspense fallbacks and hallucination-prone Gemini calls.
+            if not matched_ledger and cleaned_narr and len(cleaned_narr) >= 4:
+                s35_name, s35_score = score_narration_against_dbf(cleaned_narr)
+                if s35_name:
+                    matched_ledger = s35_name
+                    if s35_score >= 0.85:
+                        match_stage = f"S3.5-DBFJaccard(score={s35_score})"
+                    else:
+                        # Score 0.70–0.84: accept but flag for human review
+                        match_stage = f"S3.5-DBFJaccardLow(score={s35_score})"
+                        row.setdefault("flags", []).append("Low Confidence")
 
             # ── STAGE 4: Narration Party Extractor & Ledger Matching ─────────
             if not matched_ledger:
@@ -5957,15 +6130,35 @@ INSTRUCTIONS:
                             leg["group_name"]
                         ).strip()
 
-                # 1. First try Gemini AI resolved mapping with strict 75% CA Confidence Safeguard
+                # 1. First try Gemini AI resolved mapping with strict 80% CA Confidence Safeguard & Generic Group Rejection
                 mapped_success = False
+                GENERIC_PARTY_DESCRIPTORS_SET = {
+                    "SUNDRY DEBTORS", "SUNDRY CREDITORS", "INDIRECT EXPENSES", "DIRECT EXPENSES",
+                    "INDIRECT INCOME", "DIRECT INCOME", "SALES ACCOUNTS", "PURCHASE ACCOUNTS",
+                    "BANK ACCOUNTS", "CASH-IN-HAND", "CASH ACCOUNT", "LOANS & ADVANCES", "LOANS & ADVANCES (ASSET)",
+                    "UNSECURED LOANS", "SECURED LOANS", "CAPITAL ACCOUNT", "CAPITAL ACCOUNT / DRAWINGS",
+                    "DUTIES & TAXES", "PROVISIONS", "CURRENT LIABILITIES", "CURRENT ASSETS", "FIXED ASSETS",
+                    "INVESTMENTS", "BRANCH / DIVISIONS", "SUSPENSE ACCOUNT", "SUSPENSE A/C", "SUSPENSE",
+                    "CHEQUE DEPOSIT", "CHQ DEP", "CHQ DEPOSIT", "CHEQUE CLEARING", "CLEARING DEPOSIT",
+                    "CLEARING", "CLG DEPOSIT", "CHQ RETURN", "CHEQUE RETURN", "CHQ RET", "CHEQUE BOUNCE",
+                    "INWARD CHEQUE", "OUTWARD CHEQUE", "NEFT DEPOSIT", "RTGS DEPOSIT", "IMPS DEPOSIT",
+                    "UNKNOWN", "UNKNOWN_EXPENSE", "UNKNOWN_PARTY"
+                }
+
                 if narr in resolved_mappings:
                     res = resolved_mappings[narr]
                     raw_target = str(res.get("mapped_ledger") or "").strip()
                     conf = int(res.get("confidence_score", 80) or 80)
+                    target_upper = raw_target.upper()
 
-                    # CA SAFEGUARD: If confidence < 80%, force Suspense Account for human review
-                    if conf < 80:
+                    # REJECT generic group headers (Rule 26) or low confidence (Rule 32)
+                    is_generic_target = (
+                        not raw_target
+                        or target_upper in GENERIC_PARTY_DESCRIPTORS_SET
+                        or any(target_upper.startswith(g) for g in ["CHEQUE DEPOSIT", "CHQ DEP", "CLEARING", "CHQ RET", "CHEQUE RET"])
+                    )
+
+                    if conf < 80 or is_generic_target:
                         r["mapped_ledger"] = "Suspense Account"
                         r["party_name"] = "Suspense Account"
                         r["party"] = "Suspense Account"
@@ -5974,19 +6167,14 @@ INSTRUCTIONS:
                         r["flags"] = ["Low Confidence (< 80%)", "Human Review Required"]
                         mapped_success = True
                         print(
-                            f"  🛡️ [CA Safeguard] Confidence {conf}% < 80% for '{narr}'. Forcing fallback to Suspense Account for human review."
+                            f"  🛡️ [CA Safeguard] Generic target '{raw_target}' or low conf ({conf}%) for '{narr}'. Forcing fallback to Suspense Account for human review."
                         )
-                    elif raw_target and raw_target.upper() not in (
-                        "SUSPENSE ACCOUNT",
-                        "SUSPENSE A/C",
-                        "SUSPENSE",
-                        "UNKNOWN",
-                    ):
+                    else:
                         # Sanitize party name formatting for new ledger entities
                         target_leg = raw_target
                         if (
                             existing_names_upper
-                            and raw_target.upper() not in existing_names_upper
+                            and target_upper not in existing_names_upper
                         ):
                             sanitized = self.extract_clean_party_from_narration(
                                 raw_target
@@ -6000,15 +6188,30 @@ INSTRUCTIONS:
                             r["party"] = target_leg
                             r["confidence_score"] = conf
                             master_grp = ledger_group_map.get(target_leg.upper())
-                            if master_grp:
+                            if master_grp and master_grp.upper() not in ("UNKNOWN", "SUSPENSE ACCOUNT"):
                                 r["group_hint"] = master_grp
-                            elif res.get("group_hint"):
+                            elif res.get("group_hint") and res.get("group_hint").upper() not in ("UNKNOWN", "SUSPENSE ACCOUNT"):
                                 r["group_hint"] = res["group_hint"]
-                            applied_count += 1
+                            else:
+                                r["group_hint"] = self.classify_transaction_nature(
+                                    narr, target_leg, tx_type, amount=float(r.get("amount", 0) or 0)
+                                )
+                            
+                            # If group hint is still Unknown, force Suspense Account fallback
+                            if str(r.get("group_hint") or "").strip().upper() in ("UNKNOWN", ""):
+                                r["mapped_ledger"] = "Suspense Account"
+                                r["party_name"] = "Suspense Account"
+                                r["party"] = "Suspense Account"
+                                r["group_hint"] = "Suspense Account"
+                                r["confidence_score"] = 40
+                                r["flags"] = ["Low Confidence (< 80%)", "Human Review Required"]
+                                print(f"  🛡️ [CA Safeguard] Unknown group hint for '{target_leg}'. Forced to Suspense Account.")
+                            else:
+                                applied_count += 1
+                                print(
+                                    f"  🔮 [AI Mapping Resolved] '{narr}' → '{target_leg}' ({r.get('group_hint', '')}) [Conf: {conf}%]"
+                                )
                             mapped_success = True
-                            print(
-                                f"  🔮 [AI Mapping Resolved] '{narr}' → '{target_leg}' ({r.get('group_hint', '')}) [Conf: {conf}%]"
-                            )
                         else:
                             print(
                                 f"  ⚠️ [AI Assist Guard] Rejected AI suspense mapping '{target_leg}' for narration '{narr}' (word mismatch)."

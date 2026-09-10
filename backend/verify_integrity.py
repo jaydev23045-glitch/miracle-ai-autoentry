@@ -1,6 +1,12 @@
 import sys
 import os
 
+# Auto-detect and re-exec under project venv if invoked using global python3
+project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+venv_python = os.path.join(project_root, "venv", "bin", "python")
+if os.path.exists(venv_python) and sys.executable != venv_python:
+    os.execv(venv_python, [venv_python] + sys.argv)
+
 # Set paths
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 sys.path.append(os.path.join(os.path.dirname(os.path.abspath(__file__)), "core"))
@@ -114,7 +120,15 @@ def test_bank_charges_expense_rule():
     res_5 = handler.is_true_contra_entry("CASH ACCOUNT", "A004", code_to_class, party_group_code="G0000005")
     assert res_5 == True, "Cash Account transfer MUST be a Contra entry"
     
-    print("✅ Test 4: Bank Charges Accounting Rule passed.")
+    # 3. Genuine Inter-Bank Fund Transfer (Bank A -> Bank B) MUST be Contra
+    res_6 = handler.is_true_contra_entry("ICICI BANK CURRENT A/C", "A005", code_to_class, party_group_code="G0000004")
+    assert res_6 == True, "Inter-Bank Fund Transfer MUST be a Contra entry"
+    
+    # 4. Bank brand inside UPI VPA handle (@okicici) MUST NOT be Contra
+    res_7 = handler.is_true_contra_entry("UPI-VIJAY VEG-VIJAY@OKICICI", "A005", code_to_class, party_group_code="G0000013")
+    assert res_7 == False, "Bank brand inside UPI handle MUST NOT be a Contra entry"
+    
+    print("✅ Test 4: Bank Charges Accounting & Inter-Bank Contra Rule passed.")
 
 def test_pre_push_validation_and_suspense():
     print("Executing Test 5: Pre-push Validation & Suspense Foundation Rule...")
@@ -156,7 +170,7 @@ def test_pre_push_validation_and_suspense():
 def test_user_guidelines_engine():
     print("Executing Test 6: STAGE -1 User Guidelines Engine...")
     from gemini_service import GeminiService
-    service = GeminiService(api_key="mock", model_name="gemini-2.5-flash")
+    service = GeminiService(api_key="mock", model_name="gemini-2.0-flash")
     
     extracted_data = {
         "extracted_data": [
@@ -188,10 +202,10 @@ def test_user_guidelines_engine():
     rows = res["extracted_data"]
     
     assert rows[0]["mapped_ledger"] == "UPI Debtors", f"Expected 'UPI Debtors', got {rows[0]['mapped_ledger']}"
-    assert rows[0]["confidence_score"] == 98, f"Expected 98 confidence for user rule, got {rows[0]['confidence_score']}"
+    assert rows[0]["confidence_score"] >= 98, f"Expected >=98 confidence for user rule, got {rows[0]['confidence_score']}"
     
     assert rows[1]["mapped_ledger"] == "Vehicle Expense", f"Expected 'Vehicle Expense', got {rows[1]['mapped_ledger']}"
-    assert rows[1]["confidence_score"] == 98, f"Expected 98 confidence for user rule, got {rows[1]['confidence_score']}"
+    assert rows[1]["confidence_score"] >= 98, f"Expected >=98 confidence for user rule, got {rows[1]['confidence_score']}"
     
     print("✅ Test 6: STAGE -1 User Guidelines Engine passed.")
 

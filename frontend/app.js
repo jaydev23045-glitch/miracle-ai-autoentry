@@ -2268,7 +2268,7 @@ document.addEventListener('DOMContentLoaded', () => {
             bulkApplyPopup._patternKey = patternKey;
 
             // ── STEP 3: Pre-fill Ledger & Group defaults ──
-            const preFillLedger = sourceRow.mapped_ledger && sourceRow.mapped_ledger.toUpperCase() !== 'SUSPENSE ACCOUNT' ? sourceRow.mapped_ledger : '';
+            const preFillLedger = sourceRow.mapped_ledger || '';
             const preFillGroup = inferExpenseGroupHint(sourceRow.mapped_ledger, sourceRow.transaction_type, sourceRow.group_hint);
 
             if (bulkApplyLedgerInput) bulkApplyLedgerInput.value = preFillLedger || '';
@@ -2349,6 +2349,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
             let updatedCount = 0;
             targetRows.forEach(row => {
+                if (!row || typeof row !== 'object') return;
+                const hasDate = Boolean(row.date || row.Date);
+                const hasNarr = Boolean(row.narration || row.party_name || row.party || row.billNo || row.bill_no);
+                const amt = parseCurrency(row.amount || row.deposit || row.withdrawal || row.total || row.taxable || 0);
+                if (!hasDate && !hasNarr && amt === 0) return;
+
                 row.mapped_ledger = targetLedger;
                 row.group_hint = targetGroup;
                 row.status = 'Ready';
@@ -3959,7 +3965,14 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function finalizeExtraction(data) {
         // Normalize all field names before storing or rendering
-        currentExtractedData = (data || []).map((r, i) => normalizeRowFields(r, i));
+        const rawList = (data || []).map((r, i) => normalizeRowFields(r, i));
+        currentExtractedData = rawList.filter(r => {
+            if (!r || typeof r !== 'object') return false;
+            const hasDate = Boolean(r.date || r.Date);
+            const hasNarr = Boolean(r.narration || r.party_name || r.party || r.billNo || r.bill_no);
+            const amt = parseCurrency(r.amount || r.deposit || r.withdrawal || r.total || r.taxable || 0);
+            return hasDate || hasNarr || amt > 0;
+        });
 
         // Auto-sort by Date ascending (earliest to latest) upon extraction
         currentExtractedData.sort((a, b) => parseDateForSort(a.date || a.Date) - parseDateForSort(b.date || b.Date));
@@ -4219,10 +4232,38 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
 
+        const q = (currentGridSearch || "").toLowerCase().trim();
+        let searchData = currentExtractedData;
+        if (q) {
+            searchData = currentExtractedData.filter(r => {
+                const info = getRowGroupAndAccount(r);
+                const gstin = (r.party_gstin || r.gstin || r.GSTIN || r.Party_GSTIN || "").trim();
+                const mappedLedgerStr = (r.mapped_ledger || r.party_name || r.party || "").trim().toUpperCase();
+                const isSuspense = info.isSuspense;
+                const txType = (r.transaction_type || r.Transaction_Type || 'Receipt').toLowerCase();
+                let exists = false;
+                if (clientLedgers && clientLedgers.length > 0 && !isSuspense) {
+                    exists = !!findMatchingClientLedger(mappedLedgerStr, clientLedgers) || clientLedgers.some(led =>
+                        led.name.trim().toUpperCase() === mappedLedgerStr ||
+                        led.print_name.trim().toUpperCase() === mappedLedgerStr ||
+                        led.code.trim().toUpperCase() === mappedLedgerStr
+                    );
+                }
+                const statusTag = isSuspense ? "review suspense" : (exists ? "mapped" : "autocreate auto-create");
+                const numVal = parseCurrency(r.amount || r.total || 0);
+                const formattedNum = numVal ? numVal.toLocaleString('en-IN') : '';
+                const groupTag = (r.group_hint || "").toLowerCase();
+                const itemNames = (r.items || []).map(i => `${i.name || ''} ${i.hsn_code || i.hsn || ''}`).join(' ');
+                const textStr = `${r.date || ''} ${r.billNo || r.bill_no || ''} ${r.reference_no || ''} ${r.party || r.party_name || ''} ${r.mapped_ledger || ''} ${r.narration || ''} ${gstin} ${itemNames} ${r.total || r.amount || ''} ${formattedNum} ${txType} ${groupTag} ${statusTag}`.toLowerCase();
+
+                return textStr.includes(q);
+            });
+        }
+
         const groupCounts = {};
         const accountCounts = {};
 
-        currentExtractedData.forEach(r => {
+        searchData.forEach(r => {
             const info = getRowGroupAndAccount(r);
             groupCounts[info.group] = (groupCounts[info.group] || 0) + 1;
             accountCounts[info.account] = (accountCounts[info.account] || 0) + 1;
@@ -4238,7 +4279,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
             }
 
-            let grpHtml = `<option value="all" ${prevVal === 'all' ? 'selected' : ''}>📂 All Groups (${currentExtractedData.length})</option>`;
+            let grpHtml = `<option value="all" ${prevVal === 'all' ? 'selected' : ''}>📂 All Groups (${searchData.length})</option>`;
             const sortedGroups = Object.keys(groupCounts).sort((a, b) => a.localeCompare(b));
             sortedGroups.forEach(g => {
                 const count = groupCounts[g];
@@ -4258,7 +4299,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
             }
 
-            let accHtml = `<option value="all" ${prevVal === 'all' ? 'selected' : ''}>👤 All Accounts (${currentExtractedData.length})</option>`;
+            let accHtml = `<option value="all" ${prevVal === 'all' ? 'selected' : ''}>👤 All Accounts (${searchData.length})</option>`;
             const sortedAccounts = Object.keys(accountCounts).sort((a, b) => a.localeCompare(b));
             sortedAccounts.forEach(a => {
                 const count = accountCounts[a];
@@ -4376,6 +4417,12 @@ document.addEventListener('DOMContentLoaded', () => {
     function getFilteredData() {
         if (!currentExtractedData || !Array.isArray(currentExtractedData)) return [];
         return currentExtractedData.filter(row => {
+            if (!row || typeof row !== 'object') return false;
+            const hasDate = Boolean(row.date || row.Date);
+            const hasNarr = Boolean(row.narration || row.party_name || row.party || row.billNo || row.bill_no);
+            const amt = parseCurrency(row.amount || row.deposit || row.withdrawal || row.total || row.taxable || 0);
+            if (!hasDate && !hasNarr && amt === 0) return false;
+
             const info = getRowGroupAndAccount(row);
             const gstin = (row.party_gstin || row.gstin || row.GSTIN || row.Party_GSTIN || "").trim();
             const hasGstin = gstin.length >= 10;
@@ -4461,21 +4508,43 @@ document.addEventListener('DOMContentLoaded', () => {
     function updateFilterCounts() {
         if (!currentExtractedData || !Array.isArray(currentExtractedData)) return;
 
-        populateGridDropdownFilters();
-
         let baseData = currentExtractedData;
-        if ((currentGridGroupFilter && currentGridGroupFilter !== 'all') || (currentGridAccountFilter && currentGridAccountFilter !== 'all')) {
-            baseData = currentExtractedData.filter(row => {
-                const info = getRowGroupAndAccount(row);
-                if (currentGridGroupFilter && currentGridGroupFilter !== 'all') {
-                    if (info.group.toUpperCase() !== currentGridGroupFilter.trim().toUpperCase()) return false;
-                }
-                if (currentGridAccountFilter && currentGridAccountFilter !== 'all') {
-                    if (info.account.toUpperCase() !== currentGridAccountFilter.trim().toUpperCase()) return false;
+        const q = (currentGridSearch || "").toLowerCase().trim();
+        const hasGrp = currentGridGroupFilter && currentGridGroupFilter !== 'all';
+        const hasAcc = currentGridAccountFilter && currentGridAccountFilter !== 'all';
+
+        if (q || hasGrp || hasAcc) {
+            baseData = currentExtractedData.filter(r => {
+                const info = getRowGroupAndAccount(r);
+                if (hasGrp && info.group.toUpperCase() !== currentGridGroupFilter.trim().toUpperCase()) return false;
+                if (hasAcc && info.account.toUpperCase() !== currentGridAccountFilter.trim().toUpperCase()) return false;
+                if (q) {
+                    const gstin = (r.party_gstin || r.gstin || r.GSTIN || r.Party_GSTIN || "").trim();
+                    const mappedLedgerStr = (r.mapped_ledger || r.party_name || r.party || "").trim().toUpperCase();
+                    const isSuspense = info.isSuspense;
+                    const txType = (r.transaction_type || r.Transaction_Type || 'Receipt').toLowerCase();
+                    let exists = false;
+                    if (clientLedgers && clientLedgers.length > 0 && !isSuspense) {
+                        exists = !!findMatchingClientLedger(mappedLedgerStr, clientLedgers) || clientLedgers.some(led =>
+                            led.name.trim().toUpperCase() === mappedLedgerStr ||
+                            led.print_name.trim().toUpperCase() === mappedLedgerStr ||
+                            led.code.trim().toUpperCase() === mappedLedgerStr
+                        );
+                    }
+                    const statusTag = isSuspense ? "review suspense" : (exists ? "mapped" : "autocreate auto-create");
+                    const numVal = parseCurrency(r.amount || r.total || 0);
+                    const formattedNum = numVal ? numVal.toLocaleString('en-IN') : '';
+                    const groupTag = (r.group_hint || "").toLowerCase();
+                    const itemNames = (r.items || []).map(i => `${i.name || ''} ${i.hsn_code || i.hsn || ''}`).join(' ');
+                    const textStr = `${r.date || ''} ${r.billNo || r.bill_no || ''} ${r.reference_no || ''} ${r.party || r.party_name || ''} ${r.mapped_ledger || ''} ${r.narration || ''} ${gstin} ${itemNames} ${r.total || r.amount || ''} ${formattedNum} ${txType} ${groupTag} ${statusTag}`.toLowerCase();
+
+                    if (!textStr.includes(q)) return false;
                 }
                 return true;
             });
         }
+
+        populateGridDropdownFilters();
 
         let cntAll = baseData.length;
         let cntMapped = 0, cntAutoCreate = 0, cntReview = 0;
@@ -4589,7 +4658,16 @@ document.addEventListener('DOMContentLoaded', () => {
                 const key = name.toUpperCase();
                 if (name && !seen.has(key)) {
                     seen.add(key);
-                    optionsHtml += `<option value="${name}">${l.group_name || 'Miracle Master'}</option>`;
+                    let grp = normalizeAccountingGroup(l.group_name);
+                    if (!grp || grp === 'Suspense Account' || grp === 'Unknown' || grp === 'MIRACLE MASTER' || grp === 'UNKNOWN') {
+                        const inferred = inferExpenseGroupHint(name, 'Payment', null);
+                        if (inferred && inferred !== 'Suspense Account') {
+                            grp = inferred;
+                        } else {
+                            grp = 'Suspense Account';
+                        }
+                    }
+                    optionsHtml += `<option value="${name}">${grp}</option>`;
                 }
             });
         }
@@ -4600,20 +4678,21 @@ document.addEventListener('DOMContentLoaded', () => {
                 const key = name.toUpperCase();
                 if (name && !seen.has(key)) {
                     seen.add(key);
-                    const hint = hints[key] || (typeof inferExpenseGroupHint === 'function' ? inferExpenseGroupHint(name) : 'Auto-Create');
-                    optionsHtml += `<option value="${name}">${name} (Auto-Create → ${hint})</option>`;
+                    const hint = hints[key] || inferExpenseGroupHint(name, 'Payment', null);
+                    optionsHtml += `<option value="${name}">Auto-Create → ${hint}</option>`;
                 }
             });
         }
 
         if (currentExtractedData && Array.isArray(currentExtractedData) && currentExtractedData.length > 0) {
             currentExtractedData.forEach(r => {
-                if (r.mapped_ledger && r.mapped_ledger.toUpperCase() !== 'SUSPENSE ACCOUNT') {
-                    const name = r.mapped_ledger.trim();
+                const name = (r.mapped_ledger || r.party_name || r.party || '').trim();
+                if (name && name.toUpperCase() !== 'SUSPENSE ACCOUNT') {
                     const key = name.toUpperCase();
                     if (!seen.has(key)) {
                         seen.add(key);
-                        optionsHtml += `<option value="${name}">${name}</option>`;
+                        const grp = r.group_hint || inferExpenseGroupHint(name, r.transaction_type, null);
+                        optionsHtml += `<option value="${name}">${grp}</option>`;
                     }
                 }
             });
@@ -4621,6 +4700,19 @@ document.addEventListener('DOMContentLoaded', () => {
 
         datalist.innerHTML = optionsHtml;
     }
+
+    window.resetAllGridFilters = function() {
+        const searchInput = document.getElementById('gridSearchInput');
+        if (searchInput) searchInput.value = '';
+        currentGridSearch = '';
+        currentGridFilter = 'all';
+        currentGridGroupFilter = 'all';
+        currentGridAccountFilter = 'all';
+        if (gridBody) gridBody.dataset.needsFullRender = 'true';
+        if (typeof renderFilterBadgesForModule === 'function') renderFilterBadgesForModule();
+        recalcGrandTotals();
+        renderVirtualGridRows();
+    };
 
     function renderVirtualGridRows() {
         if (!currentExtractedData || !Array.isArray(currentExtractedData)) return;
@@ -4640,44 +4732,69 @@ document.addEventListener('DOMContentLoaded', () => {
             let colSpan = 12;
             if (currentModule === 'Opening Balances') colSpan = 6;
             else if (currentModule === 'Bank Statements' || currentModule === 'Cash Entries') colSpan = 10;
-            gridBody.innerHTML = `
-                <tr id="emptyGridHeroRow">
-                    <td colspan="${colSpan}" class="py-0">
-                        <div class="flex flex-col items-center justify-center py-20 px-8">
-                            <div class="relative mb-5">
-                                <div class="absolute inset-0 bg-brand-500/8 blur-3xl rounded-full scale-[2]"></div>
-                                <div class="relative h-20 w-20 bg-gradient-to-br from-slate-800 to-slate-900 border border-slate-700/80 rounded-3xl flex items-center justify-center shadow-2xl">
-                                    <i class="fa-solid fa-cloud-arrow-up text-3xl text-brand-400"></i>
-                                    <div class="absolute -bottom-2 -right-2 h-8 w-8 bg-brand-600 rounded-xl flex items-center justify-center border-2 border-slate-950 animate-bounce" style="animation-duration:3s">
-                                        <i class="fa-solid fa-sparkles text-white text-xs"></i>
+            
+            const hasExtractedData = currentExtractedData && currentExtractedData.length > 0;
+            if (hasExtractedData) {
+                gridBody.innerHTML = `
+                    <tr id="emptyGridHeroRow">
+                        <td colspan="${colSpan}" class="py-0">
+                            <div class="flex flex-col items-center justify-center py-16 px-8 text-center">
+                                <div class="relative mb-4">
+                                    <div class="h-16 w-16 bg-amber-500/10 border border-amber-500/20 rounded-2xl flex items-center justify-center">
+                                        <i class="fa-solid fa-filter-circle-xmark text-2xl text-amber-400"></i>
                                     </div>
                                 </div>
-                            </div>
-                            <h3 class="text-base font-bold text-white font-heading">No Transactions Extracted Yet</h3>
-                            <p class="text-xs text-slate-500 mt-2 max-w-[280px] text-center leading-relaxed">
-                                Upload a Bank Statement, Purchase Bill, or Sales Invoice — Gemini AI will extract and map all entries automatically.
-                            </p>
-                            <div class="flex items-center gap-3 mt-6">
-                                <button onclick="document.getElementById('fileInput').click()" class="bg-brand-600 hover:bg-brand-500 text-white font-bold text-xs px-4 py-2.5 rounded-xl transition shadow-lg shadow-brand-600/30 flex items-center gap-2 cursor-pointer">
-                                    <i class="fa-solid fa-folder-open"></i> Browse Files (Multiple)
-                                </button>
-                                <button onclick="document.getElementById('addEntryBtn').click()" class="bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-xs px-4 py-2.5 rounded-xl transition border border-slate-700 flex items-center gap-2 cursor-pointer">
-                                    <i class="fa-solid fa-plus"></i> Add Manual Row
+                                <h3 class="text-base font-bold text-white font-heading">No Matching Transactions Found</h3>
+                                <p class="text-xs text-slate-400 mt-2 max-w-[340px] leading-relaxed">
+                                    No entries match search ${currentGridSearch ? `'<span class="text-brand-400 font-mono font-bold">${currentGridSearch}</span>'` : ''} under filter '<span class="text-amber-400 font-bold uppercase">${currentGridFilter}</span>'.
+                                </p>
+                                <button onclick="resetAllGridFilters()" class="mt-5 bg-brand-600 hover:bg-brand-500 text-white font-bold text-xs px-4 py-2 rounded-xl transition shadow-lg shadow-brand-600/30 flex items-center gap-2 cursor-pointer">
+                                    <i class="fa-solid fa-rotate-left"></i> Clear Search & Filters
                                 </button>
                             </div>
-                        </div>
-                    </td>
-                </tr>
-            `;
+                        </td>
+                    </tr>
+                `;
+            } else {
+                gridBody.innerHTML = `
+                    <tr id="emptyGridHeroRow">
+                        <td colspan="${colSpan}" class="py-0">
+                            <div class="flex flex-col items-center justify-center py-20 px-8">
+                                <div class="relative mb-5">
+                                    <div class="absolute inset-0 bg-brand-500/8 blur-3xl rounded-full scale-[2]"></div>
+                                    <div class="relative h-20 w-20 bg-gradient-to-br from-slate-800 to-slate-900 border border-slate-700/80 rounded-3xl flex items-center justify-center shadow-2xl">
+                                        <i class="fa-solid fa-cloud-arrow-up text-3xl text-brand-400"></i>
+                                        <div class="absolute -bottom-2 -right-2 h-8 w-8 bg-brand-600 rounded-xl flex items-center justify-center border-2 border-slate-950 animate-bounce" style="animation-duration:3s">
+                                            <i class="fa-solid fa-sparkles text-white text-xs"></i>
+                                        </div>
+                                    </div>
+                                </div>
+                                <h3 class="text-base font-bold text-white font-heading">No Transactions Extracted Yet</h3>
+                                <p class="text-xs text-slate-500 mt-2 max-w-[280px] text-center leading-relaxed">
+                                    Upload a Bank Statement, Purchase Bill, or Sales Invoice — Gemini AI will extract and map all entries automatically.
+                                </p>
+                                <div class="flex items-center gap-3 mt-6">
+                                    <button onclick="document.getElementById('fileInput').click()" class="bg-brand-600 hover:bg-brand-500 text-white font-bold text-xs px-4 py-2.5 rounded-xl transition shadow-lg shadow-brand-600/30 flex items-center gap-2 cursor-pointer">
+                                        <i class="fa-solid fa-folder-open"></i> Browse Files (Multiple)
+                                    </button>
+                                    <button onclick="document.getElementById('addEntryBtn').click()" class="bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-xs px-4 py-2.5 rounded-xl transition border border-slate-700 flex items-center gap-2 cursor-pointer">
+                                        <i class="fa-solid fa-plus"></i> Add Manual Row
+                                    </button>
+                                </div>
+                            </div>
+                        </td>
+                    </tr>
+                `;
+            }
             return;
         }
 
         // For datasets under 150 rows (e.g. Purchases/Sales), render natively for 100% smooth jitter-free scrolling
         if (totalRows <= 150) {
-            if (gridBody.children.length === totalRows && !gridBody.dataset.needsFullRender) {
+            if (gridBody.children.length === totalRows && gridBody.dataset.needsFullRender === 'false') {
                 return;
             }
-            gridBody.dataset.needsFullRender = '';
+            gridBody.dataset.needsFullRender = 'false';
             gridBody.innerHTML = '';
 
             let globalAutoCreateLedgers = [];
@@ -5025,49 +5142,56 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function normalizeAccountingGroup(rawGroupName) {
         if (!rawGroupName) return 'Suspense Account';
-        const gUp = rawGroupName.trim().toUpperCase();
+        const gTrim = rawGroupName.trim();
+        const gUp = gTrim.toUpperCase();
 
-        if (gUp === 'SUSPENSE ACCOUNT' || gUp === 'SUSPENSE' || gUp === 'G0000028') return 'Suspense Account';
+        if (gUp === 'SUSPENSE ACCOUNT' || gUp === 'SUSPENSE' || gUp === 'G0000028' || gUp === 'UNKNOWN' || gUp === 'UNKNOWN_GROUP' || gUp === 'MIRACLE MASTER' || gUp === '') return 'Suspense Account';
+
+        // Profit & Loss, Stock, Trading, Reserves
+        if (gUp.includes('PROFIT') || gUp.includes('P&L') || gUp.includes('P & L') || gUp === 'G0000002') return 'Profit & Loss A/c';
+        if (gUp.includes('STOCK') || gUp === 'G0000008') return 'Stock-in-Hand';
+        if (gUp.includes('TRADING') || gUp === 'G0000019') return 'Trading Account';
+        if (gUp.includes('RESERVE') || gUp === 'G0000012') return 'Reserves & Surplus';
 
         // Expenses
         if (gUp.includes('BANK CHARG')) return 'Bank Charges';
-        if (gUp.includes('DIRECT EXPENSE') || gUp.includes('EXPENSES (DIRECT)')) return 'Direct Expenses';
-        if (gUp.includes('INDIRECT EXPENSE') || gUp.includes('EXPENSES (INDIRECT)') || gUp.includes('EXPENSE ACCOUNT') || gUp.includes('EXPENSE') || gUp === 'G0000009') return 'Indirect Expenses';
+        if (gUp.includes('DIRECT EXPENSE') || gUp.includes('EXPENSES (DIRECT)') || gUp === 'G0000023') return 'Direct Expenses';
+        if (gUp.includes('INDIRECT EXPENSE') || gUp.includes('EXPENSES (INDIRECT)') || gUp.includes('EXPENSE ACCOUNT') || gUp.includes('EXPENSE A/C') || gUp === 'EXPENSE' || gUp === 'G0000024') return 'Indirect Expenses';
 
         // Incomes
-        if (gUp.includes('DIRECT INCOME') || gUp.includes('INCOME (TRADING)')) return 'Direct Income';
-        if (gUp.includes('INDIRECT INCOME') || gUp.includes('INCOME (OTHER THEN SALES)') || gUp.includes('INCOME') || gUp === 'G0000010') return 'Indirect Income';
+        if (gUp.includes('DIRECT INCOME') || gUp.includes('INCOME (TRADING)') || gUp === 'G0000021') return 'Direct Income';
+        if (gUp.includes('INDIRECT INCOME') || gUp.includes('INCOME (OTHER THEN SALES)') || gUp.includes('INCOME ACCOUNT') || gUp.includes('INCOME A/C') || gUp === 'INCOME' || gUp === 'G0000022') return 'Indirect Income';
 
         // Debtors & Creditors
-        if (gUp.includes('CREDITOR') || gUp.includes('SUPPLIER') || gUp === 'G0000007') return 'Sundry Creditors';
-        if (gUp.includes('DEBTOR') || gUp.includes('CUSTOMER') || gUp === 'G0000006') return 'Sundry Debtors';
+        if (gUp.includes('CREDITOR') || gUp.includes('SUPPLIER') || gUp === 'G0000013') return 'Sundry Creditors';
+        if (gUp.includes('DEBTOR') || gUp.includes('CUSTOMER') || gUp === 'G0000009') return 'Sundry Debtors';
 
         // Statutory & Taxes
-        if (gUp.includes('DUTIES') || gUp.includes('TAX') || gUp.includes('GST') || gUp === 'G0000008') return 'Duties & Taxes';
+        if (gUp.includes('DUTIES') || gUp.includes('TAX') || gUp.includes('GST') || gUp === 'G0000014') return 'Duties & Taxes';
 
         // Banks & Cash
         if (gUp.includes('CASH') || gUp === 'G0000005') return 'Cash in Hand';
-        if (gUp.includes('BANK') || gUp === 'G0000004') return 'Bank Accounts';
+        if (gUp.includes('BANK') || gUp === 'G0000004' || gUp === 'G0000016') return 'Bank Accounts';
 
         // Assets & Investments
-        if (gUp.includes('FIXED ASSET')) return 'Fixed Assets';
-        if (gUp.includes('INVEST') || gUp === 'G0000011') return 'Investments';
-        if (gUp.includes('DEPOSIT') || gUp.includes('CURRENT ASSET')) return 'Current Assets';
-        if (gUp.includes('LOAN') && gUp.includes('ASSET')) return 'Loans & Advances (Asset)';
+        if (gUp.includes('FIXED ASSET') || gUp === 'G0000006') return 'Fixed Assets';
+        if (gUp.includes('INVEST') || gUp === 'G0000007') return 'Investments';
+        if (gUp.includes('DEPOSIT') || gUp.includes('CURRENT ASSET') || gUp === 'G0000003') return 'Current Assets';
+        if ((gUp.includes('LOAN') && gUp.includes('ASSET')) || gUp === 'G0000011') return 'Loans & Advances (Asset)';
 
         // Liabilities & Capital
         if (gUp.includes('DRAWING')) return 'Capital Account / Drawings';
         if (gUp.includes('CAPITAL') || gUp === 'G0000001') return 'Capital Account';
-        if (gUp.includes('UNSECURED')) return 'Unsecured Loans';
-        if (gUp.includes('SECURED')) return 'Secured Loans';
-        if (gUp.includes('CURRENT LIABIL') || gUp.includes('PROVISION')) return 'Current Liabilities';
+        if (gUp.includes('UNSECURED') || gUp === 'G0000020') return 'Unsecured Loans';
+        if (gUp.includes('SECURED') || gUp === 'G0000017') return 'Secured Loans';
+        if (gUp.includes('CURRENT LIABIL') || gUp.includes('PROVISION') || gUp === 'G0000010' || gUp === 'G0000015') return 'Current Liabilities';
         if (gUp.includes('BRANCH')) return 'Branch / Divisions';
 
         // Sales & Purchases
         if (gUp.includes('PURCHASE')) return 'Purchase Accounts';
         if (gUp.includes('SALES') || gUp.includes('SALE')) return 'Sales Accounts';
 
-        return rawGroupName;
+        return gTrim;
     }
 
     function inferExpenseGroupHint(mappedLedger, transactionType, rowHint) {
@@ -5080,7 +5204,13 @@ document.addEventListener('DOMContentLoaded', () => {
             return 'Indirect Expenses';
         }
 
-        // 1. Check master Miracle ledgers (clientLedgers) loaded from RKACCM01 DBF (Ground Truth)
+        // 1. Commercial Business Entity Check (Industries, Traders, Enterprises, Pvt Ltd, LLP, Products)
+        const isCommercialEntity = /\b(INDUSTRIES|TRADERS|ENTERPRISES|ENTERPRISE|PVT|PRIVATE|LIMITED|LTD|LLP|DISTRIBUTORS|PRODUCTS|AGENCIES|SUPPLIERS|MART|STORE|STORES|MANUFACTURING|CORP|CO)\b/i.test(legUp);
+        if (isCommercialEntity) {
+            return isReceipt ? 'Sundry Debtors' : 'Sundry Creditors';
+        }
+
+        // 2. Check master Miracle ledgers (clientLedgers) loaded from RKACCM01 DBF (Ground Truth)
         if (typeof clientLedgers !== 'undefined' && clientLedgers && clientLedgers.length > 0 && legUp && legUp !== 'SUSPENSE ACCOUNT') {
             const masterMatch = clientLedgers.find(l =>
                 (l.name || '').trim().toUpperCase() === legUp ||
@@ -5091,16 +5221,28 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (/BANK CHARG|BANK CHAG|SMS CHARG|ALERTCHG|INSTAALERT/i.test(legUp)) {
                     return 'Indirect Expenses';
                 }
+                // Double-Entry Guard on master match: A Receipt cannot be an expense group
+                if (isReceipt && (normGroup === 'Indirect Expenses' || normGroup === 'Direct Expenses' || normGroup === 'Purchase Accounts')) {
+                    if (!/REFUND|REVERSAL|CASHBACK|RETURN/i.test(legUp)) {
+                        return 'Sundry Debtors';
+                    }
+                }
                 return normGroup;
             }
         }
 
-        // 2. Check if autoCreateLedgerHints has an explicit or propagated group for this ledger
+        // 3. Check if autoCreateLedgerHints has an explicit or propagated group for this ledger
         if (typeof autoCreateLedgerHints !== 'undefined' && autoCreateLedgerHints && autoCreateLedgerHints[legUp]) {
-            return normalizeAccountingGroup(autoCreateLedgerHints[legUp]);
+            const hintGroup = normalizeAccountingGroup(autoCreateLedgerHints[legUp]);
+            if (isReceipt && (hintGroup === 'Indirect Expenses' || hintGroup === 'Direct Expenses' || hintGroup === 'Purchase Accounts')) {
+                if (!/REFUND|REVERSAL|CASHBACK|RETURN/i.test(legUp)) {
+                    return 'Sundry Debtors';
+                }
+            }
+            return hintGroup;
         }
 
-        // 3. If mappedLedger is SUSPENSE ACCOUNT, empty, generic group header, or unmapped cheque descriptor, return Suspense Account
+        // 4. If mappedLedger is SUSPENSE ACCOUNT, empty, generic group header, or unmapped cheque descriptor, return Suspense Account
         const GENERIC_PARTY_DESCRIPTORS = [
             'SUNDRY DEBTORS', 'SUNDRY CREDITORS', 'INDIRECT EXPENSES', 'DIRECT EXPENSES',
             'INDIRECT INCOME', 'DIRECT INCOME', 'SALES ACCOUNTS', 'PURCHASE ACCOUNTS',
@@ -5112,13 +5254,13 @@ document.addEventListener('DOMContentLoaded', () => {
             return 'Suspense Account';
         }
 
-        // 4. Direct Expenses Heuristics (Freight, Carriage, Transport, Loading)
-        const isKnownDirectExpense = /FREIGHT|BHADA|CARRIAGE|CARTAGE|LOADING|UNLOADING|HAMALI|COOLIE|OCTROI|GATE PASS|CUSTOMS|LABOUR|WAGES|RAW MATERIAL/i.test(legUp);
+        // 5. Direct Expenses Heuristics (Freight, Carriage, Transport, Loading)
+        const isKnownDirectExpense = /\b(FREIGHT|BHADA|CARRIAGE|CARTAGE|LOADING|UNLOADING|HAMALI|COOLIE|OCTROI|GATE PASS|CUSTOMS|LABOUR|WAGES|RAW MATERIAL)\b/i.test(legUp);
         if (isKnownDirectExpense) {
             return isPayment ? 'Direct Expenses' : 'Direct Income';
         }
 
-        // 5. Hard Cash & Bank group overrides
+        // 6. Hard Cash & Bank group overrides
         if (/CASH/i.test(legUp) && !/CASHFLOW|CASHBACK/i.test(legUp)) {
             return 'Cash-in-Hand';
         }
@@ -5126,50 +5268,67 @@ document.addEventListener('DOMContentLoaded', () => {
             return 'Bank Accounts';
         }
 
-        // 6. Statutory Taxes & Govt Duties
-        if (/TDS|INCOME TAX|PROFESSIONAL TAX|PTAX|GST|CGST|SGST|IGST|DUTIES & TAXES|CHALLAN|GSTPMT|NSDL|TRACES|TAX PAYMENT/i.test(legUp)) {
+        // 7. Statutory Taxes & Govt Duties
+        if (/\b(TDS|INCOME TAX|PROFESSIONAL TAX|PTAX|GST|CGST|SGST|IGST|DUTIES & TAXES|CHALLAN|GSTPMT|NSDL|TRACES|TAX PAYMENT)\b/i.test(legUp)) {
             return 'Duties & Taxes';
         }
 
-        // 7. Regex signals for expenses/utilities/parking/transport/investments/banks
-        const isKnownExpense = /PARKING|PARKING CHG|PARKING CHARGES|PARKING FEE|PARKING EXPENSE|TOLL|TOLL TAX|FASTAG|NETC FASTAG|TPT|TRANS|TRANSPORT|EXPENSE|EXPENSES|OTHER EXPENSE|KASAR|SALARY|SALARIES|WAGES|STIPEND|BONUS|PF |ESI|REMUNERATION|PETROL|DIESEL|FUEL|RENT|ELECTRICITY|POWER|WATER|TELEPHONE|MOBILE|INTERNET|BROADBAND|PRINTING|STATIONERY|FOOD|SNACKS|STAFF|REPAIR|SERVICE|MAINTENANCE|CONVEYANCE|COURIER|ADVERTISEMENT|MARKETING|SOFTWARE|AUDIT|LEGAL|BANK CHARG|CHARGES|DISCOUNT|ZOMATO|SWIGGY|BLINKIT|ZEPTO|INSTAMART|CRED|DUNZO|BIGBASKET|URBAN COMPANY|URBANCLAP|HOUSEJOY|SULEKHA|MILKBASKET/i.test(legUp);
+        // 8. Regex signals for expenses/utilities/parking/transport/investments/banks
+        const isKnownExpense = /\b(PARKING|PARKING CHG|PARKING CHARGES|PARKING FEE|PARKING EXPENSE|TOLL|TOLL TAX|FASTAG|NETC FASTAG|TPT|TRANS|TRANSPORT|EXPENSE|EXPENSES|OTHER EXPENSE|KASAR|SALARY|SALARIES|WAGES|STIPEND|BONUS|PF|ESI|REMUNERATION|PETROL|DIESEL|FUEL|RENT|ELECTRICITY|POWER|WATER|TELEPHONE|MOBILE|INTERNET|BROADBAND|PRINTING|STATIONERY|FOOD|SNACKS|STAFF|REPAIR|SERVICE|MAINTENANCE|CONVEYANCE|COURIER|ADVERTISEMENT|MARKETING|SOFTWARE|AUDIT|LEGAL|BANK CHARG|CHARGES|DISCOUNT|ZOMATO|SWIGGY|BLINKIT|ZEPTO|INSTAMART|CRED|DUNZO|BIGBASKET|URBAN COMPANY|URBANCLAP|HOUSEJOY|SULEKHA|MILKBASKET)\b/i.test(legUp);
         const isKnownBankCharge = /NACH CHARGE|ECS CHARGE|ACH CHARGE|MANDATE CHARGE|BILL PAYMENT|INSURANCE PREMIUM|NACH DEBIT/i.test(legUp);
-        const isKnownInvestment = /GROWW|ZERODHA|UPSTOX|SHARE KHAN|ANGEL BROKING|KOTAK SEC|ICICI DIRECT|HDFC SEC|PAYTM MONEY|MUTUAL FUND|SIP AUTO|DEMAT|NEXTBILLION|INDIAN CLEARING|CLEARING CORP|NSCCL|BSCCL|ICCL/i.test(legUp);
+        const isKnownInvestment = /\b(GROWW|ZERODHA|UPSTOX|SHARE KHAN|ANGEL BROKING|KOTAK SEC|ICICI DIRECT|HDFC SEC|PAYTM MONEY|MUTUAL FUND|SIP AUTO|DEMAT|NEXTBILLION|INDIAN CLEARING|CLEARING CORP|NSCCL|BSCCL|ICCL)\b/i.test(legUp);
         const isKnownBank = /^(HDFC|ICICI|AXIS|SBI|IDFC|KOTAK|INDUSIND|BANK OF BARODA|UNION BANK|CANARA BANK|PUNJAB NATIONAL|CENTRAL BANK|BANK OF INDIA)/i.test(legUp);
-        const isEcom = /AMAZON|FLIPKART|MYNTRA|MEESHO|SNAPDEAL|NYKAA|AJIO/i.test(legUp);
+        const isEcom = /\b(AMAZON|FLIPKART|MYNTRA|MEESHO|SNAPDEAL|NYKAA|AJIO)\b/i.test(legUp);
+
+        let resolvedGroup = '';
 
         if (isEcom) {
-            return isPayment ? 'Indirect Expenses' : 'Sundry Debtors';
-        }
-        if (isKnownInvestment) {
-            return 'Investments';
-        }
-        if (isKnownExpense || isKnownBankCharge) {
-            return 'Indirect Expenses';
-        }
-        if (isKnownBank) {
-            return 'Bank Accounts';
+            resolvedGroup = isPayment ? 'Indirect Expenses' : 'Sundry Debtors';
+        } else if (isKnownInvestment) {
+            resolvedGroup = 'Investments';
+        } else if (isKnownExpense || isKnownBankCharge) {
+            resolvedGroup = isPayment ? 'Indirect Expenses' : 'Indirect Income';
+        } else if (isKnownBank) {
+            resolvedGroup = 'Bank Accounts';
+        } else if (/PROFIT & LOSS|PROFIT AND LOSS|\bP&L\b/i.test(legUp)) {
+            resolvedGroup = 'Profit & Loss A/c';
+        } else if (/STOCK IN HAND|STOCK-IN-HAND|CLOSING STOCK|OPENING STOCK/i.test(legUp)) {
+            resolvedGroup = 'Stock-in-Hand';
+        } else if (/TRADING A\/C|TRADING ACCOUNT/i.test(legUp)) {
+            resolvedGroup = 'Trading Account';
+        } else if (/RESERVES & SURPLUS|RESERVE & SURPLUS/i.test(legUp)) {
+            resolvedGroup = 'Reserves & Surplus';
+        } else if (/DRAWING|PERSONAL|CAPITAL|MOM|WIFE|SELF|FAMILY|LIC|MEDICLAIM/i.test(legUp)) {
+            resolvedGroup = 'Capital Account / Drawings';
+        } else {
+            // EXPLICIT USER ROW HINT: Respect explicit non-placeholder row hints
+            const hintUp = (rowHint || '').toUpperCase().trim();
+            const isSystemPlaceholder = !rowHint ||
+                hintUp === 'REVIEW' ||
+                hintUp === 'SUSPENSE ACCOUNT (REVIEW)' ||
+                hintUp === 'GRID MAPPED' ||
+                hintUp === 'AUTO-CREATE';
+
+            if (!isSystemPlaceholder) {
+                resolvedGroup = normalizeAccountingGroup(rowHint);
+            } else {
+                resolvedGroup = isPayment ? 'Sundry Creditors' : 'Sundry Debtors';
+            }
         }
 
-        // 8. Personal Expenses & Drawings
-        if (/DRAWING|PERSONAL|CAPITAL|MOM|WIFE|SELF|FAMILY|LIC|MEDICLAIM/i.test(legUp)) {
-            return 'Capital Account / Drawings';
+        // 🚨 CRITICAL DOUBLE-ENTRY ACCOUNTING NATURE GUARD 🚨
+        // Money coming IN (Receipt) can NEVER be an expense group (unless explicit refund/reversal)!
+        if (isReceipt && (resolvedGroup === 'Indirect Expenses' || resolvedGroup === 'Direct Expenses' || resolvedGroup === 'Purchase Accounts')) {
+            if (!/REFUND|REVERSAL|CASHBACK|RETURN/i.test(legUp)) {
+                resolvedGroup = legUp ? 'Sundry Debtors' : 'Indirect Income';
+            }
+        } else if (isPayment && (resolvedGroup === 'Indirect Income' || resolvedGroup === 'Direct Income' || resolvedGroup === 'Sales Accounts')) {
+            if (!/REFUND|REVERSAL|RETURN/i.test(legUp)) {
+                resolvedGroup = legUp ? 'Sundry Creditors' : 'Indirect Expenses';
+            }
         }
 
-        // 9. EXPLICIT USER ROW HINT: Respect explicit non-placeholder row hints
-        const hintUp = (rowHint || '').toUpperCase().trim();
-        const isSystemPlaceholder = !rowHint ||
-            hintUp === 'REVIEW' ||
-            hintUp === 'SUSPENSE ACCOUNT (REVIEW)' ||
-            hintUp === 'GRID MAPPED' ||
-            hintUp === 'AUTO-CREATE';
-
-        if (!isSystemPlaceholder) {
-            return normalizeAccountingGroup(rowHint);
-        }
-
-        // 10. Final DR/CR gate for unknown person/vendor names
-        return isPayment ? 'Sundry Creditors' : 'Sundry Debtors';
+        return resolvedGroup;
     }
 
 
@@ -5180,13 +5339,21 @@ document.addEventListener('DOMContentLoaded', () => {
 
         // 🚨 Strict Accounting Guard: Route generic group headers & unmapped cheque descriptors to Suspense Account 🚨
         const cleanLegUp = (row.mapped_ledger || "").trim().toUpperCase();
+        const cleanGrpUp = (row.group_hint || "").trim().toUpperCase();
         const GENERIC_BAD_LIST = [
             'SUNDRY DEBTORS', 'SUNDRY CREDITORS', 'INDIRECT EXPENSES', 'DIRECT EXPENSES',
             'INDIRECT INCOME', 'DIRECT INCOME', 'SALES ACCOUNTS', 'PURCHASE ACCOUNTS',
+            'BANK ACCOUNTS', 'CASH-IN-HAND', 'CASH ACCOUNT', 'LOANS & ADVANCES', 'LOANS & ADVANCES (ASSET)',
+            'UNSECURED LOANS', 'SECURED LOANS', 'CAPITAL ACCOUNT', 'CAPITAL ACCOUNT / DRAWINGS',
+            'DUTIES & TAXES', 'PROVISIONS', 'CURRENT LIABILITIES', 'CURRENT ASSETS', 'FIXED ASSETS',
+            'INVESTMENTS', 'BRANCH / DIVISIONS', 'SUSPENSE ACCOUNT', 'SUSPENSE A/C', 'SUSPENSE',
             'CHEQUE DEPOSIT', 'CHQ DEP', 'CHQ DEPOSIT', 'CHEQUE CLEARING', 'CLEARING DEPOSIT',
-            'CLEARING', 'CLG DEPOSIT', 'CHQ RETURN', 'CHEQUE RETURN', 'CHQ RET', 'CHEQUE BOUNCE'
+            'CLEARING', 'CLG DEPOSIT', 'CHQ RETURN', 'CHEQUE RETURN', 'CHQ RET', 'CHEQUE BOUNCE',
+            'INWARD CHEQUE', 'OUTWARD CHEQUE', 'NEFT DEPOSIT', 'RTGS DEPOSIT', 'IMPS DEPOSIT',
+            'UNKNOWN', 'UNKNOWN_EXPENSE', 'UNKNOWN_PARTY'
         ];
-        if (GENERIC_BAD_LIST.includes(cleanLegUp) || /^CHEQUE DEPOSIT|^CHQ DEP|^CLEARING/i.test(cleanLegUp)) {
+        const isUnmappedGeneric = !cleanLegUp || (row.status !== 'Ready' && (GENERIC_BAD_LIST.includes(cleanLegUp) || cleanGrpUp === 'UNKNOWN' || /^CHEQUE DEPOSIT|^CHQ DEP|^CLEARING/i.test(cleanLegUp)));
+        if (isUnmappedGeneric) {
             row.mapped_ledger = 'Suspense Account';
             row.party_name = 'Suspense Account';
             row.party = 'Suspense Account';
@@ -5300,12 +5467,12 @@ document.addEventListener('DOMContentLoaded', () => {
                     row.group_hint = dynamicGroup;
                     autoCreateLedgerHints[cleanLedger] = dynamicGroup;
                 }
-                const isSuspense = cleanLedger === "SUSPENSE ACCOUNT" || row.group_hint === "Suspense Account";
-                if (isSuspense) {
+                const isSuspenseUnmapped = (cleanLedger === "SUSPENSE ACCOUNT" || row.group_hint === "Suspense Account") && row.status !== 'Ready';
+                if (isSuspenseUnmapped) {
                     statusColor = 'text-amber-500 bg-amber-500/10 border-amber-500/20';
                     statusIcon = 'fa-triangle-exclamation';
                     statusText = 'Review';
-                } else if (hasMappedMatch) {
+                } else if (hasMappedMatch || cleanLedger === "SUSPENSE ACCOUNT" || row.status === 'Ready') {
                     statusColor = 'text-emerald-500 bg-emerald-500/10 border-emerald-500/20';
                     statusIcon = 'fa-check-circle';
                     statusText = 'Mapped';
@@ -5416,10 +5583,10 @@ document.addEventListener('DOMContentLoaded', () => {
             }
 
             const calculated_balance_formatted = row.calculated_balance !== undefined
-                ? (Math.abs(row.calculated_balance).toLocaleString('en-IN', { minimumFractionDigits: 2 }) + (row.calculated_balance > 0 ? ' Cr' : (row.calculated_balance < 0 ? ' Dr' : '')))
+                ? (Math.abs(row.calculated_balance).toLocaleString('en-IN', { minimumFractionDigits: 2 }) + (row.calculated_balance > 0 ? ' Dr' : (row.calculated_balance < 0 ? ' Cr' : '')))
                 : '0.00';
-            const balColor = row.calculated_balance > 0 ? 'text-emerald-400' : (row.calculated_balance < 0 ? 'text-red-400' : 'text-slate-400');
-
+            const balColor = row.calculated_balance > 0 ? 'text-emerald-400 font-bold' : (row.calculated_balance < 0 ? 'text-rose-400 font-bold' : 'text-slate-400');
+            const rowGroup = row.group_hint || inferExpenseGroupHint(row.mapped_ledger, row.transaction_type, autoCreateLedgerHints[(row.mapped_ledger || '').toUpperCase().trim()]);
 
             html = `
                 <td class="px-2 py-2 text-center border-r border-slate-800/30" style="width:40px;min-width:40px">
@@ -5437,17 +5604,17 @@ document.addEventListener('DOMContentLoaded', () => {
                 </td>
                 <td class="px-3 py-2 border-r border-slate-800/30" style="min-width:240px">
                     <div class="flex items-center gap-1.5 w-full">
-                        <input type="text" list="globalMiracleLedgersDatalist" class="bg-slate-900/80 hover:bg-slate-900 border border-slate-800 focus:border-brand-500 text-slate-200 text-xs font-medium rounded-lg block w-full px-2.5 py-1.5 focus:outline-none transition ledger-input cursor-pointer" value="${row.mapped_ledger && row.mapped_ledger.toUpperCase() !== 'SUSPENSE ACCOUNT' ? row.mapped_ledger : ''}" placeholder="🔍 Search or type Miracle ledger..." data-group-hint="${rowGroup}" autocomplete="off">
+                        <input type="text" list="globalMiracleLedgersDatalist" class="bg-slate-900/80 hover:bg-slate-900 border border-slate-800 focus:border-brand-500 text-slate-200 text-xs font-medium rounded-lg block w-full px-2.5 py-1.5 focus:outline-none transition ledger-input cursor-pointer" value="${row.mapped_ledger ? row.mapped_ledger : ''}" placeholder="🔍 Search or type Miracle ledger..." data-group-hint="${rowGroup}" autocomplete="off">
                         <button type="button" class="edit-ledger-btn text-slate-400 hover:text-cyan-400 p-1.5 rounded-lg hover:bg-slate-800/80 transition flex-shrink-0" data-idx="${index}" title="Edit & Rename Ledger in Miracle DBF">
                             <i class="fa-solid fa-pen-to-square text-xs"></i>
                         </button>
                     </div>
-                    <div class="mt-1.5 flex items-center justify-between gap-1 group-hint-container ${!row.mapped_ledger || row.mapped_ledger.toUpperCase() === 'SUSPENSE ACCOUNT' ? 'hidden' : ''}" title="${rowGroup}">
+                    <div class="mt-1.5 flex items-center justify-between gap-1 group-hint-container ${!row.mapped_ledger ? 'hidden' : ''}" title="${rowGroup}">
                         <span class="text-[10px] text-cyan-400 font-bold uppercase tracking-tight whitespace-nowrap" title="${rowGroup}"><i class="fa-solid fa-layer-group text-cyan-400 mr-1"></i>GROUP:</span>
                         ${(() => {
                     const profileText = (businessProfileInput ? businessProfileInput.value : '').toUpperCase();
                     const isPersonal = profileText.includes('PERSON') || profileText.includes('INDIVIDUAL') || profileText.includes('PERSONAL');
-                    const STD_OPTS = ['Sales Accounts', 'Direct Income', 'Purchase Accounts', 'Direct Expenses', 'Indirect Expenses', 'Indirect Income', 'Bank Charges', 'Fixed Assets', 'Investments', 'Sundry Debtors', 'Bank Accounts', 'Cash-in-Hand', 'Current Assets', 'Loans & Advances (Asset)', 'Capital Account', 'Capital Account / Drawings', 'Sundry Creditors', 'Duties & Taxes', 'Unsecured Loans', 'Secured Loans', 'Current Liabilities', 'Branch / Divisions', 'Suspense Account'];
+                    const STD_OPTS = ['Sales Accounts', 'Direct Income', 'Purchase Accounts', 'Direct Expenses', 'Indirect Expenses', 'Indirect Income', 'Bank Charges', 'Fixed Assets', 'Investments', 'Stock-in-Hand', 'Profit & Loss A/c', 'Trading Account', 'Reserves & Surplus', 'Sundry Debtors', 'Bank Accounts', 'Cash-in-Hand', 'Current Assets', 'Loans & Advances (Asset)', 'Capital Account', 'Capital Account / Drawings', 'Sundry Creditors', 'Duties & Taxes', 'Unsecured Loans', 'Secured Loans', 'Current Liabilities', 'Branch / Divisions', 'Suspense Account'];
                     const customOptionHtml = (rowGroup && !STD_OPTS.includes(rowGroup)) ? `<option value="${rowGroup}" selected>📂 ${rowGroup} (Custom Group)</option>` : '';
 
                     if (isPersonal) {
@@ -5488,12 +5655,14 @@ document.addEventListener('DOMContentLoaded', () => {
                                 <select class="bg-slate-950 border border-cyan-500/30 text-cyan-300 text-[11px] font-bold rounded-lg px-2 py-0.5 focus:outline-none transition group-hint-select cursor-pointer hover:border-cyan-400 w-full" title="Select target commercial accounting group for Miracle DBF">
                                     ${customOptionHtml}
                                     <optgroup label="📈 Trading Account (Direct Sales, Purchases & Manufacturing)">
+                                        <option value="Trading Account" ${rowGroup === 'Trading Account' || rowGroup === 'Trading A/c.' ? 'selected' : ''}>Trading Account (Trading A/c)</option>
                                         <option value="Sales Accounts" ${rowGroup === 'Sales Accounts' ? 'selected' : ''}>Sales Accounts (Product Sales Revenue)</option>
                                         <option value="Direct Income" ${rowGroup === 'Direct Income' ? 'selected' : ''}>Direct Income (Jobwork / Service Revenue)</option>
                                         <option value="Purchase Accounts" ${rowGroup === 'Purchase Accounts' ? 'selected' : ''}>Purchase Accounts (Stock Purchases)</option>
                                         <option value="Direct Expenses" ${rowGroup === 'Direct Expenses' ? 'selected' : ''}>Direct Expenses (Freight / Wages / Factory Power)</option>
                                     </optgroup>
                                     <optgroup label="📊 Profit & Loss Account (Indirect Expenses & Operating Incomes)">
+                                        <option value="Profit & Loss A/c" ${rowGroup === 'Profit & Loss A/c' || rowGroup === 'Profit & Loss' ? 'selected' : ''}>Profit & Loss A/c (P&L Account)</option>
                                         <option value="Indirect Expenses" ${rowGroup === 'Indirect Expenses' ? 'selected' : ''}>Indirect Expenses (Rent / Salary / Petrol / Office Exp)</option>
                                         <option value="Indirect Income" ${rowGroup === 'Indirect Income' ? 'selected' : ''}>Indirect Income (Interest / Rent / Cashback)</option>
                                         <option value="Bank Charges" ${rowGroup === 'Bank Charges' ? 'selected' : ''}>Bank Charges (Bank Fees / Commission Expenses)</option>
@@ -5501,6 +5670,7 @@ document.addEventListener('DOMContentLoaded', () => {
                                     <optgroup label="🏢 Balance Sheet — Assets (Property, Investments & Debtors)">
                                         <option value="Fixed Assets" ${rowGroup === 'Fixed Assets' ? 'selected' : ''}>Fixed Assets (Machinery / Computers / Vehicles)</option>
                                         <option value="Investments" ${rowGroup === 'Investments' ? 'selected' : ''}>Investments (FD / Stocks / Mutual Funds / Groww)</option>
+                                        <option value="Stock-in-Hand" ${rowGroup === 'Stock-in-Hand' || rowGroup === 'Stock In Hand' ? 'selected' : ''}>Stock-in-Hand (Closing Stock / Inventory)</option>
                                         <option value="Sundry Debtors" ${rowGroup === 'Sundry Debtors' ? 'selected' : ''}>Sundry Debtors (Trade Customers / Buyers)</option>
                                         <option value="Bank Accounts" ${rowGroup === 'Bank Accounts' ? 'selected' : ''}>Bank Accounts (Bank A/c)</option>
                                         <option value="Cash-in-Hand" ${/Cash-in-Hand/i.test(rowGroup) ? 'selected' : ''}>Cash-in-Hand (Petty Cash)</option>
@@ -5510,6 +5680,7 @@ document.addEventListener('DOMContentLoaded', () => {
                                     <optgroup label="🏛️ Balance Sheet — Liabilities & Equity">
                                         <option value="Capital Account" ${rowGroup === 'Capital Account' ? 'selected' : ''}>Capital Account (Owner / Partner Equity)</option>
                                         <option value="Capital Account / Drawings" ${rowGroup === 'Capital Account / Drawings' || rowGroup === 'Drawings' ? 'selected' : ''}>Drawings Account (Owner Personal Spending / LIC)</option>
+                                        <option value="Reserves & Surplus" ${rowGroup === 'Reserves & Surplus' ? 'selected' : ''}>Reserves &amp; Surplus (Retained Earnings)</option>
                                         <option value="Sundry Creditors" ${rowGroup === 'Sundry Creditors' ? 'selected' : ''}>Sundry Creditors (Trade Suppliers / Vendors)</option>
                                         <option value="Duties & Taxes" ${rowGroup === 'Duties & Taxes' ? 'selected' : ''}>Duties &amp; Taxes (GST / TDS / Tax Liabilities)</option>
                                         <option value="Unsecured Loans" ${rowGroup === 'Unsecured Loans' ? 'selected' : ''}>Unsecured Loans (Friends / Directors / Borrowings)</option>
@@ -5542,8 +5713,15 @@ document.addEventListener('DOMContentLoaded', () => {
                             isRcptVal = !isPymtVal;
                         }
                     } else {
-                        isPymtVal = rTx === 'payment' || rTx === 'cp' || rTx === 'bp' || rTx.includes('withdrawal');
-                        isRcptVal = rTx === 'receipt' || rTx === 'cr' || rTx === 'br' || rTx.includes('deposit') || (!isPymtVal && rTx !== 'payment');
+                        isPymtVal = rTx === 'payment' || rTx === 'cp' || rTx === 'bp' || rTx.includes('withdrawal') || rTx === 'dr' || rTx.includes('payment');
+                        isRcptVal = rTx === 'receipt' || rTx === 'cr' || rTx === 'br' || rTx.includes('deposit') || rTx.includes('receipt');
+                        if (!isPymtVal && !isRcptVal) {
+                            const wAmt = parseCurrency(row.withdrawal || row.withdrawal_amt || 0);
+                            const dAmt = parseCurrency(row.deposit || row.deposit_amt || 0);
+                            if (wAmt > 0) isPymtVal = true;
+                            else if (dAmt > 0) isRcptVal = true;
+                            else isRcptVal = true;
+                        }
                     }
                     return `
                     <td class="px-3 py-2 border-r border-slate-800/30 text-right" style="width:130px;min-width:130px">
@@ -5744,6 +5922,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         row.deposit = 0;
                     }
                     row.amount = parseCurrency(withdrawalInput.value) || 0;
+                    delete gridBody.dataset.needsFullRender;
                     recalcGrandTotals();
                     renderVirtualGridRows();
                 };
@@ -5764,6 +5943,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         row.withdrawal = 0;
                     }
                     row.amount = parseCurrency(depositInput.value) || 0;
+                    delete gridBody.dataset.needsFullRender;
                     recalcGrandTotals();
                     renderVirtualGridRows();
                 };
@@ -6150,26 +6330,41 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!currentExtractedData || !Array.isArray(currentExtractedData)) return;
         let currentBalance = 0;
         const opBalInput = document.getElementById('openingBalanceInput');
-        if (opBalInput && opBalInput.value !== '' && !isNaN(parseFloat(opBalInput.value))) {
-            currentBalance = parseFloat(opBalInput.value);
+        if (opBalInput && opBalInput.value !== '' && !isNaN(parseCurrency(opBalInput.value))) {
+            currentBalance = parseCurrency(opBalInput.value);
         }
 
         currentExtractedData.forEach(row => {
             const txType = (row.transaction_type || row.Transaction_Type || row.type || '').toString().trim().toLowerCase();
-            let amt = parseCurrency(row.amount) || parseCurrency(row.deposit) || parseCurrency(row.withdrawal) || parseCurrency(row.Amount) || parseCurrency(row.Deposit) || parseCurrency(row.Withdrawal) || 0;
+            const depAmt = parseCurrency(row.deposit || row.deposit_amt || row.Deposit || 0);
+            const wdAmt = parseCurrency(row.withdrawal || row.withdrawal_amt || row.Withdrawal || 0);
+            const mainAmt = parseCurrency(row.amount || row.Amount || 0);
+
+            let isReceipt = false;
+            let amt = 0;
+
+            if (depAmt > 0) {
+                amt = depAmt;
+                isReceipt = true;
+            } else if (wdAmt > 0) {
+                amt = wdAmt;
+                isReceipt = false;
+            } else if (txType.includes('receipt') || txType.includes('deposit') || txType === 'cr' || txType === 'br') {
+                amt = mainAmt;
+                isReceipt = true;
+            } else {
+                amt = mainAmt;
+                isReceipt = false;
+            }
+
             row.amount = amt;
 
-            if (txType === 'receipt' || txType === 'deposit' || txType === 'cr' || txType === 'br') {
+            if (isReceipt) {
                 currentBalance += amt;
-            } else if (txType === 'payment' || txType === 'withdrawal' || txType === 'dr' || txType === 'bp') {
+            } else {
                 currentBalance -= amt;
-            } else if (parseCurrency(row.deposit || row.deposit_amt || 0) > 0) {
-                currentBalance += amt;
-            } else if (parseCurrency(row.withdrawal || row.withdrawal_amt || 0) > 0) {
-                currentBalance -= amt;
-            } else if (row.running_balance !== undefined && row.running_balance !== null && row.running_balance !== '') {
-                currentBalance = parseFloat(row.running_balance);
             }
+
             row.calculated_balance = Math.round(currentBalance * 100) / 100;
         });
     }
@@ -7039,6 +7234,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (recalculateMathBtn) {
         recalculateMathBtn.addEventListener('click', (e) => {
             if (e) e.preventDefault();
+            delete gridBody.dataset.needsFullRender;
             recalcGrandTotals();
             renderVirtualGridRows();
             showToast("Recalculated Closing Balances & Math Totals!", "success");
@@ -7054,6 +7250,17 @@ document.addEventListener('DOMContentLoaded', () => {
                 }, 1200);
             }
         });
+    }
+
+    const mainOpBalInput = document.getElementById('openingBalanceInput');
+    if (mainOpBalInput) {
+        const updateOpBal = () => {
+            delete gridBody.dataset.needsFullRender;
+            recalcGrandTotals();
+            renderVirtualGridRows();
+        };
+        mainOpBalInput.addEventListener('input', updateOpBal);
+        mainOpBalInput.addEventListener('change', updateOpBal);
     }
 
     const autoResolveSuspenseBtn = document.getElementById('autoResolveSuspenseBtn');

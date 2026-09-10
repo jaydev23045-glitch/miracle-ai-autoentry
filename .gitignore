@@ -49,3 +49,7 @@ miracle_bridge/*.spec
 .vscode/
 .idea/
 *.swp
+
+# Scratch & Temporary Test Scripts
+scratch/
+

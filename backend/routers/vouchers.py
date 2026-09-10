@@ -1606,6 +1606,7 @@ def push_vouchers_endpoint(payload: PushPayload):
 
 @router.post("/api/opening-balances/extract")
 async def extract_opening_balances_endpoint(file: UploadFile = File(...)):
+    file_path = ""
     try:
         temp_dir = "temp_uploads"
         os.makedirs(temp_dir, exist_ok=True)
@@ -1654,15 +1655,16 @@ async def extract_opening_balances_endpoint(file: UploadFile = File(...)):
                         item["ledger_name"] = led['name']
                         break
         
-        try:
-            os.remove(file_path)
-        except:
-            pass
-
         return result
     except Exception as e:
         print(f"Error in extract_opening_balances: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=sanitize_surrogates(str(e)))
+    finally:
+        if file_path and os.path.exists(file_path):
+            try:
+                os.remove(file_path)
+            except Exception:
+                pass
 
 class OpeningBalancePushPayload(BaseModel):
     entries: List[dict]
@@ -1843,10 +1845,34 @@ def resolve_suspense_endpoint(payload: ResolveSuspensePayload):
         
         # Step 2: AI Intelligence Resolution pass for any remaining unmapped / generic rows
         updated_json = service.ai_assist_suspense_mappings(step1_json, client_memory, module="Bank Statements")
+        vouchers = updated_json.get("extracted_data", [])
         
+        GENERIC_BAD = {
+            "SUNDRY DEBTORS", "SUNDRY CREDITORS", "INDIRECT EXPENSES", "DIRECT EXPENSES",
+            "INDIRECT INCOME", "DIRECT INCOME", "SALES ACCOUNTS", "PURCHASE ACCOUNTS",
+            "BANK ACCOUNTS", "CASH-IN-HAND", "CASH ACCOUNT", "LOANS & ADVANCES", "LOANS & ADVANCES (ASSET)",
+            "UNSECURED LOANS", "SECURED LOANS", "CAPITAL ACCOUNT", "CAPITAL ACCOUNT / DRAWINGS",
+            "DUTIES & TAXES", "PROVISIONS", "CURRENT LIABILITIES", "CURRENT ASSETS", "FIXED ASSETS",
+            "INVESTMENTS", "BRANCH / DIVISIONS", "SUSPENSE ACCOUNT", "SUSPENSE A/C", "SUSPENSE",
+            "UNKNOWN", "UNKNOWN_EXPENSE", "UNKNOWN_PARTY"
+        }
+        for v in vouchers:
+            m_up = str(v.get("mapped_ledger") or "").strip().upper()
+            gh_up = str(v.get("group_hint") or "").strip().upper()
+            if not m_up or m_up in GENERIC_BAD or any(m_up.startswith(g) for g in ["CHEQUE DEPOSIT", "CHQ DEP", "CLEARING", "CHQ RET", "CHEQUE RET"]) or gh_up in ("UNKNOWN", ""):
+                v["mapped_ledger"] = "Suspense Account"
+                v["party_name"] = "Suspense Account"
+                v["party"] = "Suspense Account"
+                v["group_hint"] = "Suspense Account"
+                v["confidence_score"] = 40
+                if "flags" not in v or not isinstance(v.get("flags"), list):
+                    v["flags"] = []
+                if "Human Review Required" not in v["flags"]:
+                    v["flags"].append("Human Review Required")
+
         return {
             "status": "success",
-            "vouchers": updated_json.get("extracted_data", [])
+            "vouchers": vouchers
         }
     except Exception as e:
         print(f"❌ Error resolving suspense entries: {e}")

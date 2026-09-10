@@ -1,0 +1,17 @@
+name: CodeRabbit AI Code Reviewer
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+  issue_comment:
+    types: [created]
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    steps:
+      - name: CodeRabbit Review Action
+        uses: coderabbitai/ai-pr-reviewer@v1
+        with:
+          debug: false
+          review_comment_lgtm: true

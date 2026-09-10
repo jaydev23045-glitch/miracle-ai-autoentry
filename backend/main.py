@@ -46,10 +46,10 @@ app = FastAPI(title="Miracle AI Auto-Entry API")
 # Fast GZip compression middleware (80% smaller payload size, 5x faster transfer)
 app.add_middleware(GZipMiddleware, minimum_size=1000)
 
-# Allow frontend to access the API
+# Allow frontend to access the API dynamically without CORS wildcard credential violations
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # For local network access
+    allow_origin_regex=r"https?://.*",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
