@@ -317,12 +317,15 @@ def self_heal_sales_purchase_data(extracted_data: dict, module: str, client_memo
                 r["billNo"] = seq_bill
 
     if module in ["Sales", "Purchases"] and len(rows) > 1:
+        from core.excel_parser import STANDARD_INV_PREFIXES
         series_list = []
         for r in rows:
             b_no = str(r.get("bill_no", "")).strip()
             m = re.match(r'^([A-Za-z0-9\-_]{2,8}[\/\-])', b_no)
             if m:
-                series_list.append(m.group(1))
+                pfx = m.group(1).rstrip('/-').upper()
+                if pfx in STANDARD_INV_PREFIXES or re.match(r'^(?:INV|GST|BILL|VCH|SS|PP|PB|PU|SL|SR|SA|SB|SC|SD|20\d\d|\d{2}-\d{2})$', pfx):
+                    series_list.append(m.group(1))
 
         if series_list:
             from collections import Counter
@@ -332,14 +335,15 @@ def self_heal_sales_purchase_data(extracted_data: dict, module: str, client_memo
                 for r in rows:
                     b_no = str(r.get("bill_no", "")).strip()
                     if b_no and not b_no.startswith(most_common_series) and b_no != "None" and b_no != "nan":
-                        healed_bill = most_common_series + b_no
-                        r["bill_no"] = healed_bill
-                        flags = r.get("flags", [])
-                        if not isinstance(flags, list): flags = []
-                        if "Auto-Healed Prefix" not in flags:
-                            flags.append("Auto-Healed Prefix")
-                        r["flags"] = flags
-                        print(f"✨ Self-Healing: Auto-prefixed bill_no '{b_no}' -> '{healed_bill}'")
+                        if b_no.isdigit():
+                            healed_bill = most_common_series + b_no
+                            r["bill_no"] = healed_bill
+                            flags = r.get("flags", [])
+                            if not isinstance(flags, list): flags = []
+                            if "Auto-Healed Prefix" not in flags:
+                                flags.append("Auto-Healed Prefix")
+                            r["flags"] = flags
+                            print(f"✨ Self-Healing: Auto-prefixed bill_no '{b_no}' -> '{healed_bill}'")
 
     # Pre-compute ledger lookup structures ONCE before the row loop (BN-8 optimization)
     upper_to_original = {}
@@ -612,8 +616,12 @@ def normalize_confidence_and_flags(extracted_data: dict, module: str, client_mem
                     except Exception:
                         pass
                 
+            from core.excel_parser import clean_extracted_bill_no
             bill = str(row.get("bill_no", "")).strip()
-            if not bill or bill == "None" or bill == "nan":
+            party = str(row.get("party_name") or row.get("party") or "").strip()
+            cleaned_bill = clean_extracted_bill_no(bill, party)
+            row["bill_no"] = cleaned_bill
+            if not cleaned_bill or cleaned_bill == "None" or cleaned_bill == "nan":
                 if "Missing Invoice No" not in row["flags"]:
                     row["flags"].append("Missing Invoice No")
                 row["confidence_score"] = min(row["confidence_score"], 80)

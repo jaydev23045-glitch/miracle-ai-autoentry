@@ -89,6 +89,85 @@ def parse_gst_amt(val):
         val_str = val_str.split("(")[0].strip()
     return safe_float(val_str)
 
+PARTY_KEYWORDS_UPPER = {
+    "LIMITED", "PRIVATE", "PVT", "LTD", "CHARITABLE", "TRUSTEE", "HOSPITAL",
+    "INSTRUMENTS", "DEBTORS", "CREDITORS", "CASH", "ACCOUNT", "SUNDRY",
+    "MANAGING", "THE DEAN", "ENTERPRISES", "TRADERS", "COMPANY", "SERVICES",
+    "AGENCIES", "PHARMA", "PHARMACEUTICALS", "DISTRIBUTORS", "CORPORATION",
+    "SOLUTIONS", "INDUSTRIES", "HEALTH", "RIPPLES", "PRIVATELIMITED"
+}
+
+STANDARD_INV_PREFIXES = {
+    "INV", "INVOICE", "BILL", "BILLNO", "SR", "DOC", "REF", "VCH", "VOUCHER",
+    "SS", "SL", "SR", "SA", "SB", "SC", "SD", "PP", "PB", "PU", "PI", "PO", "PA",
+    "GST", "TAX", "EXP", "RET", "FIN", "SALE", "SALES", "PURCHASE", "PURCHASES"
+}
+
+def clean_extracted_bill_no(val: str, party_name: str = "") -> str:
+    if not val:
+        return ""
+    val_str = str(val).strip()
+    if not val_str or val_str.lower() in ("nan", "none", "null", "undefined"):
+        return ""
+    if val_str.startswith("NO_INV_"):
+        return ""
+    if val_str.endswith(".0"):
+        val_str = val_str[:-2]
+    
+    val_upper = val_str.upper()
+
+    # Extract trailing number if bill_no has slash/dash/space separator (e.g. "BYLNCH/3355", "NDIA/3364", "LABINDIA/3364", "Shridhar Ganeshan/3354")
+    sep_match = re.search(r'^(.*?)([\/\-_\s]+)(\d{1,8})$', val_str)
+    if sep_match:
+        prefix_part = sep_match.group(1).strip()
+        num_part = sep_match.group(3)
+        prefix_upper = prefix_part.upper()
+        prefix_words = set(re.findall(r'[A-Z]{2,}', prefix_upper))
+
+        # Check if prefix is a standard invoice prefix or year pattern
+        is_standard_inv = bool(prefix_words.intersection(STANDARD_INV_PREFIXES)) or bool(re.match(r'^(?:INV|GST|BILL|VCH|SS|PP|PB|PU|SL|SR|SA|SB|SC|SD|20\d\d|\d{2}-\d{2})$', prefix_upper))
+
+        if not is_standard_inv:
+            # 1. Compare prefix against party_name
+            if party_name:
+                p_upper = party_name.upper()
+                p_clean = re.sub(r'[^A-Z0-9]', '', p_upper)
+                prefix_clean = re.sub(r'[^A-Z0-9]', '', prefix_upper)
+                if p_clean and prefix_clean:
+                    if (len(prefix_clean) >= 2 and prefix_clean in p_clean) or (len(p_clean) >= 2 and p_clean in prefix_clean):
+                        return num_part
+                    p_words = set(re.findall(r'[A-Z]{2,}', p_upper))
+                    if prefix_words and p_words:
+                        for pw in prefix_words:
+                            if any(pw in pw_target or pw_target in pw for pw_target in p_words):
+                                return num_part
+                    # Check capital initials / acronym of party_name
+                    p_initials = "".join(re.findall(r'\b[A-Z]', p_upper))
+                    if len(p_initials) >= 2:
+                        p_initials_clean = re.sub(r'[^A-Z0-9]', '', p_initials)
+                        if prefix_clean in p_initials_clean or p_initials_clean in prefix_clean:
+                            return num_part
+
+            # 2. Check if prefix matches general party keywords or non-invoice words
+            if prefix_words and prefix_words.intersection(PARTY_KEYWORDS_UPPER):
+                return num_part
+
+            # 3. If prefix is not a standard invoice series, treat non-standard prefix as party name leak / extra prefix
+            if len(re.sub(r'[^A-Z0-9]', '', prefix_upper)) >= 2:
+                return num_part
+
+    # Check standalone party name match without separator
+    if party_name:
+        p_clean = re.sub(r'[^A-Z0-9]', '', party_name.upper())
+        v_clean = re.sub(r'[^A-Z0-9]', '', val_upper)
+        if p_clean and len(p_clean) >= 4 and p_clean[:5] in v_clean:
+            num_match = re.search(r'(\d{1,8})$', val_str)
+            if num_match:
+                return num_match.group(1)
+            return ""
+
+    return val_str
+
 def normalize_sheet_columns(df):
     def clean_str(s):
         return str(s).strip().lower().replace(".", "").replace(" ", "").replace("_", "").replace("/", "").replace("'", "")
@@ -158,7 +237,12 @@ def normalize_sheet_columns(df):
         inv_pattern = re.compile(r'^[A-Za-z0-9\-_]{2,10}[/\-][A-Za-z0-9\-_]{1,12}$|^INV[-_]?\d+|^BILL[-_]?\d+', re.I)
         for c in df_copy.columns:
             if c in used_orig_cols: continue
+            c_clean = clean_str(c)
+            if any(p_kw in c_clean for p_kw in ["party", "customer", "vendor", "supplier", "account", "ledger", "name"]):
+                continue
             sample_vals = df_copy[c].dropna().astype(str).str.strip().tolist()[:10]
+            if any(len(v.split()) > 2 or any(w.upper() in v.upper() for w in ["CHARITABLE", "LIMITED", "PRIVATE", "DEBTORS", "CREDITORS"]) for v in sample_vals):
+                continue
             match_count = sum(1 for val in sample_vals if inv_pattern.search(val))
             if match_count >= 2:
                 resolved["bill_no"] = c
@@ -651,7 +735,8 @@ def parse_excel_to_json(file_path: str, company_state_code: str = '24', instruct
                 party_gstin = str(row.get("party_gstin", "")).strip() if pd.notna(row.get("party_gstin")) else ""
                 if party_gstin.lower() in ("nan", "none", "null", "undefined"): party_gstin = ""
 
-                inv_no = "" if str(group_key).startswith("NO_INV_") else str(group_key).rstrip(".0")
+                g_key_str = str(group_key).strip()
+                inv_no = "" if g_key_str.startswith("NO_INV_") else (g_key_str[:-2] if g_key_str.endswith(".0") else g_key_str)
 
                 total_raw = safe_float(row.get("total_amt", 0.0)) if pd.notna(row.get("total_amt")) else 0.0
                 taxable_raw = safe_float(row.get("taxable_amt", 0.0)) if pd.notna(row.get("taxable_amt")) else 0.0
@@ -664,7 +749,8 @@ def parse_excel_to_json(file_path: str, company_state_code: str = '24', instruct
                 gst_pct_raw = parse_gst_pct(gst_pct_val) if pd.notna(gst_pct_val) else 0.0
                 if gst_pct_raw < 1.0 and gst_pct_raw > 0: gst_pct_raw = gst_pct_raw * 100
                 hsn_raw = str(row.get("hsn", "")).strip() if pd.notna(row.get("hsn")) else ""
-                if hsn_raw.lower() == "nan" or hsn_raw.endswith(".0"): hsn_raw = hsn_raw.rstrip(".0") if hsn_raw.endswith(".0") else ""
+                if hsn_raw.endswith(".0"): hsn_raw = hsn_raw[:-2]
+                if hsn_raw.lower() == "nan": hsn_raw = ""
 
                 if taxable_raw == 0.0 and total_raw > 0:
                     taxable_raw = round(total_raw - gst_amt_raw, 2)
@@ -754,7 +840,9 @@ def parse_excel_to_json(file_path: str, company_state_code: str = '24', instruct
                     party_name = "Unmapped Party"
                 party_gstin = str(row.get("party_gstin", "")).strip() if pd.notna(row.get("party_gstin")) else ""
                 if party_gstin.lower() in ("nan", "none", "null", "undefined"): party_gstin = ""
-                inv_no = "" if str(row["Group_Key"]).startswith("NO_INV_") else str(row["Group_Key"]).rstrip(".0")
+                gk_str = str(row["Group_Key"]).strip()
+                inv_no = "" if gk_str.startswith("NO_INV_") else (gk_str[:-2] if gk_str.endswith(".0") else gk_str)
+                inv_no = clean_extracted_bill_no(inv_no, party_name)
                 total_raw = safe_float(row.get("total_amt", 0.0)) if pd.notna(row.get("total_amt")) else 0.0
                 taxable_raw = safe_float(row.get("taxable_amt", 0.0)) if pd.notna(row.get("taxable_amt")) else 0.0
                 gst_amt_raw = parse_gst_amt(row.get("gst_amt", 0.0)) if pd.notna(row.get("gst_amt")) else 0.0
@@ -834,6 +922,7 @@ def parse_excel_to_json(file_path: str, company_state_code: str = '24', instruct
             if not str(group_key).startswith("NO_INV_"):
                 inv_no = str(group_key)
                 if inv_no.endswith(".0"): inv_no = inv_no[:-2]
+            inv_no = clean_extracted_bill_no(inv_no, party_name)
                 
             inv_items = df_items[df_items["Group_Key"] == group_key]
             items_list = []

@@ -840,9 +840,14 @@ document.addEventListener('DOMContentLoaded', () => {
             if (opBalContainer) opBalContainer.classList.remove('hidden');
             if (globalProductBulkBar) globalProductBulkBar.classList.add('hidden');
             if (bankBulkBar) bankBulkBar.classList.remove('hidden');
-        } else {
+        } else if (currentModule === 'Sales' || currentModule === 'Purchases') {
             if (opBalContainer) opBalContainer.classList.add('hidden');
             if (globalProductBulkBar) globalProductBulkBar.classList.remove('hidden');
+            if (bankBulkBar) bankBulkBar.classList.add('hidden');
+            populateDefaultProductSelect();
+        } else {
+            if (opBalContainer) opBalContainer.classList.add('hidden');
+            if (globalProductBulkBar) globalProductBulkBar.classList.add('hidden');
             if (bankBulkBar) bankBulkBar.classList.add('hidden');
         }
 
@@ -1941,10 +1946,24 @@ document.addEventListener('DOMContentLoaded', () => {
         // Also populate globalProductBulkSelect in grid header
         const globalProductBulkSelect = document.getElementById('globalProductBulkSelect');
         if (globalProductBulkSelect) {
-            let bulkHtml = '<option value="">⚡ Bulk Set Product for All Rows...</option>';
+            let bulkHtml = '<option value="">⚡ Select Miracle Product...</option>';
             bulkHtml += generateProductOptions();
             globalProductBulkSelect.innerHTML = bulkHtml;
         }
+    }
+
+    const globalProductBulkSelect = document.getElementById('globalProductBulkSelect');
+    if (globalProductBulkSelect) {
+        const ensureProductsPopulated = async () => {
+            if (globalProductBulkSelect.options.length <= 1) {
+                if (!clientProducts || clientProducts.length === 0) {
+                    try { await fetchProducts(); } catch(e) {}
+                }
+                populateDefaultProductSelect();
+            }
+        };
+        globalProductBulkSelect.addEventListener('focus', ensureProductsPopulated);
+        globalProductBulkSelect.addEventListener('click', ensureProductsPopulated);
     }
 
     if (defaultProductSelect) {
@@ -1976,7 +1995,6 @@ document.addEventListener('DOMContentLoaded', () => {
             const checkedCheckboxes = document.querySelectorAll('.row-select-checkbox:checked');
             const targetRows = [];
             if (checkedCheckboxes.length > 0) {
-                // BUG FIX: attribute is data-idx not data-index
                 checkedCheckboxes.forEach(cb => {
                     const rowIdx = parseInt(cb.dataset.idx);
                     if (!isNaN(rowIdx) && currentExtractedData[rowIdx]) {
@@ -1984,17 +2002,20 @@ document.addEventListener('DOMContentLoaded', () => {
                     }
                 });
             } else {
-                // BUG FIX: use visible filtered rows (displayData) if available, not all rows
-                const visibleRows = (typeof displayData !== 'undefined' && displayData && displayData.length > 0)
-                    ? displayData : currentExtractedData;
-                targetRows.push(...visibleRows);
+                // Target ONLY currently visible/filtered rows returned by getFilteredData()
+                const visibleFilteredRows = getFilteredData();
+                if (visibleFilteredRows.length > 0) {
+                    targetRows.push(...visibleFilteredRows);
+                } else {
+                    targetRows.push(...currentExtractedData);
+                }
             }
 
             let updatedCount = 0;
             targetRows.forEach(row => {
                 if (!Array.isArray(row.items)) row.items = [];
                 if (row.items.length === 0) {
-                    row.items.push({ name: selectedVal, qty: 1, rate: 0, gst_pct: 18 });
+                    row.items.push({ name: selectedVal, qty: row.qty || 1, rate: row.taxable || 0, gst_pct: row.gst_pct || 18 });
                 } else {
                     row.items.forEach(item => {
                         item.name = selectedVal;
@@ -2004,13 +2025,15 @@ document.addEventListener('DOMContentLoaded', () => {
                 updatedCount++;
             });
 
-            // Re-render grid instantly
-            renderGrid(currentExtractedData);
+            // Re-render grid instantly while preserving active filter pill
+            if (gridBody) gridBody.dataset.needsFullRender = 'true';
+            renderVirtualGridRows();
             recalcGrandTotals();
+            updateFilterCounts();
+            renderFilterBadgesForModule();
 
             // Save mapping rule to AI Memory Vault in background
             if (selectedVal !== "AUTO_CREATE_PRODUCT" && targetRows.length > 0) {
-                // BUG FIX: use the actual first targeted row's party name, not always row 0
                 const sampleParty = targetRows[0].party_name || targetRows[0].party || targetRows[0].narration || "FOOTWEAR";
                 fetch(`${API_URL}/api/teach_product_mapping`, {
                     method: 'POST',
@@ -2019,7 +2042,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 }).catch(err => console.error("Error saving bulk product mapping rule:", err));
             }
 
-            showToast(`⚡ Successfully mapped ${updatedCount} vouchers to '${selectedVal}'!`, "success");
+            const filterLabel = (currentGridFilter && currentGridFilter !== 'all') ? `under filter '${currentGridFilter.toUpperCase()}'` : 'visible in grid';
+            showToast(`⚡ Bulk updated ${updatedCount} ${filterLabel} bill(s) to '${selectedVal}'!`, "success");
         });
     }
 
@@ -2819,11 +2843,28 @@ document.addEventListener('DOMContentLoaded', () => {
                             status = 'Review';
                         } else {
                             const cleanParty = partyStr.toUpperCase();
-                            const match = clientLedgers.find(led =>
+                            function normParty(s) {
+                                if (!s) return '';
+                                return String(s).toUpperCase()
+                                    .replace(/\bPVT\b/g, 'PRIVATE')
+                                    .replace(/\bLTD\b/g, 'LIMITED')
+                                    .replace(/[^A-Z0-9]/g, '');
+                            }
+                            const normCleanParty = normParty(partyStr);
+
+                            let match = clientLedgers.find(led =>
                                 led.name.trim().toUpperCase() === cleanParty ||
-                                led.print_name.trim().toUpperCase() === cleanParty ||
-                                led.code.trim().toUpperCase() === cleanParty
+                                (led.print_name && led.print_name.trim().toUpperCase() === cleanParty) ||
+                                (led.code && led.code.trim().toUpperCase() === cleanParty)
                             );
+
+                            if (!match && normCleanParty) {
+                                match = clientLedgers.find(led => {
+                                    const n1 = normParty(led.name);
+                                    const n2 = normParty(led.print_name);
+                                    return (n1 && n1 === normCleanParty) || (n2 && n2 === normCleanParty);
+                                });
+                            }
 
                             if (match) {
                                 finalParty = match.name;
@@ -3011,10 +3052,39 @@ document.addEventListener('DOMContentLoaded', () => {
 
         mappingList.innerHTML = '';
 
+        // Group unmapped rows by clean party name to present ONE single card per party
+        const partyGroupsMap = new Map();
+        unknownItems.forEach(item => {
+            let rawLabel = (item.party || '').replace(/^UNKNOWN_PARTY:\s*/i, '').replace(/^UNKNOWN_NARRATION:\s*/i, '').trim();
+            if (!rawLabel || rawLabel.toLowerCase() === 'nan' || rawLabel.toLowerCase() === 'none' || rawLabel.toLowerCase() === 'null' || rawLabel.toLowerCase() === 'undefined') {
+                rawLabel = 'Unmapped Party';
+            }
+            const key = rawLabel.toUpperCase();
+            if (!partyGroupsMap.has(key)) {
+                partyGroupsMap.set(key, {
+                    rawLabel: rawLabel,
+                    party_gstin: item.party_gstin || "",
+                    total: 0,
+                    billCount: 0,
+                    rowIds: [],
+                    sampleItem: item
+                });
+            }
+            const grp = partyGroupsMap.get(key);
+            grp.total += Number(item.total || 0);
+            grp.billCount += 1;
+            grp.rowIds.push(item.id);
+            if (!grp.party_gstin && item.party_gstin) {
+                grp.party_gstin = item.party_gstin;
+            }
+        });
+
+        const uniquePartyList = Array.from(partyGroupsMap.values());
+
         // Populate Top Bulk-Select Dropdown
         const globalPartySelect = document.getElementById('globalPartyMappingSelect');
         const countBadge = document.getElementById('unmappedPartyCountBadge');
-        if (countBadge) countBadge.textContent = unknownItems.length;
+        if (countBadge) countBadge.textContent = uniquePartyList.length;
 
         if (globalPartySelect) {
             let globalOpts = '<option value="">-- Select Bulk Mapping Action for All Parties --</option>';
@@ -3044,31 +3114,30 @@ document.addEventListener('DOMContentLoaded', () => {
             };
         }
 
-        unknownItems.forEach((item) => {
-            let rawLabel = (item.party || '').replace('UNKNOWN_PARTY: ', '').replace('UNKNOWN_NARRATION: ', '').trim();
-            if (!rawLabel || rawLabel.toLowerCase() === 'nan' || rawLabel.toLowerCase() === 'none' || rawLabel.toLowerCase() === 'null' || rawLabel.toLowerCase() === 'undefined') {
-                rawLabel = 'Unmapped Party';
-            }
-            const selectId = `select-${item.id}`;
-            const optionsHtml = generateLedgerOptions("", item);
+        uniquePartyList.forEach((grp, idx) => {
+            const rawLabel = grp.rawLabel;
+            const selectId = `select-party-grp-${idx}`;
+            const optionsHtml = generateLedgerOptions("", grp.sampleItem);
 
             let gstDisplay = '';
-            if (item.party_gstin) {
-                gstDisplay = `<span class="text-blue-400"><i class="fa-solid fa-building mr-1"></i> GSTIN: ${item.party_gstin} (B2B)</span>`;
+            if (grp.party_gstin) {
+                gstDisplay = `<span class="text-blue-400"><i class="fa-solid fa-building mr-1"></i> GSTIN: ${grp.party_gstin} (B2B)</span>`;
             } else {
                 gstDisplay = `<span class="text-amber-500"><i class="fa-solid fa-user mr-1"></i> GSTIN: None (B2C / URD)</span>`;
             }
 
+            const billCountBadge = grp.billCount > 1 ? `<span class="ml-2 text-[10px] bg-brand-500/20 text-brand-400 border border-brand-500/30 px-1.5 py-0.5 rounded-full font-mono">${grp.billCount} Bills</span>` : '';
+
             mappingList.innerHTML += `
                 <div class="bg-slate-950/40 border border-slate-850 rounded-xl p-4 flex justify-between items-center mb-3">
                     <div>
-                        <p class="text-base font-bold uppercase tracking-wider text-slate-500">${(currentModule === 'Bank Statements' || currentModule === 'Cash Entries') ? 'Unmapped Narration' : 'New Unmapped Party'}</p>
+                        <p class="text-base font-bold uppercase tracking-wider text-slate-500">${(currentModule === 'Bank Statements' || currentModule === 'Cash Entries') ? 'Unmapped Narration' : 'New Unmapped Party'}${billCountBadge}</p>
                         <p class="text-sm font-bold text-white mt-1">"${rawLabel}"</p>
                         <p class="text-[11px] mt-1.5 font-semibold">${gstDisplay}</p>
-                        <p class="text-[11px] text-slate-450 mt-1"><i class="fa-solid fa-wallet mr-1 text-brand-500"></i> Total: ₹${item.total.toLocaleString('en-IN')}</p>
+                        <p class="text-[11px] text-slate-450 mt-1"><i class="fa-solid fa-wallet mr-1 text-brand-500"></i> Total: ₹${grp.total.toLocaleString('en-IN')}</p>
                     </div>
                     <div class="w-1/2 flex gap-2">
-                        <select id="${selectId}" class="mapping-select w-full bg-slate-900 border border-slate-800 rounded-xl py-2 px-3 text-slate-200 text-sm focus:outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-500/50 focus:ring-offset-2 focus:ring-offset-obsidian-950 transition cursor-pointer" data-id="${item.id}" data-is-b2c="${!item.party_gstin}">
+                        <select id="${selectId}" class="mapping-select w-full bg-slate-900 border border-slate-800 rounded-xl py-2 px-3 text-slate-200 text-sm focus:outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-500/50 focus:ring-offset-2 focus:ring-offset-obsidian-950 transition cursor-pointer" data-row-ids="${grp.rowIds.join(',')}" data-is-b2c="${!grp.party_gstin}">
                             ${optionsHtml}
                         </select>
                         <button class="create-new-ledger-btn bg-purple-600/20 hover:bg-purple-600/30 text-purple-300 border border-purple-500/30 px-3 py-2 rounded-xl text-xs font-bold transition flex items-center gap-1 cursor-pointer shrink-0" title="Create New Miracle Ledger with Custom Group" data-raw-label="${rawLabel}" data-select-id="${selectId}">
@@ -3516,28 +3585,35 @@ document.addEventListener('DOMContentLoaded', () => {
                 select.classList.add('border-red-500', 'error-shake');
             } else {
                 select.classList.remove('border-red-500', 'error-shake');
-                const rowId = parseInt(select.getAttribute('data-id'));
-                const row = pendingMockData.find(r => r.id === rowId);
-                if (row) {
-                    if (select.value === "AUTO_CREATE_B2C") {
-                        const rawName = row.party.replace('UNKNOWN_PARTY: ', '').replace('UNKNOWN_NARRATION: ', '');
-                        row.party = rawName;
-                        row.status = 'Ready';
-                        row.isB2C = true;
-                        row.autoCreateB2B = false;
-                    } else if (select.value === "AUTO_CREATE_B2B") {
-                        const rawName = row.party.replace('UNKNOWN_PARTY: ', '').replace('UNKNOWN_NARRATION: ', '');
-                        row.party = rawName;
-                        row.status = 'Ready';
-                        row.isB2C = false;
-                        row.autoCreateB2B = true;
-                    } else {
-                        row.party = select.value;
-                        row.status = 'Ready';
-                        row.isB2C = false;
-                        row.autoCreateB2B = false;
+                const rowIdsAttr = select.getAttribute('data-row-ids') || select.getAttribute('data-id') || '';
+                const rowIds = rowIdsAttr.split(',').map(id => parseInt(id.trim())).filter(id => !isNaN(id));
+
+                rowIds.forEach(rowId => {
+                    const row = pendingMockData.find(r => r.id === rowId);
+                    if (row) {
+                        if (select.value === "AUTO_CREATE_B2C") {
+                            const rawName = row.party.replace(/^UNKNOWN_PARTY:\s*/i, '').replace(/^UNKNOWN_NARRATION:\s*/i, '');
+                            row.party = rawName;
+                            row.party_name = rawName;
+                            row.status = 'Ready';
+                            row.isB2C = true;
+                            row.autoCreateB2B = false;
+                        } else if (select.value === "AUTO_CREATE_B2B") {
+                            const rawName = row.party.replace(/^UNKNOWN_PARTY:\s*/i, '').replace(/^UNKNOWN_NARRATION:\s*/i, '');
+                            row.party = rawName;
+                            row.party_name = rawName;
+                            row.status = 'Ready';
+                            row.isB2C = false;
+                            row.autoCreateB2B = true;
+                        } else {
+                            row.party = select.value;
+                            row.party_name = select.value;
+                            row.status = 'Ready';
+                            row.isB2C = false;
+                            row.autoCreateB2B = false;
+                        }
                     }
-                }
+                });
             }
         });
 
@@ -4435,6 +4511,7 @@ document.addEventListener('DOMContentLoaded', () => {
         } else if (currentModule === 'Purchases') {
             if (searchInput) searchInput.placeholder = "Search bill #, supplier, GSTIN, HSN, amount...";
             badgesHtml = [
+                // All Purchases
                 createBadge('all', 'fa-solid fa-list-check text-brand-400', 'All Purchases', 'countFilterAll',
                     'active bg-brand-600/25 text-brand-300 border-brand-500/60 shadow-lg shadow-brand-500/10 ring-1 ring-brand-500/40',
                     'bg-slate-900/80 border-slate-800 text-slate-300 hover:text-white hover:border-slate-700 hover:bg-slate-800/80',
@@ -4443,6 +4520,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
                 divider,
 
+                // Vendor Types
                 createBadge('b2b', 'fa-solid fa-truck-field text-emerald-400', 'B2B Vendors', 'countFilterB2B',
                     'active bg-emerald-950/70 text-emerald-300 border-emerald-500/60 shadow-lg shadow-emerald-500/10 ring-1 ring-emerald-500/40',
                     'bg-slate-900/80 border-slate-800 text-slate-400 hover:text-emerald-300 hover:border-emerald-800/60 hover:bg-slate-800/80',
@@ -4457,13 +4535,54 @@ document.addEventListener('DOMContentLoaded', () => {
 
                 divider,
 
+                // GST Rates
+                createBadge('gst_5', 'fa-solid fa-tag text-sky-400', '5% GST', 'countFilterGst5',
+                    'active bg-sky-950/70 text-sky-300 border-sky-500/60 shadow-lg shadow-sky-500/10 ring-1 ring-sky-500/40',
+                    'bg-slate-900/80 border-slate-800 text-slate-400 hover:text-sky-300 hover:border-sky-800/60 hover:bg-slate-800/80',
+                    'bg-sky-500/30 text-sky-200 border border-sky-400/40',
+                    'bg-slate-800/90 text-slate-400 border border-slate-700/60'),
+
+                createBadge('gst_0', 'fa-solid fa-ban text-slate-400', '0% Exempt', 'countFilterGst0',
+                    'active bg-slate-800 text-slate-200 border-slate-600 shadow-lg shadow-slate-700/10 ring-1 ring-slate-500/40',
+                    'bg-slate-900/80 border-slate-800 text-slate-400 hover:text-slate-200 hover:border-slate-700 hover:bg-slate-800/80',
+                    'bg-slate-700/60 text-slate-200 border border-slate-600/40',
+                    'bg-slate-800/90 text-slate-400 border border-slate-700/60'),
+
+                createBadge('igst', 'fa-solid fa-plane-departure text-purple-400', 'Inter-State IGST', 'countFilterIGST',
+                    'active bg-purple-950/70 text-purple-300 border-purple-500/60 shadow-lg shadow-purple-500/10 ring-1 ring-purple-500/40',
+                    'bg-slate-900/80 border-slate-800 text-slate-400 hover:text-purple-300 hover:border-purple-800/60 hover:bg-slate-800/80',
+                    'bg-purple-500/30 text-purple-200 border border-purple-400/40',
+                    'bg-slate-800/90 text-slate-400 border border-slate-700/60'),
+
+                divider,
+
+                // Freight & Discounts
                 createBadge('freight', 'fa-solid fa-box text-cyan-400', 'Freight & Addons', 'countFilterFreight',
                     'active bg-cyan-950/70 text-cyan-300 border-cyan-500/60 shadow-lg shadow-cyan-500/10 ring-1 ring-cyan-500/40',
                     'bg-slate-900/80 border-slate-800 text-slate-400 hover:text-cyan-300 hover:border-cyan-800/60 hover:bg-slate-800/80',
                     'bg-cyan-500/30 text-cyan-200 border border-cyan-400/40',
                     'bg-slate-800/90 text-slate-400 border border-slate-700/60'),
 
+                createBadge('discount', 'fa-solid fa-percent text-emerald-400', 'With Discount', 'countFilterDiscount',
+                    'active bg-emerald-950/70 text-emerald-300 border-emerald-500/60 shadow-lg shadow-emerald-500/10 ring-1 ring-emerald-500/40',
+                    'bg-slate-900/80 border-slate-800 text-slate-400 hover:text-emerald-300 hover:border-emerald-800/60 hover:bg-slate-800/80',
+                    'bg-emerald-500/30 text-emerald-200 border border-emerald-400/40',
+                    'bg-slate-800/90 text-slate-400 border border-slate-700/60'),
+
                 divider,
+
+                // Risk & Validation Flags
+                createBadge('gst_mismatch', 'fa-solid fa-triangle-exclamation text-rose-400', 'GST Mismatch', 'countFilterGstMismatch',
+                    'active bg-rose-950/70 text-rose-300 border-rose-500/60 shadow-lg shadow-rose-500/10 ring-1 ring-rose-500/40',
+                    'bg-slate-900/80 border-slate-800 text-slate-400 hover:text-rose-300 hover:border-rose-800/60 hover:bg-slate-800/80',
+                    'bg-rose-500/30 text-rose-200 border border-rose-400/40',
+                    'bg-slate-800/90 text-slate-400 border border-slate-700/60'),
+
+                createBadge('autocreate_item', 'fa-solid fa-boxes-packing text-teal-400', 'Unmapped Items', 'countFilterAutoItem',
+                    'active bg-teal-950/70 text-teal-300 border-teal-500/60 shadow-lg shadow-teal-500/10 ring-1 ring-teal-500/40',
+                    'bg-slate-900/80 border-slate-800 text-slate-400 hover:text-teal-300 hover:border-teal-800/60 hover:bg-slate-800/80',
+                    'bg-teal-500/30 text-teal-200 border border-teal-400/40',
+                    'bg-slate-800/90 text-slate-400 border border-slate-700/60'),
 
                 createBadge('review', 'fa-solid fa-triangle-exclamation text-amber-400', 'Review Needed', 'countFilterReview',
                     'active bg-amber-950/70 text-amber-300 border-amber-500/60 shadow-lg shadow-amber-500/10 ring-1 ring-amber-500/40',

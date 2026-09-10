@@ -4070,6 +4070,9 @@ Return ONLY valid JSON.
                             ).replace("{raw_bill}", b_no)
                             formatted_count += 1
 
+                        from core.excel_parser import clean_extracted_bill_no
+                        row["bill_no"] = clean_extracted_bill_no(row["bill_no"], p_name)
+
             print(
                 f"✅ AI Formatting Applied to {formatted_count} rows deterministically."
             )

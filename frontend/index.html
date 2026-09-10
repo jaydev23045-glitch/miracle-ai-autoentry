@@ -543,18 +543,21 @@
                         </div>
 
                         <!-- 1-Click Global Bulk Product Change Action Bar (For Sales & Purchases) -->
-                        <div class="flex items-center gap-2 ml-auto flex-shrink-0 border-l border-slate-800/80 pl-2.5" id="globalProductBulkBar">
-                            <select id="globalProductBulkSelect" class="bg-slate-900 border border-brand-500/40 text-xs font-semibold text-slate-200 rounded-xl px-3 py-1.5 focus:outline-none focus:border-brand-400 transition max-w-[220px] truncate cursor-pointer">
-                                <option value="">⚡ Bulk Set Product for All Rows...</option>
+                        <div class="flex items-center gap-2 ml-auto flex-shrink-0 bg-slate-900/90 border border-brand-500/30 p-1 rounded-xl shadow-md" id="globalProductBulkBar">
+                            <span class="text-[11px] font-extrabold text-brand-400 uppercase tracking-wider pl-1.5 hidden sm:inline-flex items-center gap-1">
+                                <i class="fa-solid fa-bolt text-amber-300"></i> Bulk Product:
+                            </span>
+                            <select id="globalProductBulkSelect" class="bg-slate-950 border border-slate-800 text-xs font-semibold text-slate-200 rounded-lg px-2.5 py-1 focus:outline-none focus:border-brand-400 transition w-[190px] sm:w-[230px] truncate cursor-pointer hover:border-slate-700" title="Select product to apply to all rows in grid">
+                                <option value="">⚡ Select Miracle Product...</option>
                             </select>
-                            <button id="applyGlobalProductBulkBtn" class="bg-gradient-to-r from-brand-600 to-brand-500 hover:from-brand-500 hover:to-brand-400 text-white font-bold text-xs px-3.5 py-1.5 rounded-xl transition shadow-lg shadow-brand-600/30 flex items-center gap-1.5 cursor-pointer whitespace-nowrap active:scale-95">
-                                <i class="fa-solid fa-bolt text-amber-300"></i> Apply to All
+                            <button id="applyGlobalProductBulkBtn" class="bg-gradient-to-r from-brand-600 to-brand-500 hover:from-brand-500 hover:to-brand-400 text-white font-bold text-xs px-3 py-1 rounded-lg transition shadow-md shadow-brand-600/30 flex items-center gap-1.5 cursor-pointer whitespace-nowrap active:scale-95" title="Apply selected product to all visible rows (or checked checkboxes)">
+                                <span>Apply</span>
                             </button>
                         </div>
 
                         <!-- 1-Click Bank Statements Bulk Apply Bar -->
-                        <div class="hidden flex items-center gap-2 ml-auto flex-shrink-0 border-l border-slate-800/80 pl-2.5" id="bankBulkBar">
-                            <button id="applyBankBulkLedgerGroupBtn" class="bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-bold text-xs px-3.5 py-1.5 rounded-xl transition shadow-lg shadow-purple-600/30 flex items-center gap-1.5 cursor-pointer whitespace-nowrap active:scale-95">
+                        <div class="hidden flex items-center gap-2 ml-auto flex-shrink-0 bg-slate-900/90 border border-purple-500/30 p-1 rounded-xl shadow-md" id="bankBulkBar">
+                            <button id="applyBankBulkLedgerGroupBtn" class="bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-bold text-xs px-3 py-1 rounded-lg transition shadow-md shadow-purple-600/30 flex items-center gap-1.5 cursor-pointer whitespace-nowrap active:scale-95">
                                 <i class="fa-solid fa-wand-magic-sparkles text-amber-300"></i> ⚡ Bulk Apply Ledger & Group
                             </button>
                         </div>
