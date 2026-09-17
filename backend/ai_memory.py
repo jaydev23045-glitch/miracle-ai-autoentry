@@ -426,6 +426,14 @@ class AIMemoryVault:
             
         k_upper = clean_key.strip().upper()
         v_upper = ledger_val.strip().upper()
+
+        # Rule 0: Generic transaction mode / nature keywords (CASH, CHEQUE, ATM, TRANSFER, NEFT, RTGS, UPI)
+        # MUST NOT be saved as mapped keywords to specific commercial vendor/trade parties!
+        GENERIC_MODE_KEYWORDS = {"CASH", "CHEQUE", "CHQ", "ATM", "TRANSFER", "ONLINE", "DEPOSIT", "NEFT", "RTGS", "UPI", "IMPS", "POS", "CARD"}
+        words = set(re.split(r'[\s\-\/_]+', k_upper))
+        if words and words.issubset(GENERIC_MODE_KEYWORDS):
+            if not any(allowed in v_upper for allowed in ("CASH", "BANK", "SUSPENSE", "DRAWING", "CAPITAL")):
+                return True
         
         nature = AIMemoryVault.classify_indian_accounting_nature(clean_key)
         
@@ -470,15 +478,21 @@ class AIMemoryVault:
         new_mappings = {}
         changed = 0
         for raw_key, ledger in old_mappings.items():
-            clean_key = self.clean_mapping_key(raw_key)
+            prefix = ""
+            target_k = raw_key
+            if raw_key.startswith(("DR_", "CR_")):
+                prefix = raw_key[:3]
+                target_k = raw_key[3:]
+            clean_key = self.clean_mapping_key(target_k)
             clean_val = self.clean_mapping_value(ledger)
             if not clean_key or len(clean_key) < 3 or re.match(r'^\d+$', clean_key) or self.is_illegal_nature_mapping(clean_key, clean_val):
                 changed += 1
                 print(f"🧹 [Vault Purifier] Purged illegal nature mapping: '{raw_key}' ('{clean_key}') → '{ledger}'")
                 continue  # drop garbage/numeric/illegal nature mappings
-            if clean_key not in new_mappings:
-                new_mappings[clean_key] = clean_val
-                if clean_key != raw_key or clean_val != ledger:
+            full_key = f"{prefix}{clean_key}"
+            if full_key not in new_mappings:
+                new_mappings[full_key] = clean_val
+                if full_key != raw_key or clean_val != ledger:
                     changed += 1
 
         memory["expense_mappings"] = new_mappings
@@ -522,6 +536,7 @@ class AIMemoryVault:
         """
         Scans expense_mappings and deletes redundant longer keys if a shorter,
         encompassing core substring key exists mapping to the same target ledger.
+        Preserves directional DR_ / CR_ prefixes.
         """
         mappings = memory_data.get("expense_mappings", {})
         if not mappings:
@@ -529,9 +544,14 @@ class AIMemoryVault:
             
         cleaned_mappings = {}
         for k, v in mappings.items():
-            ck = AIMemoryVault.clean_mapping_key(k)
+            prefix = ""
+            raw_k = k
+            if k.startswith(("DR_", "CR_")):
+                prefix = k[:3]
+                raw_k = k[3:]
+            ck = AIMemoryVault.clean_mapping_key(raw_k)
             if ck and v:
-                cleaned_mappings[ck] = v
+                cleaned_mappings[f"{prefix}{ck}"] = v
                 
         # Sort keys by length so shorter keys are processed first
         sorted_keys = sorted(cleaned_mappings.keys(), key=len)
@@ -541,7 +561,9 @@ class AIMemoryVault:
             # Check if any already-saved shorter key is a substring and maps to the same ledger
             is_redundant = False
             for saved_key, saved_val in pruned.items():
-                if saved_val.upper() == val.upper() and saved_key in key:
+                s_prefix = saved_key[:3] if saved_key.startswith(("DR_", "CR_")) else ""
+                k_prefix = key[:3] if key.startswith(("DR_", "CR_")) else ""
+                if s_prefix == k_prefix and saved_val.upper() == val.upper() and (saved_key[len(s_prefix):] in key[len(k_prefix):]):
                     is_redundant = True
                     break
             if not is_redundant:
@@ -568,11 +590,14 @@ class AIMemoryVault:
             except Exception as e:
                 print(f"Error saving memory for {client_id}: {e}")
 
-    def find_fast_keyword_expense_mapping(self, client_id: str, raw_narration: str) -> tuple[str, str]:
+    def find_fast_keyword_expense_mapping(self, client_id: str, raw_narration: str, tx_type: str = "DR") -> tuple[str, str]:
         """
-        High-speed O(1) keyword index tab lookup.
-        Splits raw_narration into clean uppercase tokens and checks exact hash map matches
-        in O(1) time without running slow O(N*M) edit distance loops.
+        High-speed O(1) keyword index tab lookup with directional awareness (DR_ vs CR_).
+        Splits raw_narration into clean uppercase tokens and checks directional hash map matches
+        in O(1) time (e.g., DR_PATEL_TRADERS vs CR_PATEL_TRADERS).
+        
+        Backward-compatibility fallback:
+        If directional key (DR_KEY) is missing, checks legacy un-prefixed key (KEY).
         Returns (mapped_ledger, matched_key) or ("", "").
         """
         clean_k = self.clean_mapping_key(raw_narration)
@@ -584,29 +609,44 @@ class AIMemoryVault:
         if not mappings:
             return ("", "")
 
-        # 1. Exact full key match (O(1))
+        direction = (tx_type or "DR").upper().strip()
+        dir_key = f"{direction}_{clean_k}"
+
+        # 1. Exact directional full key match (O(1)) e.g. "DR_PATEL_TRADERS"
+        if dir_key in mappings:
+            return (mappings[dir_key], dir_key)
+
+        # 2. Legacy un-prefixed full key match fallback e.g. "PATEL_TRADERS"
         if clean_k in mappings:
             return (mappings[clean_k], clean_k)
 
-        # 2. Token Set / Word Boundary Hash Match (O(Words))
+        # 3. Token Set / Word Boundary Hash Match (O(Words))
         tokens = [t for t in re.split(r'[^A-Z0-9]', clean_k) if len(t) >= 3]
         for token in tokens:
+            dir_token = f"{direction}_{token}"
+            if dir_token in mappings:
+                return (mappings[dir_token], dir_token)
             if token in mappings:
                 return (mappings[token], token)
 
-        # 3. Fast Substring keyword check (Sorted by length descending for best specificity)
+        # 4. Fast Substring keyword check (Sorted by length descending for best specificity)
         for k in sorted(mappings.keys(), key=len, reverse=True):
-            if len(k) >= 4 and (k in clean_k or clean_k in k):
-                return (mappings[k], k)
+            if len(k) >= 4:
+                # Compare without direction prefix if present in key
+                unprefixed_k = re.sub(r'^(DR|CR)_', '', k)
+                if len(unprefixed_k) >= 4 and (unprefixed_k in clean_k or clean_k in unprefixed_k):
+                    # Prefer directional key match if directions align
+                    if k.startswith(f"{direction}_") or not k.startswith(("DR_", "CR_")):
+                        return (mappings[k], k)
 
         return ("", "")
 
-    def find_fuzzy_expense_mapping(self, client_id: str, raw_narration: str, cutoff: float = 0.85) -> tuple[str, str]:
+    def find_fuzzy_expense_mapping(self, client_id: str, raw_narration: str, cutoff: float = 0.85, tx_type: str = "DR") -> tuple[str, str]:
         """
-        Looks up mapped ledger for raw_narration using high-speed O(1) token index matching.
+        Looks up mapped ledger for raw_narration using high-speed O(1) token index matching with tx_type support.
         Returns (mapped_ledger, matched_key) or ("", "").
         """
-        return self.find_fast_keyword_expense_mapping(client_id, raw_narration)
+        return self.find_fast_keyword_expense_mapping(client_id, raw_narration, tx_type=tx_type)
 
     def delete_expense_mapping(self, client_id: str, key: str) -> bool:
         """Deletes a learned expense mapping key from client memory."""
@@ -614,19 +654,17 @@ class AIMemoryVault:
         mappings = memory.get("expense_mappings", {})
         clean_k = self.clean_mapping_key(key) if key else ""
         deleted = False
-        if key in mappings:
-            del mappings[key]
-            deleted = True
-        elif clean_k in mappings:
-            del mappings[clean_k]
-            deleted = True
+        for target_k in (key, clean_k, f"DR_{clean_k}", f"CR_{clean_k}"):
+            if target_k and target_k in mappings:
+                del mappings[target_k]
+                deleted = True
         if deleted:
             memory["expense_mappings"] = mappings
             self.save_memory(client_id, memory)
         return deleted
 
-    def add_expense_mapping(self, client_id: str, narration_keyword: str, ledger_name: str):
-        """Teaches the AI a new expense mapping for a client."""
+    def add_expense_mapping(self, client_id: str, narration_keyword: str, ledger_name: str, tx_type: str = "DR"):
+        """Teaches the AI a new expense mapping for a client with directional prefix (DR_ or CR_)."""
         memory = self.load_memory(client_id)
         if "expense_mappings" not in memory:
             memory["expense_mappings"] = {}
@@ -634,19 +672,22 @@ class AIMemoryVault:
         # Clean the key before storing
         clean_key = self.clean_mapping_key(narration_keyword)
         if clean_key:
-            memory["expense_mappings"][clean_key] = ledger_name
+            direction = (tx_type or "DR").upper().strip()
+            dir_key = f"{direction}_{clean_key}"
+            memory["expense_mappings"][dir_key] = ledger_name
         self.save_memory(client_id, memory)
 
-    def batch_add_expense_mappings(self, client_id: str, mappings: dict):
+    def batch_add_expense_mappings(self, client_id: str, mappings: dict, tx_type: str = "DR"):
         """
         Batch-writes multiple narration→ledger expense mappings in a SINGLE disk read + write.
 
         Eliminates the N-read / N-write pattern of calling add_expense_mapping() in a loop.
-        All keys are cleaned via clean_mapping_key() before storing.
+        All keys are cleaned via clean_mapping_key() and prefixed with tx_type (DR_ / CR_) before storing.
 
         Args:
             client_id: The client identifier (e.g. 'CMP0003').
             mappings:  Dict of {raw_narration: ledger_name}. Empty or None values are skipped.
+            tx_type:   Transaction type ('DR' or 'CR').
         """
         if not mappings:
             return
@@ -654,12 +695,14 @@ class AIMemoryVault:
         if "expense_mappings" not in memory:
             memory["expense_mappings"] = {}
         added = 0
+        direction = (tx_type or "DR").upper().strip()
         for narration_keyword, ledger_name in mappings.items():
             if not narration_keyword or not ledger_name:
                 continue
             clean_key = self.clean_mapping_key(narration_keyword)
             if clean_key:
-                memory["expense_mappings"][clean_key] = ledger_name
+                dir_key = f"{direction}_{clean_key}"
+                memory["expense_mappings"][dir_key] = ledger_name
                 added += 1
         if added:
             self.save_memory(client_id, memory)

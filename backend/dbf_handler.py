@@ -127,6 +127,34 @@ def ensure_writable_recursive(target_path: str) -> None:
                 except Exception:
                     pass
 
+import struct
+from core.config import zero_risk_dbf_lock
+
+def zero_risk_update_dbf_header(dbf_file_path: str, record_count: int, client_id: str = "default"):
+    """
+    0-RISK HEADER UPDATER:
+    Safely updates FoxPro DBF header count at offset 4-7 and EOF byte 0x1A.
+    """
+    if not dbf_file_path or not os.path.exists(dbf_file_path):
+        return
+        
+    try:
+        with zero_risk_dbf_lock(dbf_file_path, client_id=client_id):
+            with open(dbf_file_path, "r+b") as f:
+                f.seek(0, os.SEEK_END)
+                file_size = f.tell()
+                
+                if file_size >= 32:
+                    f.seek(4)
+                    f.write(struct.pack("<I", record_count))
+                    
+                    f.seek(file_size - 1)
+                    if f.read(1) != b'\x1a':
+                        f.seek(0, os.SEEK_END)
+                        f.write(b'\x1a')
+    except Exception as e:
+        logger.warning(f"Non-critical header sync warning for {os.path.basename(dbf_file_path)}: {e}")
+
 class MiracleDBFHandler:
     _CROSS_YEAR_CACHE = {}  # {(client_path, active_year_folder): (timestamp, ledgers_list)}
     _CROSS_YEAR_CACHE_LOCK = threading.Lock()

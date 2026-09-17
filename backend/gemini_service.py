@@ -118,6 +118,49 @@ def mark_key_model_quota_exhausted_today(api_key: str | None, model_name: str):
     )
 
 
+import time
+import random
+
+
+def zero_risk_gemini_extract(client, prompt: str, schema_class=None, model_name: str = "gemini-2.5-flash", max_retries: int = 3) -> str:
+    """
+    0-RISK AI EXTRACTION:
+    Attempts structured JSON schema call with exponential retries.
+    If schema call fails, falls back to standard text prompt extraction automatically.
+    """
+    for attempt in range(1, max_retries + 1):
+        try:
+            config = {}
+            if schema_class:
+                config['response_mime_type'] = 'application/json'
+                config['response_schema'] = schema_class
+                config['temperature'] = 0.1
+            
+            response = client.models.generate_content(
+                model=model_name,
+                contents=prompt,
+                config=config if config else None
+            )
+            if response and response.text:
+                return response.text
+        except Exception as e:
+            if attempt < max_retries:
+                sleep_time = (1.5 * attempt) + random.uniform(0.2, 0.8)
+                time.sleep(sleep_time)
+            else:
+                print(f"⚠️ Structured Gemini API call failed: {e}. Falling back to standard extraction...")
+                
+    try:
+        response = client.models.generate_content(
+            model=model_name,
+            contents=prompt
+        )
+        return response.text if response else "{}"
+    except Exception as ex:
+        print(f"❌ Standard Gemini fallback failed: {ex}")
+        return "{}"
+
+
 def is_model_quota_exhausted_today(model_name: str) -> bool:
     return is_key_model_quota_exhausted_today("default", model_name)
 
@@ -2723,8 +2766,9 @@ Return the extracted data EXACTLY following this JSON schema. Do not output anyt
                 """
                 if not extracted_rows:
                     return True, ""
+                from decimal import Decimal, ROUND_HALF_UP
                 try:
-                    prev_balance = float(opening_balance)
+                    prev_balance = Decimal(str(opening_balance)).quantize(Decimal("0.00"), rounding=ROUND_HALF_UP)
                 except Exception:
                     return True, ""
 
@@ -2743,13 +2787,13 @@ Return the extracted data EXACTLY following this JSON schema. Do not output anyt
                     ):
                         continue
                     try:
-                        running_bal = float(running_bal)
-                        amount_val = float(amount_raw or 0.0)
+                        running_bal = Decimal(str(running_bal)).quantize(Decimal("0.00"), rounding=ROUND_HALF_UP)
+                        amount_val = Decimal(str(amount_raw or 0.0)).quantize(Decimal("0.00"), rounding=ROUND_HALF_UP)
 
                         # ── Check 1: Running balance math ──────────────────────────────
                         if prev_balance is not None:
-                            delta = round(running_bal - prev_balance, 2)
-                            if abs(abs(delta) - amount_val) > 5.0:
+                            delta = running_bal - prev_balance
+                            if abs(abs(delta) - amount_val) > Decimal("0.00"):
                                 expected_bal = (
                                     prev_balance + amount_val
                                     if str(row.get("transaction_type"))
@@ -2760,6 +2804,7 @@ Return the extracted data EXACTLY following this JSON schema. Do not output anyt
                                 )
                                 msg = f"Math discrepancy at row {idx+1} (Date: {row.get('date')}, Amount: {amount_val}, Narration: {row.get('narration')[:50]}). Expected running balance to change from {prev_balance:.2f} to {expected_bal:.2f} (delta={delta:.2f}), but PDF shows running balance as {running_bal:.2f}. Please make sure you have extracted all transactions including any duplicate amounts on the same date."
                                 print(f"   [Math Check Failed] {msg}")
+                                row["status"] = "Math Discrepancy"
                                 return False, msg
                         prev_balance = running_bal
 
@@ -3335,7 +3380,10 @@ Return the extracted data EXACTLY following this JSON schema. Do not output anyt
                 # Dynamic Chunk Size Adaptation based on Page Count & Line Density
                 # Optimal Chunking: Capped at max 8-10 pages/chunk for ultra-fast parallel extraction across worker threads
                 if module in ["Bank Statements", "Cash Entries"]:
-                    pages_per_chunk = max(3, min(8, 600 // max(1, int(avg_lines_per_page))))
+                    # Bank Statements have high transaction density (30-60 txns/page).
+                    # Capping at max 2 pages/chunk ensures output token response window (~4,096 tokens max)
+                    # is NEVER exceeded, preventing Gemini response truncation and missing records.
+                    pages_per_chunk = max(1, min(2, 120 // max(1, int(avg_lines_per_page))))
                     print(
                         f"🏦 Statement chunk size set to {pages_per_chunk} pages/chunk for ultra-fast parallel extraction."
                     )
@@ -3429,10 +3477,6 @@ Return the extracted data EXACTLY following this JSON schema. Do not output anyt
                                 txt = re.sub(
                                     r"(\d{2}-\d{2})\s*\n\s*(\d{4}-)", r"\2\1", txt
                                 )
-                                if chronology == "reverse":
-                                    lines = [l for l in txt.split("\n") if l.strip()]
-                                    lines.reverse()
-                                    txt = "\n".join(lines)
                                 if txt.strip():
                                     extracted_chunk_text_lines.append(txt)
                     except Exception:
@@ -3466,13 +3510,8 @@ Return the extracted data EXACTLY following this JSON schema. Do not output anyt
                                             r"\2\1",
                                             txt,
                                         )
-                                        if chronology == "reverse":
-                                            lines = [
-                                                l for l in txt.split("\n") if l.strip()
-                                            ]
-                                            lines.reverse()
-                                            txt = "\n".join(lines)
-                                        extracted_chunk_text_lines.append(txt)
+                                        if txt.strip():
+                                            extracted_chunk_text_lines.append(txt)
                         except Exception as pe:
                             print(
                                 f"⚠️ pdfplumber text extraction failed during chunking: {pe}"
@@ -3481,7 +3520,7 @@ Return the extracted data EXACTLY following this JSON schema. Do not output anyt
                     total_chars = sum(
                         len(txt.strip()) for txt in extracted_chunk_text_lines
                     )
-                    is_scanned_pdf = total_chars < (10 * pages_count)
+                    is_scanned_pdf = total_chars < (120 * pages_count)
 
                     msg = f"Reading Part: Pages {start_p} to {end_p} (File: {base_filename})"
                     self._update_status(base_filename, start_p, total_pages, msg)
@@ -3526,6 +3565,11 @@ Return the extracted data EXACTLY following this JSON schema. Do not output anyt
                                 reader_local = shared_pdf_reader
                             else:
                                 reader_local = PdfReader(file_path, strict=False)
+                            if getattr(reader_local, "is_encrypted", False) and pdf_password:
+                                try:
+                                    reader_local.decrypt(pdf_password)
+                                except:
+                                    pass
                             writer = PdfWriter()
                             page_indices = list(range(start_page_idx, end_page_idx + 1))
                             if chronology == "reverse":
@@ -3680,44 +3724,80 @@ Return the extracted data EXACTLY following this JSON schema. Do not output anyt
                         )
                         mid = (start_page_idx + end_page_idx) // 2
 
-                        res_first = extract_pdf_pages_recursive(
-                            start_page_idx,
-                            mid,
-                            prev_balance,
-                            trial=1,
-                            chunk_offset=chunk_offset,
-                        )
-
-                        first_extracted = res_first.get("extracted_data", [])
-                        end_balance_first = prev_balance
-                        if first_extracted:
-                            last_rows = [
-                                r for r in first_extracted if r.get("running_balance")
-                            ]
-                            if last_rows:
-                                end_balance_first = float(
-                                    last_rows[-1].get("running_balance", 0)
-                                )
-
-                        res_second = extract_pdf_pages_recursive(
-                            mid + 1,
-                            end_page_idx,
-                            end_balance_first,
-                            trial=1,
-                            chunk_offset=chunk_offset + 1,
-                        )
-
-                        combined_res = {
-                            "status": "success",
-                            "bank_name": res_first.get("bank_name")
-                            or res_second.get("bank_name"),
-                            "opening_balance": res_first.get("opening_balance")
-                            or res_second.get("opening_balance")
-                            or op_balance,
-                            "extracted_data": first_extracted
-                            + res_second.get("extracted_data", []),
-                        }
-                        return combined_res
+                        if chronology == "reverse":
+                            # In reverse PDFs, higher page indices contain older transactions.
+                            # Process older page range first to maintain forward chronological flow.
+                            res_older = extract_pdf_pages_recursive(
+                                mid + 1,
+                                end_page_idx,
+                                prev_balance,
+                                trial=1,
+                                chunk_offset=chunk_offset,
+                            )
+                            older_extracted = res_older.get("extracted_data", [])
+                            end_balance_older = prev_balance
+                            if older_extracted:
+                                last_rows = [
+                                    r for r in older_extracted if r.get("running_balance")
+                                ]
+                                if last_rows:
+                                    end_balance_older = float(
+                                        last_rows[-1].get("running_balance", 0)
+                                    )
+                            res_newer = extract_pdf_pages_recursive(
+                                start_page_idx,
+                                mid,
+                                end_balance_older,
+                                trial=1,
+                                chunk_offset=chunk_offset + 1,
+                            )
+                            combined_res = {
+                                "status": "success",
+                                "bank_name": res_older.get("bank_name")
+                                or res_newer.get("bank_name"),
+                                "opening_balance": res_older.get("opening_balance")
+                                or res_newer.get("opening_balance")
+                                or op_balance,
+                                "extracted_data": older_extracted
+                                + res_newer.get("extracted_data", []),
+                            }
+                            return combined_res
+                        else:
+                            res_first = extract_pdf_pages_recursive(
+                                start_page_idx,
+                                mid,
+                                prev_balance,
+                                trial=1,
+                                chunk_offset=chunk_offset,
+                            )
+                            first_extracted = res_first.get("extracted_data", [])
+                            end_balance_first = prev_balance
+                            if first_extracted:
+                                last_rows = [
+                                    r for r in first_extracted if r.get("running_balance")
+                                ]
+                                if last_rows:
+                                    end_balance_first = float(
+                                        last_rows[-1].get("running_balance", 0)
+                                    )
+                            res_second = extract_pdf_pages_recursive(
+                                mid + 1,
+                                end_page_idx,
+                                end_balance_first,
+                                trial=1,
+                                chunk_offset=chunk_offset + 1,
+                            )
+                            combined_res = {
+                                "status": "success",
+                                "bank_name": res_first.get("bank_name")
+                                or res_second.get("bank_name"),
+                                "opening_balance": res_first.get("opening_balance")
+                                or res_second.get("opening_balance")
+                                or op_balance,
+                                "extracted_data": first_extracted
+                                + res_second.get("extracted_data", []),
+                            }
+                            return combined_res
 
                     # If math check fails on single page after Trial 2, retry Trial 3
                     elif not is_valid and pages_count == 1 and trial < 3:
@@ -3880,16 +3960,40 @@ Return the extracted data EXACTLY following this JSON schema. Do not output anyt
             if module in ["Bank Statements", "Cash Entries"]:
                 from datetime import datetime as _s_dt
 
-                def _parse_row_sort_date(r):
+                def _parse_row_sort_key(item):
+                    idx, r = item
                     d_str = str(r.get("date", "")).strip()
-                    for _f in ("%Y-%m-%d", "%d/%m/%Y", "%d/%m/%y", "%d-%m-%Y"):
-                        try:
-                            return _s_dt.strptime(d_str[:10], _f)
-                        except ValueError:
-                            pass
-                    return _s_dt.min
+                    parsed = None
+                    if d_str and d_str != "None":
+                        for _f in (
+                            "%Y-%m-%d",
+                            "%d/%m/%Y",
+                            "%d-%m-%Y",
+                            "%d/%m/%y",
+                            "%d-%m-%y",
+                            "%Y/%m/%d",
+                        ):
+                            try:
+                                parsed = _s_dt.strptime(d_str[:10], _f)
+                                break
+                            except ValueError:
+                                pass
+                        if not parsed:
+                            try:
+                                parts = re.split(r"[-/\s]", d_str)
+                                if len(parts) >= 3:
+                                    p1, p2, p3 = int(parts[0]), int(parts[1]), int(parts[2][:4])
+                                    if p1 > 1000:
+                                        parsed = _s_dt(p1, p2, p3)
+                                    elif p3 > 1000:
+                                        parsed = _s_dt(p3, p2, p1)
+                            except Exception:
+                                pass
+                    return (parsed or _s_dt.min, idx)
 
-                final_result["extracted_data"].sort(key=_parse_row_sort_date)
+                enum_rows = list(enumerate(final_result["extracted_data"]))
+                enum_rows.sort(key=_parse_row_sort_key)
+                final_result["extracted_data"] = [r for _, r in enum_rows]
                 print(
                     "📅 [Month Start Order] Sorted all bank statement entries in Forward Chronological Order (1st of month first)."
                 )
@@ -4392,9 +4496,20 @@ Return ONLY valid JSON.
 
         clean_memory = {}
         for k, v in expense_mappings.items():
-            ck = _MemVault.clean_mapping_key(k)
+            k_upper = k.upper().strip()
+            prefix = ""
+            if k_upper.startswith("DR:"):
+                prefix = "DR:"
+                k_clean_src = k_upper[3:]
+            elif k_upper.startswith("CR:"):
+                prefix = "CR:"
+                k_clean_src = k_upper[3:]
+            else:
+                k_clean_src = k_upper
+
+            ck = _MemVault.clean_mapping_key(k_clean_src)
             if ck:
-                clean_memory[ck.upper()] = v
+                clean_memory[f"{prefix}{ck.upper()}"] = v
 
         # ── STAGE -1: User Guidelines Engine (Highest Priority) ──────────────
         user_guideline_rules = []
@@ -4836,7 +4951,13 @@ Return ONLY valid JSON.
             if not clean_entity or len(clean_entity) < 4:
                 return ("", 0.0)
 
-            entity_up = clean_entity.upper()
+            def _strip_legal(name: str) -> str:
+                res = f" {name.upper()} "
+                for sfx in ['M/S', 'SHRI', 'SHREE', 'PVT LTD', 'PRIVATE LIMITED', 'LTD', 'LIMITED', 'LLP', 'ENTERPRISES', 'TRADERS']:
+                    res = res.replace(f" {sfx} ", " ")
+                return " ".join(res.split())
+
+            entity_up = _strip_legal(clean_entity)
             entity_tokens = set(w for w in entity_up.split() if len(w) >= 3)
             if not entity_tokens:
                 return ("", 0.0)
@@ -4844,7 +4965,9 @@ Return ONLY valid JSON.
             best_score = 0.0
             best_name = ""
 
-            for name_up, exact in _S35_CANDIDATES:
+            for raw_name_up, exact in _S35_CANDIDATES:
+                name_up = _strip_legal(raw_name_up)
+                
                 # Skip if this ledger name is the statement's own bank brand (brand-swap guard)
                 if stmt_brand and stmt_brand in name_up and "BANK" in name_up:
                     continue
@@ -4923,7 +5046,11 @@ Return ONLY valid JSON.
             narr_upper = narr.upper()
 
             # ── STAGE 0a: Fast Exact Clean Key Match in Expense Mappings ──────
-            if not matched_ledger and cleaned_narr_upper in clean_memory:
+            dir_prefix = "DR:" if tx_type == "Payment" else "CR:"
+            if not matched_ledger and f"{dir_prefix}{cleaned_narr_upper}" in clean_memory:
+                matched_ledger = clean_memory[f"{dir_prefix}{cleaned_narr_upper}"]
+                match_stage = f"S0-ExactMemDir('{cleaned_narr[:25]}')"
+            elif not matched_ledger and cleaned_narr_upper in clean_memory:
                 matched_ledger = clean_memory[cleaned_narr_upper]
                 match_stage = f"S0-ExactMem('{cleaned_narr[:25]}')"
 
@@ -5039,6 +5166,18 @@ Return ONLY valid JSON.
                         match_stage = f"S3.5-DBFJaccardLow(score={s35_score})"
                         row.setdefault("flags", []).append("Low Confidence")
 
+            # ── STAGE E: Zero-Hardcode Semantic Embedding Match ──────────────
+            if not matched_ledger and ledger_names:
+                try:
+                    from embedding_engine import TextEmbeddingEngine
+                    emb_engine = TextEmbeddingEngine()
+                    emb_name, emb_score = emb_engine.find_best_semantic_match(narr, ledger_names, cutoff=0.75)
+                    if emb_name and emb_score >= 0.75:
+                        matched_ledger = emb_name
+                        match_stage = f"SE-Embedding({int(emb_score*100)}%)"
+                except Exception as emb_err:
+                    pass
+
             # ── STAGE 4: Narration Party Extractor & Ledger Matching ─────────
             if not matched_ledger:
                 extracted_party = self.extract_clean_party_from_narration(narr)
@@ -5112,6 +5251,21 @@ Return ONLY valid JSON.
                     matched_ledger = ledger_lookup.get("SUSPENSE ACCOUNT", "Suspense Account")
                     match_stage = "Suspense-Fallback"
 
+            # ── Directional Constrain Guard ──
+            if matched_ledger:
+                dbf_cls = ledger_classification_map.get(matched_ledger.upper(), "").upper()
+                is_refund = any(word in narr_upper for word in ["REFUND", "RETURN", "REVERSAL", "BOUNCE", "REJECT"])
+                
+                if not is_refund:
+                    if tx_type == "Payment" and (dbf_cls in ("INCOME", "DEBTOR", "SALES", "DIRECT INCOME", "INDIRECT INCOME")):
+                        print(f"🚫 [Direction Guard] Blocked Payment mapping to {matched_ledger} (Class: {dbf_cls})")
+                        matched_ledger = None
+                        match_stage = "Suspense-Fallback"
+                    elif tx_type == "Receipt" and (dbf_cls in ("EXPENSE", "CREDITOR", "PURCHASE", "DIRECT EXPENSES", "INDIRECT EXPENSES")):
+                        print(f"🚫 [Direction Guard] Blocked Receipt mapping to {matched_ledger} (Class: {dbf_cls})")
+                        matched_ledger = None
+                        match_stage = "Suspense-Fallback"
+
             # Calculate Dynamic Accounting Confidence Score
             dyn_score = self.calculate_dynamic_accounting_confidence(
                 narration=narr,
@@ -5123,24 +5277,34 @@ Return ONLY valid JSON.
                 amount=float(row.get("amount", 0) or 0)
             )
 
-            # Route low confidence entries (< 65), generic group terms, or unmapped items to Suspense Account
+            # Three-Tier Routing System:
+            # Score >= 85 -> Auto (Goes to books directly)
+            # Score 60-84 -> Review (Held in Review Queue)
+            # Score < 60 or Generic Match or Explicit Suspense -> Suspense (Forced to Suspense Account)
             is_generic_match = bool(matched_ledger and matched_ledger.upper() in RESERVED_GENERIC_WORDS)
-            if dyn_score < 65 or matched_ledger.upper() in ("SUSPENSE ACCOUNT", "SUSPENSE A/C") or is_generic_match:
-                resolved_suspense = ledger_lookup.get("SUSPENSE ACCOUNT", "Suspense Account")
+            resolved_suspense = ledger_lookup.get("SUSPENSE ACCOUNT", "Suspense Account")
+
+            if dyn_score < 60 or not matched_ledger or matched_ledger.upper() in ("SUSPENSE ACCOUNT", "SUSPENSE A/C") or is_generic_match:
+                # TIER 3: Suspense Account (Score < 60)
                 row["mapped_ledger"] = resolved_suspense
                 row["party_name"] = resolved_suspense
                 row["party"] = resolved_suspense
                 row["group_hint"] = "Suspense Account"
                 row["confidence_score"] = 40 if is_generic_match else dyn_score
+                row["status"] = "Suspense"
+                row["suggested_ledger"] = matched_ledger if (matched_ledger and matched_ledger.upper() not in ("SUSPENSE ACCOUNT", "SUSPENSE A/C")) else ""
                 if "Low Confidence - Suspense Account" not in row.get("flags", []):
                     row.setdefault("flags", []).append("Low Confidence - Suspense Account")
                 if not silent_mode:
-                    print(f"  ⚠️ [Suspense Account Fallback (Score: {row['confidence_score']})] '{narr[:50]}' → '{resolved_suspense}'")
-            else:
-                mapped_count += 1
+                    print(f"  🔴 [Suspense Account Fallback (Score: {row['confidence_score']})] '{narr[:50]}' → '{resolved_suspense}'")
+            elif 60 <= dyn_score < 85:
+                # TIER 2: Review Queue (Score 60-84)
                 row["mapped_ledger"] = matched_ledger
                 row["party_name"] = matched_ledger
                 row["party"] = matched_ledger
+                row["suggested_ledger"] = matched_ledger
+                row["confidence_score"] = dyn_score
+                row["status"] = "Review"
                 master_group = ledger_group_map.get(matched_ledger.upper())
                 if master_group:
                     row["group_hint"] = master_group
@@ -5149,6 +5313,23 @@ Return ONLY valid JSON.
                         narr, matched_ledger, tx_type, amount=float(row.get("amount", 0) or 0)
                     )
 
+                gh_upper = str(row.get("group_hint", "")).upper()
+                dbf_cls_for_matched = ledger_classification_map.get(matched_ledger.upper(), "")
+                if dbf_cls_for_matched == "Bank":
+                    row["group_hint"] = "Bank Accounts"
+                elif "BANK" in gh_upper and dbf_cls_for_matched not in ("Bank", ""):
+                    row["group_hint"] = "Sundry Creditors" if tx_type == "Payment" else "Sundry Debtors"
+
+                if "Needs Review" not in row.get("flags", []):
+                    row.setdefault("flags", []).append("Needs Review")
+                if not silent_mode:
+                    print(f"  ⚠️ [Review Required (Score: {dyn_score})] '{narr[:50]}' → '{matched_ledger}'")
+            else:
+                # TIER 1: Auto-mapped (Score >= 85)
+                mapped_count += 1
+                row["mapped_ledger"] = matched_ledger
+                row["party_name"] = matched_ledger
+                row["party"] = matched_ledger
                 # 🏦 BANK IDENTITY GUARD — trust RKACCM11 hierarchy classification above all else:
                 # If dbf_cls='Bank' → this ledger IS a real bank account (e.g. Saurashtra Gramin Bank).
                 # Client may have assigned wrong group_name in Miracle, but the RKACCM11 walk correctly identifies it.
@@ -6091,39 +6272,69 @@ INSTRUCTIONS:
 5. Include a 'confidence_score' (0-100) indicating how certain you are of the mapping.
 6. Return your response ONLY as a JSON object matching this schema:
 {{
-  "narration_string": {{
-    "mapped_ledger": "Clean human party name or existing ledger name",
-    "group_hint": "Investments or Bank Accounts or Indirect Expenses or Duties & Taxes or Sundry Debtors or Sundry Creditors or Capital Account / Drawings",
-    "confidence_score": 85
-  }}
+  "mappings": [
+    {{
+      "narration": "The narration string",
+      "mapped_ledger": "MUST BE EXACTLY ONE OF THE PROVIDED LEDGERS OR 'Suspense Account'",
+      "group_hint": "Investments or Bank Accounts or Indirect Expenses or Duties & Taxes or Sundry Debtors or Sundry Creditors or Capital Account / Drawings",
+      "confidence_score": 85
+    }}
+  ]
 }}
 """
             try:
                 client = self._get_client()
-                response = self._generate_content_with_retry(
+                enum_options = list(set(ledgers_list + ["Suspense Account"]))
+                schema_dict = {
+                    "type": "OBJECT",
+                    "properties": {
+                        "mappings": {
+                            "type": "ARRAY",
+                            "items": {
+                                "type": "OBJECT",
+                                "properties": {
+                                    "narration": {"type": "STRING"},
+                                    "mapped_ledger": {
+                                        "type": "STRING",
+                                        "description": "Must be an exact match from the provided ledger list or Suspense Account",
+                                        "enum": enum_options
+                                    },
+                                    "group_hint": {"type": "STRING"},
+                                    "confidence_score": {"type": "INTEGER"}
+                                }
+                            }
+                        }
+                    }
+                }
+                
+                result_text = zero_risk_gemini_extract(
                     client=client,
-                    model=self.model_name or "gemini-2.5-flash",
-                    contents=prompt,
-                    config=make_config("application/json"),
-                    start_key_offset=batch_idx,
+                    prompt=prompt,
+                    schema_class=schema_dict,
+                    model_name=self.model_name or "gemini-2.5-flash"
                 )
-
-                result_text = ""
-                if response:
-                    try:
-                        result_text = (
-                            response.text.strip()
-                            if hasattr(response, "text") and response.text
-                            else ""
-                        )
-                    except Exception:
-                        result_text = ""
 
                 result_text = self.repair_json_string(result_text)
                 if result_text:
                     parsed = json.loads(result_text)
-                    if isinstance(parsed, dict):
+                    if isinstance(parsed, dict) and "mappings" in parsed:
+                        # Convert array back to dict mapping format for compatibility
+                        res_dict = {}
+                        for m in parsed.get("mappings", []):
+                            narr = m.get("narration")
+                            if narr:
+                                res_dict[narr] = {
+                                    "mapped_ledger": m.get("mapped_ledger", "Suspense Account"),
+                                    "group_hint": m.get("group_hint", ""),
+                                    "confidence_score": m.get("confidence_score", 40)
+                                }
+                                # Enforce confidence 40 if Suspense Account
+                                if res_dict[narr]["mapped_ledger"] == "Suspense Account":
+                                    res_dict[narr]["confidence_score"] = 40
+                        return res_dict
+                    elif isinstance(parsed, dict):
                         return parsed
+
             except Exception as batch_err:
                 print(f"⚠️ [AI Mapping Batch {batch_idx+1}] Error: {batch_err}")
             return {}
@@ -6439,6 +6650,7 @@ Return your response strictly in the following JSON format matching this schema:
         # Determine original chronological direction (newest on top vs oldest on top)
         # using first and last valid dates.
         from datetime import datetime
+        from decimal import Decimal, ROUND_HALF_UP
 
         valid_dates = []
         for r in extracted:
@@ -6488,12 +6700,12 @@ Return your response strictly in the following JSON format matching this schema:
                     .strip()
                 )
                 try:
-                    running_bal = float(bal_clean)
-                except ValueError:
+                    running_bal = Decimal(bal_clean).quantize(Decimal("0.00"), rounding=ROUND_HALF_UP)
+                except Exception:
                     prev_balance = None
                     continue
 
-                if running_bal == 0.0:
+                if running_bal == Decimal("0.00"):
                     prev_balance = None
                     continue
 
@@ -6507,14 +6719,14 @@ Return your response strictly in the following JSON format matching this schema:
                     .strip()
                 )
                 try:
-                    amount_val = float(amt_clean)
-                except ValueError:
-                    amount_val = 0.0
+                    amount_val = Decimal(amt_clean).quantize(Decimal("0.00"), rounding=ROUND_HALF_UP)
+                except Exception:
+                    amount_val = Decimal("0.00")
 
                 if prev_balance is not None:
-                    delta = round(running_bal - prev_balance, 2)
+                    delta = running_bal - prev_balance
 
-                    if delta > 0:
+                    if delta > Decimal("0.00"):
                         # Balance INCREASED → this MUST be a Receipt (deposit)
                         if tx_type != "Receipt":
                             old_type = tx_type
@@ -6525,32 +6737,27 @@ Return your response strictly in the following JSON format matching this schema:
                             )
 
                         # Fix amount if it doesn't match the delta
-                        if amount_val > 0 and abs(amount_val - delta) > 1.0:
-                            if abs(amount_val - delta) > 5.0:
-                                row["status"] = "Review"
-                                if (
-                                    "discrepancy"
-                                    not in str(row.get("narration", "")).lower()
-                                ):
-                                    row["narration"] = (
-                                        f"[DISCREPANCY: Balance delta is {delta:.2f} but amount is {amount_val:.2f}] "
-                                        + row.get("narration", "")
-                                    )
-                                warn_msg = f"⚠️ Balance Discrepancy Alert at Row {i+1} ({row.get('date')}): Running balance jump of ₹{abs(delta):,.2f} does not match transaction amount ₹{amount_val:,.2f}."
-                                warnings = result_json.setdefault("warnings", [])
-                                if warn_msg not in warnings:
-                                    warnings.append(warn_msg)
-                                print(
-                                    f"⚠️ Balance discrepancy at row {i}: Reconciled delta is {delta:.2f} but amount is {amount_val:.2f}. Not overwriting."
-                                )
-                            else:
-                                row["amount"] = round(delta, 2)
-                                amount_fixes += 1
-                                print(
-                                    f"🔧 AMOUNT FIX row {i}: {amount_val:.2f} → {delta:.2f} (from balance delta)"
-                                )
+                        if amount_val > Decimal("0.00") and abs(amount_val - delta) > Decimal("0.00"):
+                            row["status"] = "Math Discrepancy"
+                            flag_msg = f"DISCREPANCY: Balance delta is {delta:.2f} but amount is {amount_val:.2f}"
+                            r_flags = row.setdefault("flags", [])
+                            if flag_msg not in r_flags:
+                                r_flags.append(flag_msg)
+                            warn_msg = f"⚠️ Balance Discrepancy Alert at Row {i+1} ({row.get('date')}): Running balance jump of ₹{abs(delta):,.2f} does not match transaction amount ₹{amount_val:,.2f}."
+                            warnings = result_json.setdefault("warnings", [])
+                            if warn_msg not in warnings:
+                                warnings.append(warn_msg)
+                            print(
+                                f"⚠️ Balance discrepancy at row {i}: Reconciled delta is {delta:.2f} but amount is {amount_val:.2f}. Not overwriting."
+                            )
+                        else:
+                            row["amount"] = float(delta)
+                            amount_fixes += 1
+                            print(
+                                f"🔧 AMOUNT FIX row {i}: {amount_val:.2f} → {delta:.2f} (from balance delta)"
+                            )
 
-                    elif delta < 0:
+                    elif delta < Decimal("0.00"):
                         # Balance DECREASED → this MUST be a Payment (withdrawal)
                         if tx_type != "Payment":
                             old_type = tx_type
@@ -6561,30 +6768,25 @@ Return your response strictly in the following JSON format matching this schema:
                             )
 
                         abs_delta = abs(delta)
-                        if amount_val > 0 and abs(amount_val - abs_delta) > 1.0:
-                            if abs(amount_val - abs_delta) > 5.0:
-                                row["status"] = "Review"
-                                if (
-                                    "discrepancy"
-                                    not in str(row.get("narration", "")).lower()
-                                ):
-                                    row["narration"] = (
-                                        f"[DISCREPANCY: Balance delta is {abs_delta:.2f} but amount is {amount_val:.2f}] "
-                                        + row.get("narration", "")
-                                    )
-                                warn_msg = f"⚠️ Balance Discrepancy Alert at Row {i+1} ({row.get('date')}): Running balance jump of ₹{abs_delta:,.2f} does not match transaction amount ₹{amount_val:,.2f}."
-                                warnings = result_json.setdefault("warnings", [])
-                                if warn_msg not in warnings:
-                                    warnings.append(warn_msg)
-                                print(
-                                    f"⚠️ Balance discrepancy at row {i}: Reconciled delta is {abs_delta:.2f} but amount is {amount_val:.2f}. Not overwriting."
-                                )
-                            else:
-                                row["amount"] = round(abs_delta, 2)
-                                amount_fixes += 1
-                                print(
-                                    f"🔧 AMOUNT FIX row {i}: {amount_val:.2f} → {abs_delta:.2f} (from balance delta)"
-                                )
+                        if amount_val > Decimal("0.00") and abs(amount_val - abs_delta) > Decimal("0.00"):
+                            row["status"] = "Math Discrepancy"
+                            flag_msg = f"DISCREPANCY: Balance delta is {abs_delta:.2f} but amount is {amount_val:.2f}"
+                            r_flags = row.setdefault("flags", [])
+                            if flag_msg not in r_flags:
+                                r_flags.append(flag_msg)
+                            warn_msg = f"⚠️ Balance Discrepancy Alert at Row {i+1} ({row.get('date')}): Running balance jump of ₹{abs_delta:,.2f} does not match transaction amount ₹{amount_val:,.2f}."
+                            warnings = result_json.setdefault("warnings", [])
+                            if warn_msg not in warnings:
+                                warnings.append(warn_msg)
+                            print(
+                                f"⚠️ Balance discrepancy at row {i}: Reconciled delta is {abs_delta:.2f} but amount is {amount_val:.2f}. Not overwriting."
+                            )
+                        else:
+                            row["amount"] = float(abs_delta)
+                            amount_fixes += 1
+                            print(
+                                f"🔧 AMOUNT FIX row {i}: {amount_val:.2f} → {abs_delta:.2f} (from balance delta)"
+                            )
 
                 prev_balance = running_bal
             except Exception as e:

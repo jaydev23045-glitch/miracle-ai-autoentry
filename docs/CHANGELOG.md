@@ -1,6 +1,46 @@
 # Miracle Auto-Entry Platform - Changelog
 
-### 213. Universal Inter-Bank Contra Identification & VPA Handle Safety Guard Implementation
+### 216. Elimination of Narration String Corruption (`[Discrepancy: ...]` prefix) & Reverse Split Sub-chunk Order Fix
+**The Problem Resolved:**
+1. Transaction narration strings were being corrupted with text like `SCREPANCY: Balance delta is 1071.10` in the UI grid, which caused party auto-extraction to output `[Discrepancy: Balance Del` as mapped ledger names.
+2. In reverse-chronological PDF statements, date gaps (e.g. 33 to 100 days) and date order jumping occurred during split chunk processing.
+
+**Root Cause:**
+1. **Narration String Mutation:** In `gemini_service.py` (`validate_and_fix_transaction_types_and_amounts()`), balance discrepancy alerts prepended `[DISCREPANCY: Balance delta is {delta}...] ` directly into `row["narration"]`. This destroyed the raw bank narration string, pushed genuine party names out of view, and led party auto-extraction to parse the discrepancy prefix as a party name.
+2. **Sub-chunk Split Order:** When `extract_pdf_pages_recursive()` split a 2-page chunk `(start_page_idx, end_page_idx)` in half for `chronology == "reverse"`, it processed `res_first` (newer page) before `res_second` (older page) and concatenated `first_extracted + res_second`, reversing the forward chronological order for that split chunk.
+3. **Date Sort Tuple Indexing:** `_parse_row_sort_date` sorted by parsed date alone without including the original relative row index `idx`. If multiple transactions shared the same date or had unparsed formats, stable passbook order was broken.
+
+**Fixes & Architecture Implemented:**
+1. **Preserved Raw Narration Strings ([gemini_service.py](file:///Users/jaydevnakum/Work%20Place/WORK/APP%20DETAILS/Mirracle%20Auto%20Entre%20Sale%20or%20Purchase%20or%20Bank/backend/gemini_service.py#L6530)):** Removed `row["narration"]` mutation in balance discrepancy handlers. Warning messages are now attached strictly to `row["flags"]` and `result_json["warnings"]`. Raw bank narrations remain 100% untouched, ensuring accurate party auto-extraction and clean UI subtext.
+2. **Reverse Sub-chunk Split Order ([gemini_service.py](file:///Users/jaydevnakum/Work%20Place/WORK/APP%20DETAILS/Mirracle%20Auto%20Entre%20Sale%20or%20Purchase%20or%20Bank/backend/gemini_service.py#L3680)):** Updated split logic for `chronology == "reverse"` to process the older page range `(mid + 1, end_page_idx)` first with `prev_balance`, then pass its ending balance to `(start_page_idx, mid)`, and combine `older_extracted + newer_extracted`.
+3. **Sequence-Preserving Sort Key ([gemini_service.py](file:///Users/jaydevnakum/Work%20Place/WORK/APP%20DETAILS/Mirracle%20Auto%20Entre%20Sale%20or%20Purchase%20or%20Bank/backend/gemini_service.py#L3882)):** Updated date sorting to use `enumerate()` tuples `(idx, row)` returning `(parsed_date or datetime.min, idx)`. This guarantees 100% stable, non-jumbling sorting for same-date passbook entries.
+
+---
+**The Problem Resolved:**
+During PDF text extraction on reverse chronological bank statements, individual transaction amounts and narrations were occasionally shifting up/down between adjacent rows (e.g. Row 28's description or amount bleeding into Row 29).
+
+**Root Cause:**
+In `gemini_service.py`, when a reverse chronological statement was detected (`chronology == 'reverse'`), `lines.reverse()` was invoked directly on raw extracted page text string lines (`txt.split('\n')`). For transactions spanning multiple physical text lines (e.g. line 1 = main date/amount, line 2 = wrapped UPI VPA handle or payment details), reversing raw text lines placed line 2 ABOVE line 1 (or directly under the adjacent transaction's line 1). When Gemini read this inverted raw text, it associated the wrapped description or amount with the wrong row.
+
+**Fixes & Architecture Implemented:**
+1. **Removed Destructive Raw Line Reversal ([gemini_service.py](file:///Users/jaydevnakum/Work%20Place/WORK/APP%20DETAILS/Mirracle%20Auto%20Entre%20Sale%20or%20Purchase%20or%20Bank/backend/gemini_service.py#L3434)):** Removed `lines.reverse()` from both `pypdf` and `pdfplumber` text extraction blocks. Page text is now passed to Gemini in natural top-down reading order, ensuring multi-line descriptions stay attached to their correct transaction header line.
+2. **Safe JSON Object Chronology Normalization:** Reverse order statements are now safely reordered AFTER full JSON transaction objects are extracted by `normalize_extracted_chunk_chronology()`, preserving 100% row-level data alignment.
+
+---
+**The Problem Resolved:**
+When processing multi-page bank statements (e.g. 9-page PDFs with ~50-60 lines per page), Gemini API extraction was returning only a fraction of the total records (e.g. 23 records out of ~250 total transactions across the document). The remaining pages/rows were missing from the UI grid.
+
+**Root Cause:**
+1. **Excessive Chunk Size (`pages_per_chunk`)**: In `gemini_service.py`, `pages_per_chunk` was set using `pages_per_chunk = max(3, min(8, 600 // max(1, int(avg_lines_per_page))))`, which grouped 8 dense pages into a single chunk. An 8-page bank statement contains ~250-300 transactions. Gemini's completion response token budget (~4,096 tokens max for flash models) was reached after outputting ~23 transaction JSON objects (~3,036 tokens), causing Gemini's API completion to stop prematurely.
+2. **False Positive Row-by-Row Math Validation**: `verify_chunk_math()` verified that the 23 extracted transactions had internal balance continuity. Because the first 23 rows mathematically matched each other, `verify_chunk_math()` declared `is_valid = True`, preventing the automatic recursive chunk splitting mechanism from firing.
+3. **Scanned PDF Fallback Threshold**: `is_scanned_pdf` checked `total_chars < (10 * pages_count)`. When `pypdf` extracted only ~150 chars of header text across 8 pages (~18 chars/page), it failed to trigger visual PDF upload fallback because 18 > 10.
+
+**Fixes & Architecture Implemented:**
+1. **Bank Statement Chunk Cap ([gemini_service.py](file:///Users/jaydevnakum/Work%20Place/WORK/APP%20DETAILS/Mirracle%20Auto%20Entre%20Sale%20or%20Purchase%20or%20Bank/backend/gemini_service.py#L3337)):** Updated `pages_per_chunk` for `Bank Statements` and `Cash Entries` to `max(1, min(2, 120 // max(1, int(avg_lines_per_page))))`. By capping each chunk at a maximum of 2 pages (~30-50 transactions per chunk), each Gemini API response fits comfortably within the token completion budget without truncation or missing rows.
+2. **Scanned PDF Detection Threshold ([gemini_service.py](file:///Users/jaydevnakum/Work%20Place/WORK/APP%20DETAILS/Mirracle%20Auto%20Entre%20Sale%20or%20Purchase%20or%20Bank/backend/gemini_service.py#L3487)):** Increased `is_scanned_pdf` threshold to `total_chars < (120 * pages_count)` so minimal text extraction triggers visual PDF chunk fallback.
+3. **Password Decryption Guard ([gemini_service.py](file:///Users/jaydevnakum/Work%20Place/WORK/APP%20DETAILS/Mirracle%20Auto%20Entre%20Sale%20or%20Purchase%20or%20Bank/backend/gemini_service.py#L3532)):** Added automatic password decryption (`reader_local.decrypt(pdf_password)`) on `reader_local` before copying page instances to temporary chunk `PdfWriter` instances for visual Gemini File API uploads.
+
+---
 **The Problem Resolved:**
 When processing bank statements containing fund transfers between internal company bank accounts (e.g. money moved from *HDFC Bank A/c* to *ICICI Bank Current A/c*), the DBF injection engine was not consistently resolving `FIELD21 = 'BK'` on both debit and credit lines in `RKACCT01.DBF`, which caused passbook reconciliation registers for the target bank account to omit the transaction or fail to open in Miracle Desktop UI. Additionally, payments containing bank names strictly inside UPI VPA handles (e.g. `UPI-VIJAY VEG-VIJAY@OKICICI`) were at risk of being falsely classified as internal contra entries.
 

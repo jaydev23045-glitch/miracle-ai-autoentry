@@ -45,6 +45,17 @@ def sanitize_surrogates(val: Any) -> Any:
         return [sanitize_surrogates(item) for item in val]
     return val
 
+def zero_risk_sanitize_client_id(client_id: str, default_client: str = "CMP0001") -> str:
+    """
+    0-RISK PATH SANITIZER:
+    Prevents directory traversal attacks without throwing unhandled exceptions.
+    """
+    if not client_id or not isinstance(client_id, str):
+        return default_client
+    clean = os.path.basename(client_id.strip())
+    clean = re.sub(r'[^A-Za-z0-9_\-]', '', clean)
+    return clean if clean else default_client
+
 def get_handler() -> MiracleDBFHandler:
     """
     FastAPI dependency: returns a MiracleDBFHandler for the currently active client.
@@ -1222,11 +1233,44 @@ async def upload_document(
             if year_counts:
                 detected_year = max(year_counts, key=year_counts.get)
         
+        # Run 7-Check Automated Accounting Validator & Audit Trail
+        validation_result = {}
+        audit_summary = {}
+        try:
+            from validators import AccountingValidator
+            cls_map = client_memory.get("ledger_classification_map", {})
+            validator = AccountingValidator(ledger_classification_map=cls_map, client_memory=client_memory)
+            validation_result = validator.run_all_checks(extracted_data)
+            
+            # Compute audit statistics
+            v_rows = extracted_data.get("extracted_data", []) if isinstance(extracted_data, dict) else []
+            auto_cnt = sum(1 for r in v_rows if r.get("status") == "Auto")
+            review_cnt = sum(1 for r in v_rows if r.get("status") == "Review")
+            suspense_cnt = sum(1 for r in v_rows if r.get("status") == "Suspense")
+            math_errs_cnt = len(validation_result.get("errors", []))
+            
+            summary_banner = f"{auto_cnt} auto-mapped ✅ | {review_cnt} need review ⚠️ | {suspense_cnt} in Suspense 🔴 | {math_errs_cnt} math errors ❌"
+            audit_summary = {
+                "auto_mapped": auto_cnt,
+                "review_required": review_cnt,
+                "suspense_count": suspense_cnt,
+                "math_errors": math_errs_cnt,
+                "banner_text": summary_banner,
+                "check_summary": validation_result.get("summary", {})
+            }
+            if isinstance(extracted_data, dict):
+                extracted_data["audit_summary"] = audit_summary
+                extracted_data["validation_result"] = validation_result
+        except Exception as val_err:
+            print(f"⚠️ Validation runner notice: {val_err}")
+
         return {
             "status": "success", 
             "data": extracted_data,
             "detected_client": detected_client,
-            "detected_year": detected_year
+            "detected_year": detected_year,
+            "audit_summary": audit_summary,
+            "validation_result": validation_result
         }
     except Exception as e:
         print(f"Error extracting data: {e}")
@@ -1928,6 +1972,67 @@ def train_memory_from_history():
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@router.post("/api/analyse-business")
+def analyse_business_profile(force_refresh: bool = False):
+    """
+    Reads the active client's historical Miracle DBF data, sends it to Gemini,
+    and saves an AI-inferred business profile into the Memory Vault.
+    This profile is injected into every future Suspense mapping prompt so
+    Gemini understands the client's industry context (restaurant vs IT vs pharma).
+    Set force_refresh=True to regenerate even if a profile already exists.
+    """
+    try:
+        settings = load_settings()
+        base_path = settings.get("miracle_base_path", "")
+        active_client = settings.get("active_client_id", "")
+        api_key = settings.get("gemini_api_key", "")
+        model_name = settings.get("gemini_model", "gemini-2.5-flash")
+        vault_path = settings.get("memory_path", "../AI_Memory_Vault")
+
+        if not active_client:
+            raise HTTPException(status_code=400, detail="No active client selected.")
+        if not api_key:
+            raise HTTPException(status_code=400, detail="Gemini API key not configured.")
+
+        client_path = os.path.join(base_path, active_client)
+        if not os.path.exists(client_path):
+            raise HTTPException(status_code=404, detail=f"Client folder not found: {client_path}")
+
+        from ai_business_profiler import AIBusinessProfiler
+        profiler = AIBusinessProfiler(
+            client_path=client_path,
+            client_id=active_client,
+            api_key=api_key,
+            model_name=model_name,
+            vault_path=vault_path,
+        )
+        result = profiler.run(force_refresh=force_refresh)
+
+        if result["success"]:
+            return {
+                "status": "success",
+                "source": result["source"],
+                "profile": result["profile"],
+                "message": (
+                    "Business profile already existed and was loaded from memory."
+                    if result["source"] == "existing"
+                    else "Business profile successfully generated and saved to AI Memory Vault."
+                ),
+            }
+        else:
+            return {
+                "status": "warning",
+                "source": "failed",
+                "profile": "",
+                "message": "Could not generate business profile. Not enough historical DBF data found. Please ensure the client has at least 1 year of transactions in Miracle.",
+            }
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"❌ Error in analyse-business: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @router.get("/api/memory-vault")
 def get_memory_vault():
     """Returns the complete AI Memory Vault data (expense mappings, product catalog, supplier catalog) for active client."""
@@ -2505,6 +2610,46 @@ def check_miracle_bridge_version(current_version: str = "1.0.0"):
         "download_url": "/api/bridge/download",
         "changelog": "v1.2.0: Direct local bridge routing, auto pre-fetch on modal open, and 3-tier multi-year DBF scanning for products and party ledgers."
     }
+
+class ExportAuditCSVPayload(BaseModel):
+    vouchers: list
+
+@router.post("/api/export-audit-csv")
+def export_audit_csv_endpoint(payload: ExportAuditCSVPayload):
+    """Generates and streams an Audit Trail CSV for downloaded/extracted vouchers."""
+    import io, csv
+    from fastapi.responses import StreamingResponse
+
+    output = io.StringIO()
+    writer = csv.writer(output)
+    
+    # Header
+    writer.writerow([
+        "Date", "Narration", "Type", "Amount", "Mapped Ledger", 
+        "Group Hint", "Confidence Score", "Status", "Flags"
+    ])
+    
+    for v in payload.vouchers:
+        flags_str = "; ".join(v.get("flags", [])) if isinstance(v.get("flags"), list) else str(v.get("flags", ""))
+        writer.writerow([
+            v.get("date", ""),
+            v.get("narration", ""),
+            v.get("type", "") or v.get("transaction_type", ""),
+            v.get("amount", 0),
+            v.get("mapped_ledger", ""),
+            v.get("group_hint", ""),
+            v.get("confidence_score", 0),
+            v.get("status", "Auto"),
+            flags_str
+        ])
+        
+    output.seek(0)
+    response = StreamingResponse(
+        iter([output.getvalue()]),
+        media_type="text/csv"
+    )
+    response.headers["Content-Disposition"] = "attachment; filename=accounting_audit_trail.csv"
+    return response
 
 
 @router.get("/api/bridge/download")

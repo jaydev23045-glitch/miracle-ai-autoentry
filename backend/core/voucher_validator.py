@@ -1,6 +1,43 @@
 import os
 import difflib
 from typing import List, Dict, Any
+from decimal import Decimal, ROUND_HALF_UP, InvalidOperation
+
+TWOPLACES = Decimal('0.01')
+
+def zero_risk_decimal_parse(val) -> Decimal:
+    """Safe Decimal parser with fallback to Decimal(0)."""
+    if val is None:
+        return Decimal('0.00')
+    if isinstance(val, Decimal):
+        return val
+    try:
+        s = str(val).replace("₹", "").replace("$", "").replace(",", "").strip()
+        if not s or s.lower() in ("nan", "none", "null"):
+            return Decimal('0.00')
+        return Decimal(s).quantize(TWOPLACES, rounding=ROUND_HALF_UP)
+    except (InvalidOperation, TypeError, ValueError):
+        try:
+            return Decimal(str(float(val))).quantize(TWOPLACES, rounding=ROUND_HALF_UP)
+        except Exception:
+            return Decimal('0.00')
+
+def zero_risk_validate_totals(taxable, cgst, sgst, igst, total) -> tuple[bool, float]:
+    """
+    0-RISK DECIMAL VALIDATION:
+    Calculates exact zero-sum math using Decimal, returning native floats.
+    """
+    d_taxable = zero_risk_decimal_parse(taxable)
+    d_cgst = zero_risk_decimal_parse(cgst)
+    d_sgst = zero_risk_decimal_parse(sgst)
+    d_igst = zero_risk_decimal_parse(igst)
+    d_total = zero_risk_decimal_parse(total)
+    
+    calculated_sum = d_taxable + d_cgst + d_sgst + d_igst
+    diff = (calculated_sum - d_total).abs()
+    
+    is_valid = diff <= Decimal('0.05')
+    return (is_valid, float(calculated_sum))
 
 def validate_vouchers_pre_push(
     module: str,

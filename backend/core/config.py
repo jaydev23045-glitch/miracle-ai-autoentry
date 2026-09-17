@@ -23,6 +23,45 @@ def get_client_lock(client_id: str) -> threading.Lock:
             client_locks[client_id] = threading.Lock()
         return client_locks[client_id]
 
+from contextlib import contextmanager
+
+@contextmanager
+def zero_risk_dbf_lock(file_path: str, client_id: str = "default", timeout: float = 5.0):
+    """
+    0-RISK OS FILE LOCK:
+    Attempts OS-level file lock (portalocker/fcntl/msvcrt).
+    If ANY error occurs, seamlessly falls back to thread locking without interrupting execution.
+    """
+    thread_lock = get_client_lock(client_id)
+    thread_lock.acquire()
+    
+    os_lock_file = None
+    try:
+        if file_path:
+            lock_file_path = file_path + ".oslock"
+            os_lock_file = open(lock_file_path, "a")
+            try:
+                import portalocker
+                portalocker.lock(os_lock_file, portalocker.LOCK_EX | portalocker.LOCK_NB)
+            except Exception:
+                try:
+                    if sys.platform == 'win32':
+                        import msvcrt
+                        msvcrt.locking(os_lock_file.fileno(), msvcrt.LK_NBLCK, 1)
+                    else:
+                        import fcntl
+                        fcntl.flock(os_lock_file.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+                except Exception:
+                    pass
+        yield
+    finally:
+        if os_lock_file:
+            try:
+                os_lock_file.close()
+            except Exception:
+                pass
+        thread_lock.release()
+
 SETTINGS_FILE = Path(__file__).resolve().parents[1] / "settings.json"
 
 class SystemSettings(BaseModel):

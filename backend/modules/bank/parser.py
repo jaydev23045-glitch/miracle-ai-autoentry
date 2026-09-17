@@ -12,6 +12,20 @@ class BankEntityRecognizer:
     """
     IFSC_PATTERN = re.compile(r'\b[A-Z]{4}0[A-Z0-9]{6}\b', re.IGNORECASE)
     UTR_PATTERN = re.compile(r'\b[NRS]\d{6,14}\b|\b\d{6,18}\b', re.IGNORECASE)
+    GSTIN_PATTERN = re.compile(r'\b[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}\b', re.IGNORECASE)
+    COMMERCIAL_UPI_PATTERN = re.compile(
+        r'@[A-Za-z0-9_\-\.]*(?:PAYTMQR|BHARATPE|YBLMERCHANT|ICICIMERCHANT|OKBIZAXIS|MERCHANT|QR)\b|'
+        r'\b(?:UPI|P2M|PAYTMQR|BHARATPE)\b.*(?:QR|MERCHANT|STORE|RESTAURANT|PETROL|CAFE|SWIGGY|ZOMATO)',
+        re.IGNORECASE
+    )
+    BANK_CHARGES_PATTERN = re.compile(
+        r'\b(?:BANK CHG|BANK CHARGES|SMS FEE|SMS CHG|SMS CHARGES|FOLIO CHG|CHQ RTN|CHQ BOUNCE|POS CHG|ATM CHG|MIN BAL CHG|SERVICE CHARGE|PROCESSING FEE)\b',
+        re.IGNORECASE
+    )
+    BUSINESS_NOISE_WORDS = re.compile(
+        r'\b(M/S|SHRI|SHREE|PVT\s*LTD|PRIVATE\s*LIMITED|LTD|LIMITED|LLP|ENTERPRISE|ENTERPRISES|TRADERS|TRADING\s*CO)\b',
+        re.IGNORECASE
+    )
     VPA_HANDLE_PATTERN = re.compile(
         r'@[A-Za-z0-9_\-\.]+|\b(OKAXIS|OKICICI|OKSBI|KHDFCBANK|YBL|KOTAK|PAYTM|PHONEPE|GPAY|BHIM|PTYES|YESCRED|NAVIAXIS|PTAXIS|WAAXIS|AXL|IPL|IBL)\b',
         re.IGNORECASE
@@ -34,6 +48,43 @@ class BankEntityRecognizer:
     )
 
     @classmethod
+    def extract_gstin(cls, narration: str) -> Optional[str]:
+        """Extracts 15-digit GSTIN from narration string if present."""
+        if not narration:
+            return None
+        m = cls.GSTIN_PATTERN.search(narration)
+        return m.group(0).upper() if m else None
+
+    @classmethod
+    def is_bank_charge(cls, narration: str) -> bool:
+        """Detects if narration is a routine bank fee/charge (to book 100% directly to Bank Charges Expense)."""
+        if not narration:
+            return False
+        return bool(cls.BANK_CHARGES_PATTERN.search(narration))
+
+    @classmethod
+    def is_commercial_upi(cls, narration: str) -> bool:
+        """Detects if narration is a P2M commercial merchant payment (suppresses Drawings)."""
+        if not narration:
+            return False
+        return bool(cls.COMMERCIAL_UPI_PATTERN.search(narration))
+
+    @classmethod
+    def clean_business_entity(cls, entity_name: str) -> str:
+        """
+        Strips business noise words (M/S, PVT LTD, SHREE) with a 4-character minimum length guard.
+        Prevents short name collisions (e.g. 'OM TRADERS' -> 'OM' collision).
+        """
+        if not entity_name:
+            return ""
+        cleaned = cls.BUSINESS_NOISE_WORDS.sub(' ', entity_name)
+        cleaned = " ".join(cleaned.split()).strip()
+        # 4-Character Guard: If cleaning leaves fewer than 4 chars, keep original name
+        if len(cleaned) < 4:
+            return entity_name.strip()
+        return cleaned
+
+    @classmethod
     def extract_vendor_entity(cls, narration: str) -> tuple[str, dict]:
         """
         Extracts clean human vendor entity string and dictionary of structured metadata entities.
@@ -43,6 +94,17 @@ class BankEntityRecognizer:
 
         text = " ".join(narration.split()).strip()
         metadata = {}
+
+        # 0. Check GSTIN
+        gstin = cls.extract_gstin(text)
+        if gstin:
+            metadata['gstin'] = gstin
+
+        # Check Bank Charge / Commercial UPI flags
+        if cls.is_bank_charge(text):
+            metadata['is_bank_charge'] = True
+        if cls.is_commercial_upi(text):
+            metadata['is_commercial_upi'] = True
 
         # 1. Extract Mode
         m_mode = cls.MODE_PATTERN.search(text)
@@ -93,6 +155,9 @@ class BankEntityRecognizer:
             clean_vendor = ""
         else:
             clean_vendor = " ".join(tokens).title()
+
+        if clean_vendor:
+            clean_vendor = cls.clean_business_entity(clean_vendor)
 
         return (clean_vendor, metadata)
 
@@ -690,5 +755,4 @@ class BankParser:
 
         except Exception as e:
             print(f"Native Bank Excel Parser error: {e}")
-            return None
             return None
