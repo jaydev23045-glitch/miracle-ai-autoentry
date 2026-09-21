@@ -36,6 +36,58 @@ STANDARD_INV_PREFIXES = {
     "GST", "TAX", "EXP", "RET", "FIN", "SALE", "SALES", "PURCHASE", "PURCHASES"
 }
 
+def dbf_has_field(record_or_table, field: str) -> bool:
+    """Check if field exists in DBF record, dict, or table object."""
+    if not record_or_table:
+        return False
+    if hasattr(record_or_table, 'field_names'):
+        return field in record_or_table.field_names
+    if hasattr(record_or_table, 'fields'):
+        return field in [f.name for f in record_or_table.fields]
+    if isinstance(record_or_table, (dict, list)):
+        return field in record_or_table
+    try:
+        return field in record_or_table
+    except Exception:
+        return False
+
+
+def dbf_safe_float(record, field: str, default: float = 0.0) -> float:
+    """
+    Safe float reader from DBF record or dict.
+    Handles: None, missing fields, empty strings, commas, and currency symbols.
+    """
+    if not record or not dbf_has_field(record, field):
+        return default
+    try:
+        val = record[field]
+        if val is None:
+            return default
+        cleaned = str(val).replace(',', '').replace('₹', '').replace(' ', '').strip()
+        return float(cleaned) if cleaned else default
+    except Exception:
+        return default
+
+
+def dbf_safe_str(record, field: str, default: str = '') -> str:
+    """
+    Safe string reader from DBF record or dict.
+    Handles: None values, missing fields, bytes objects.
+    """
+    if not record or not dbf_has_field(record, field):
+        return default
+    try:
+        val = record[field]
+        if val is None:
+            return default
+        if isinstance(val, bytes):
+            return val.decode('utf-8', errors='ignore').strip()
+        return str(val).strip()
+    except Exception:
+        return default
+
+
+
 def clean_extracted_bill_no(val: str, party_name: str = "") -> str:
     if not val:
         return ""
@@ -1067,10 +1119,10 @@ class MiracleDBFHandler:
                 m01.open(mode=dbf.READ_ONLY)
                 for r in m01:
                     if dbf.is_deleted(r): continue
-                    code = str(r['FIELD01']).strip()
+                    code = dbf_safe_str(r, 'FIELD01')
                     if code in balances:
-                        ob = float(r['FIELD09'] or 0.0) if 'FIELD09' in m01.field_names else 0.0 # type: ignore
-                        dc = str(r['FIELD10']).strip().upper() if 'FIELD10' in m01.field_names else ''
+                        ob = dbf_safe_float(r, 'FIELD09')
+                        dc = dbf_safe_str(r, 'FIELD10').upper()
                         if dc == 'D':
                             balances[code] += ob
                         elif dc == 'C':
@@ -1083,16 +1135,16 @@ class MiracleDBFHandler:
                 t01.open(mode=dbf.READ_ONLY)
                 for r in t01:
                     if dbf.is_deleted(r): continue
-                    code = str(r['FIELD03']).strip()
+                    code = dbf_safe_str(r, 'FIELD03')
                     if code in balances:
-                        amt = float(r['FIELD05'] or 0.0) # type: ignore
-                        dc = str(r['FIELD06'] or '').strip().upper()
+                        amt = dbf_safe_float(r, 'FIELD05')
+                        dc = dbf_safe_str(r, 'FIELD06').upper()
                         if dc == 'D':
                             balances[code] += amt
                         elif dc == 'C':
                             balances[code] -= amt
                             
-                        dt = r['FIELD02']
+                        dt = r['FIELD02'] if dbf_has_field(r, 'FIELD02') else None
                         if isinstance(dt, date):
                             ld = last_dates[code]
                             if ld is None or dt > ld:

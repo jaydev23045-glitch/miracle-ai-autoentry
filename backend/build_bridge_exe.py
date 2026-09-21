@@ -37,6 +37,13 @@ def build_exe():
         "--hidden-import=routers.vouchers",
         "--hidden-import=dbfread",
         "--hidden-import=dbf",
+        "--hidden-import=pypdf",
+        "--hidden-import=requests",
+        "--hidden-import=PIL",
+        "--hidden-import=PIL.Image",
+        "--hidden-import=PIL.ImageEnhance",
+        "--hidden-import=sqlite3",
+        "--hidden-import=openpyxl",
         "--clean",
         script_path
     ]

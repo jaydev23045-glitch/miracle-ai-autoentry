@@ -1578,16 +1578,18 @@ class GeminiService:
         import time
         import random
 
-        # Production Fallback Hierarchy ordered strictly by Strategy: Tier 3 (Intelligence First) -> Tier 2 -> Tier 1 (High-Capacity Backup)
-        # Tier 3 (Highest Intelligence & Accuracy, 20 RPD):
-        #   - gemini-3.6-flash, gemini-3.7-flash, gemini-3.8-flash, gemini-3.5-flash, gemini-2.5-flash
-        # Tier 2 (Mid-Range, 20 RPD):
-        #   - gemini-2.5-flash-lite
+        # Production Fallback Hierarchy ordered strictly by Strategy: Tier 1 (High-Capacity 500 RPD) -> Tier 2 (Mid-Range 20 RPD) -> Tier 3 (Standard 20 RPD)
         # Tier 1 (High-Capacity Safety Net Backup, 500 RPD per key):
-        #   - gemini-3.1-flash-lite, gemini-3.5-flash-lite, gemini-1.5-flash
+        #   - gemini-3.1-flash-lite, gemini-3.5-flash-lite
+        # Tier 2 (Mid-Range, 20 RPD):
+        #   - gemini-2.5-flash-lite, gemini-3-flash
+        # Tier 3 (Highest Intelligence & Accuracy, 20 RPD):
+        #   - gemini-2.5-flash, gemini-3.5-flash, gemini-3.6-flash, gemini-3.7-flash, gemini-3.8-flash
         FALLBACK_MODELS = [
             "gemini-3.1-flash-lite",
             "gemini-3.5-flash-lite",
+            "gemini-2.5-flash-lite",
+            "gemini-3-flash",
             "gemini-2.5-flash",
             "gemini-3.5-flash",
             "gemini-3.6-flash",
@@ -1716,17 +1718,28 @@ class GeminiService:
                         ]
                     )
                     if is_quota_429:
-                        # Only blacklist for the whole day if it's a true daily quota exhaustion error
-                        is_daily_exhausted = any(
+                        # Distinguish transient per-minute rate limit (RPM) from true daily quota limit (RPD)
+                        is_rpm_spike = any(
                             x in err_msg
                             for x in [
-                                "quota",
-                                "resource_exhausted",
-                                "daily",
-                                "exceeded your current quota",
-                                "free tier",
-                                "limit reached",
+                                "per minute",
+                                "requests per minute",
+                                "rpm",
                             ]
+                        )
+                        is_daily_exhausted = (
+                            any(
+                                x in err_msg
+                                for x in [
+                                    "per day",
+                                    "requests per day",
+                                    "daily quota",
+                                    "exceeded your current quota per day",
+                                    "daily free tier quota",
+                                    "rpd limit reached",
+                                ]
+                            )
+                            and not is_rpm_spike
                         )
                         if is_daily_exhausted:
                             mark_key_model_quota_exhausted_today(
@@ -1738,14 +1751,14 @@ class GeminiService:
 
                         next_key_num = ((actual_idx + 1) % len(keys_pool)) + 1
                         reason_lbl = (
-                            "Daily 500 RPD Limit"
+                            "Daily RPD Limit"
                             if is_daily_exhausted
                             else "Per-Minute RPM Spike"
                         )
                         print(
                             f"🔑 [API Key Rotator] Key #{actual_idx + 1} ({reason_lbl}) on model '{active_model}'. Seamlessly rotating to Key #{next_key_num}..."
                         )
-                        time.sleep(0.2)
+                        time.sleep(1.0 if is_rpm_spike else 0.2)
                         continue
 
                     # Transient network error

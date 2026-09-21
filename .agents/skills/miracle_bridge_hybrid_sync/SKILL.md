@@ -36,21 +36,33 @@ The system operates in a hybrid deployment mode:
 
 1. **Auto-Discovery**: Scans local Windows drives (`C:\Miracle`, `D:\Miracle`) to locate active company folders (`CMP0001` - `CMP9999`) and accounting year subdirectories.
 2. **Ledger Master Sync**: Reads `RKACCM01.DBF` and `RKACCM11.DBF` locally, compresses ledger JSON, and pushes to cloud API `/api/sync/ledgers`.
-3. **Pending Voucher Polling**: Polls cloud server for approved vouchers ready for DBF insertion.
-4. **Local DBF Push**: Executes binary DBF writes directly on the desktop machine using `dbf_handler.py`.
-5. **Offline Queue Management**: Caches pending sync tasks locally if internet connectivity is lost; resumes automatically upon reconnection.
+3. **Local Client Offloading & Zero-Cost Regex Intelligence**:
+   - **`/api/local/optimize-image`**: Resizes and compresses invoice photos locally on Client PC (< 300 KB) before uploading to save 90% cloud bandwidth.
+   - **`/api/local/match-regex`**: Matches narrations against local SQLite DB (`client_intel.db`) in < 1ms with 0 cloud AI API tokens.
+   - **`/api/local/learn-rule`**: Auto-learns regex pattern upon voucher approval and auto-prunes stale rules (> 90 days unused, max 500 rules per client).
+4. **Single-Instance Execution Lock**: Employs socket-level port lock on `127.0.0.1:9123` (`check_single_instance_lock`) to prevent duplicate instances from running.
+5. **Localhost Security**: Binds Uvicorn HTTP server strictly to `127.0.0.1` (localhost only) to block unauthorized local network access.
+6. **Automatic Cleanup**: Automatically purges temporary uploads older than 7 days (`cleanup_old_temp_files`) on agent launch.
+7. **Offline Transaction Queue Management**: Caches pending sync tasks in local SQLite database if internet connection drops; automatically flushes queue upon reconnect.
 
 ---
 
-## 4. Security & Multi-Client Authentication
+## 4. Universal Cloud JSON Ingestion & Offloaded Parsing (`/api/vouchers/process-json`)
+
+- Handles pre-parsed JSON payloads from Client PC desktop bridge across all 4 accounting modules: Bank Statements, Sales Invoices, Purchase Bills (with 194Q TDS), and Cash Entries.
+- Operates statelessly on cloud backend consuming < 1 MB RAM per request.
+
+---
+
+## 5. Security & Multi-Client Authentication
 
 - **Device Token Authentication**: Every Bridge Agent registers using a unique hardware machine ID + client secret token.
 - **Data Isolation**: Cloud API enforces strict client tenant separation (`client_id`). A client cannot read or overwrite DBF paths belonging to another company code.
-- **Payload Encryption**: All payload transmissions between Bridge EXE and cloud server use HTTPS with TLS 1.3 encryption.
+- **Localhost Only Binding**: Port 9123 is bound strictly to `127.0.0.1`.
 
 ---
 
-## 5. Bridge Executable Build & Auto-Update Protocol (`build_bridge_exe.py`)
+## 6. Bridge Executable Build & Auto-Update Protocol (`build_bridge_exe.py`)
 
 1. **Standalone Build**: Packaged via PyInstaller into a single lightweight Windows `.exe` (`MiracleBridgeAgent.exe`):
    ```bash
@@ -62,8 +74,9 @@ The system operates in a hybrid deployment mode:
 
 ---
 
-## 6. Troubleshooting & Audit Commands
+## 7. Troubleshooting & Audit Commands
 
 - Test local DBF access: `python backend/miracle_bridge_agent.py --test-dbf`
 - Verify cloud connectivity: `python backend/miracle_bridge_agent.py --ping-cloud`
 - Re-build executable: `python backend/build_bridge_exe.py`
+

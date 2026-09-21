@@ -5783,6 +5783,10 @@ document.addEventListener('DOMContentLoaded', () => {
                     statusColor = 'text-amber-500 bg-amber-500/10 border-amber-500/20';
                     statusIcon = 'fa-triangle-exclamation';
                     statusText = 'Review';
+                } else if (row.source === 'client_local_regex') {
+                    statusColor = 'text-emerald-400 bg-emerald-500/15 border-emerald-400/30';
+                    statusIcon = 'fa-bolt';
+                    statusText = '⚡ Local Match';
                 } else if (hasMappedMatch || cleanLedger === "SUSPENSE ACCOUNT" || row.status === 'Ready') {
                     statusColor = 'text-emerald-500 bg-emerald-500/10 border-emerald-500/20';
                     statusIcon = 'fa-check-circle';

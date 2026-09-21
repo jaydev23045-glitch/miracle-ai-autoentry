@@ -63,6 +63,11 @@ class AccountingValidator:
         warnings.extend(peer_warns)
         check_results["peer_consistency"] = "ALIGNED" if not peer_warns else f"REVIEW ({len(peer_warns)} items)"
 
+        # 6b. Section 194Q TDS Threshold Check (₹50 Lakhs)
+        tds_warns = self.check_section_194q_tds(rows)
+        warnings.extend(tds_warns)
+        check_results["section_194q_tds"] = "COMPLIANT" if not tds_warns else f"ALERT ({len(tds_warns)} items)"
+
         # 7. Balance Sanity Check
         balance_errs = self.check_balance_sanity(rows)
         errors.extend(balance_errs)
@@ -172,8 +177,14 @@ class AccountingValidator:
 
         try:
             def _clean_dec(v):
-                s = str(v or 0).replace(",", "").strip()
-                return Decimal(s) if s else Decimal("0.00")
+                if not v:
+                    return Decimal("0.00")
+                try:
+                    s = str(v).replace(",", "").replace("₹", "").replace("$", "").strip()
+                    s = re.sub(r'(?i)\s*(cr|dr)\b', '', s).strip()
+                    return Decimal(s) if s else Decimal("0.00")
+                except Exception:
+                    return Decimal("0.00")
 
             opening = _clean_dec(extracted_data.get("opening_balance"))
             closing = _clean_dec(extracted_data.get("closing_balance"))
@@ -204,7 +215,10 @@ class AccountingValidator:
         """Check 5: Flag amounts matching round GST values (e.g. 18% GST component) if mapped to non-GST account."""
         warnings = []
         for idx, row in enumerate(rows):
-            amt = float(row.get("amount", 0) or 0)
+            try:
+                amt = float(str(row.get("amount", 0) or 0).replace(",", "").replace("₹", "").strip())
+            except (ValueError, TypeError):
+                amt = 0.0
             narr = str(row.get("narration") or "").upper()
             ledger = str(row.get("mapped_ledger") or "").upper()
             if "GST" in narr or "TAX" in narr:
@@ -217,6 +231,28 @@ class AccountingValidator:
     def check_peer_consistency(self, rows: list) -> list:
         """Check 6: Peer consistency flag for unusual mappings."""
         return []
+
+    def check_section_194q_tds(self, rows: list) -> list:
+        """Check 6b: Section 194Q TDS Warning when cumulative party purchase crosses ₹50 Lakhs (₹5,000,000)."""
+        warnings = []
+        historical_purchases = self.client_memory.get("party_ytd_purchases", {}) if isinstance(self.client_memory, dict) else {}
+        for idx, row in enumerate(rows):
+            party = (row.get("party_name") or row.get("party") or "").strip().upper()
+            if not party or party in ("SUSPENSE ACCOUNT", "CASH", "SUSPENSE A/C"):
+                continue
+            try:
+                taxable = float(str(row.get("taxable_amount") or row.get("taxable") or row.get("amount") or 0).replace(",", "").replace("₹", "").strip())
+            except (ValueError, TypeError):
+                taxable = 0.0
+
+            prior_ytd = float(historical_purchases.get(party, 0.0))
+            if (prior_ytd + taxable) >= 5000000.0:
+                msg = f"Row #{idx+1}: ⚠️ Section 194Q TDS Alert for '{row.get('party_name') or party}'. Cumulative purchases (₹{(prior_ytd + taxable):,.2f}) exceed ₹50 Lakhs. Ensure 0.1% TDS is deducted."
+                warnings.append(msg)
+                if "194Q TDS Alert" not in row.get("flags", []):
+                    row.setdefault("flags", []).append("194Q TDS Alert")
+
+        return warnings
 
     def check_balance_sanity(self, rows: list) -> list:
         """Check 7: Sanity check on extreme single transaction amounts."""

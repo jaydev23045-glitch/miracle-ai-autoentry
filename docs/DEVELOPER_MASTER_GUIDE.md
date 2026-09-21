@@ -37,15 +37,16 @@ Small-to-Medium Businesses (SMBs) and Accounting Firms spend thousands of manual
 | Layer | Technology / Library | Description & Role |
 |---|---|---|
 | **Backend Engine** | **Python 3.10+** / **FastAPI** | High-performance asynchronous REST API framework providing fast routing, auto-generated OpenAPI docs, and clean dependency injection. |
-| **Server Runtime** | **Uvicorn / Starlette** | ASGI server runner handling concurrent request dispatching and static asset serving. |
+| **Server Runtime** | **Uvicorn / Starlette** | ASGI server runner bound strictly to `127.0.0.1` locally, handling low-memory JSON requests. |
 | **AI / Multimodal OCR** | **Google Gemini 2.5 API** | Uses `gemini-2.5-flash` and `gemini-2.5-pro` models with vision support and rigid JSON schema outputs. |
+| **Local Regex Engine** | **SQLite3 + Python `re`** | Client PC local regex engine matching narrations in < 1ms with zero cloud API token cost. |
 | **PDF Extraction Engine**| **`pdfplumber` + `pypdf`** | Deterministic Python text-coordinate extraction for native bank statements, avoiding AI latency and cost. |
 | **Excel Parser** | **`openpyxl` + `pandas`** | High-speed tabular parsing for Sales, Purchase, and Bank Excel uploads. |
-| **Database Engine** | **Native FoxPro `.DBF` (`dbfread`, `dbf`)** | Low-level bitstream reading, writing, index handling, and record packing for dBase IV / FoxPro tables. |
+| **Database Engine** | **Native FoxPro `.DBF` (`dbfread`, `dbf`)** | Low-level bitstream reading, writing, index handling, with defensive readers (`dbf_safe_float`, `dbf_safe_str`) and schema fingerprinting (`dbf_schema_guard.py`). |
 | **Client Memory Vault** | **JSON file storage** | Per-client persistent memory (`CMPxxxx_memory.json`) storing learned alias rules, product catalog mappings, and bank narration patterns. |
-| **Frontend UI** | **HTML5 + Vanilla JS (ES6+)** | Decoupled client-side UI with zero heavy framework bloat. Features high-speed virtual table grids, live search, and modal workflows. |
+| **Frontend UI** | **HTML5 + Vanilla JS (ES6+)** | Decoupled client-side UI with zero heavy framework bloat. Features high-speed virtual table grids, live search, `⚡ Local Match` badges, and modal workflows. |
 | **Styling & Aesthetics** | **Tailwind CSS + Custom CSS** | Premium glassmorphic dark-mode interface with dynamic badges, smooth micro-animations, and responsive layout. |
-| **Desktop Bridge** | **PyInstaller Executable** | `miracle_bridge_agent.py` enables cloud-deployed backend instances to read/write local Miracle desktop database shares securely. |
+| **Desktop Bridge** | **PyInstaller Executable** | `miracle_bridge_agent.py` v1.2.0+ featuring single-instance TCP port locking, local image compression (<300 KB), offline queue sync, and local regex learning. |
 
 ---
 

@@ -98,6 +98,10 @@ Prior to saving or exporting any voucher batch, `AccountingValidator` executes 7
 - Cross-references mapping against client industry context from `ai_business_profiler.py`.
 - Flags anomalous ledgers foreign to client's primary business activities.
 
+### Check 6b: Section 194Q TDS Threshold Alert (₹50 Lakhs)
+- Tracks cumulative YTD purchases per vendor.
+- When cumulative purchases cross **₹50 Lakhs** (`₹5,000,000`), triggers a mandatory **0.1% TDS Alert** flag (`194Q TDS Alert`) to ensure tax compliance.
+
 ### Check 7: Extreme Amount Sanity Guard
 - Enforces a hard single-transaction sanity limit of **₹10 Crore** (`100,000,000`). Exceeding transactions raise `"Extreme Amount Warning"`.
 

@@ -209,6 +209,37 @@ def test_user_guidelines_engine():
     
     print("✅ Test 6: STAGE -1 User Guidelines Engine passed.")
 
+def test_dbf_self_healing_engine():
+    print("Executing Test 7: DBF Self-Healing Engine (Phase 1-3)...")
+    from dbf_handler import dbf_safe_float, dbf_safe_str, dbf_has_field
+    from dbf_schema_guard import capture_schema_fingerprint, run_schema_health_check, find_miracle_dbf
+
+    # 1. Test Phase 1 safe readers
+    mock_rec = {
+        'FIELD01': 'A001',
+        'FIELD02': 'BHAGWATI TRADERS',
+        'FIELD09': '75,000.00',
+        'FIELD10': None,
+        'BYTES_FLD': b'CHARITABLE TRUST  '
+    }
+    assert dbf_safe_str(mock_rec, 'FIELD01') == 'A001'
+    assert dbf_safe_str(mock_rec, 'FIELD02') == 'BHAGWATI TRADERS'
+    assert dbf_safe_float(mock_rec, 'FIELD09') == 75000.0
+    assert dbf_safe_float(mock_rec, 'FIELD10') == 0.0
+    assert dbf_safe_float(mock_rec, 'MISSING_FIELD') == 0.0
+    assert dbf_safe_str(mock_rec, 'BYTES_FLD') == 'CHARITABLE TRUST'
+    assert dbf_has_field(mock_rec, 'FIELD01') == True
+    assert dbf_has_field(mock_rec, 'FIELD99') == False
+
+    # 2. Test Phase 2 Schema Guard on mock folder
+    import tempfile
+    with tempfile.TemporaryDirectory() as tmpdir:
+        res = run_schema_health_check("TEST_CLIENT", tmpdir, os.path.join(tmpdir, "baselines"))
+        assert res["healthy"] == True
+        assert "first_run_baseline_captured" in res["auto_adapted"]
+
+    print("✅ Test 7: DBF Self-Healing Engine (Phase 1-3) passed.")
+
 def main():
     try:
         test_sales_gst_normalization()
@@ -217,7 +248,8 @@ def main():
         test_bank_charges_expense_rule()
         test_pre_push_validation_and_suspense()
         test_user_guidelines_engine()
-        print("\n🎉 ALL 6 INTEGRITY TESTS PASSED SUCCESSFULLY! Zero regressions detected.")
+        test_dbf_self_healing_engine()
+        print("\n🎉 ALL 7 INTEGRITY TESTS PASSED SUCCESSFULLY! Zero regressions detected.")
     except AssertionError as ae:
         print(f"\n❌ REGRESSION DETECTED: {ae}")
         sys.exit(1)
@@ -227,3 +259,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+

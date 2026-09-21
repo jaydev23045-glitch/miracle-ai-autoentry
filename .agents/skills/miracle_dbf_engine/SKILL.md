@@ -87,3 +87,16 @@ def generate_miracle_voucher_id() -> str:
            table.append(record_data)
    ```
 5. **CDX Index Files**: Never delete or rename `.CDX` files directly while Miracle desktop is active. If index corruption occurs, instruct user to run Miracle's built-in "Reindex / Utilities" tool.
+
+---
+
+## 5. Zero-Risk DBF Self-Healing Safe Readers & Schema Guard (`dbf_handler.py` & `dbf_schema_guard.py`)
+
+1. **Defensive Safe Readers**:
+   - `dbf_has_field(record, field)`: Safely verifies field existence across dicts, DBF Record objects, and Tables before access.
+   - `dbf_safe_float(record, field, default=0.0)`: Cleans currency symbols (`₹`), commas, and whitespace before converting values to float; handles `None` and missing fields gracefully without throwing `KeyError` or `ValueError`.
+   - `dbf_safe_str(record, field, default='')`: Converts strings or raw bytes (`bytes.decode('utf-8')`) safely while stripping whitespace.
+2. **Schema Fingerprint Baseline Guard (`dbf_schema_guard.py`)**:
+   - `capture_schema_fingerprint(client_id, miracle_dir)`: Generates MD5 hash of all DBF table field structures (field names, types, lengths).
+   - `run_schema_health_check(client_id, miracle_dir)`: Compares active DBF structures against captured baseline fingerprint to detect schema drift, field additions/removals, or corruption prior to injection.
+

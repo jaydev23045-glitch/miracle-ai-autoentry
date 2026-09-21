@@ -43,7 +43,12 @@ def build_exe():
         "--hidden-import=PIL",
         "--hidden-import=PIL.Image",
         "--hidden-import=PIL.ImageDraw",
+        "--hidden-import=PIL.ImageEnhance",
         "--hidden-import=winreg",
+        "--hidden-import=pypdf",
+        "--hidden-import=requests",
+        "--hidden-import=sqlite3",
+        "--hidden-import=openpyxl",
         "--clean",
         script_path
     ]

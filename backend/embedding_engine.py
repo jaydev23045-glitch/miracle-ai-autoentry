@@ -5,12 +5,15 @@ Uses semantic vector embeddings and cosine similarity to map transaction
 narrations to client ledgers without hardcoded keywords.
 
 Supports:
-1. Google text-embedding-004 (online high-precision)
-2. Character/Word N-gram Cosine Similarity Vectorizer (offline fallback)
+1. Google text-embedding-004 (online high-precision API with LRU cache)
+2. Character/Word N-gram Cosine Similarity Vectorizer (fast offline fallback)
 """
 
 import math
 import re
+import json
+import urllib.request
+import urllib.error
 from typing import List, Dict, Tuple, Optional
 
 def cosine_similarity(v1: List[float], v2: List[float]) -> float:
@@ -25,18 +28,90 @@ def cosine_similarity(v1: List[float], v2: List[float]) -> float:
 class TextEmbeddingEngine:
     """
     Semantic Embedding Engine for Ledger Mapping.
-    Maintains cached embeddings for active client ledgers.
+    Combines fast local N-gram filtering with Google text-embedding-004.
     """
 
     def __init__(self, api_key: str = "", model_name: str = "models/text-embedding-004"):
         self.api_key = api_key
         self.model_name = model_name
-        self._ledger_vectors_cache = {} # client_id -> {ledger_name: vector}
+        self._vector_cache = {}  # text -> vector (in-memory LRU cache)
+
+    def _get_api_key(self) -> str:
+        if self.api_key:
+            return self.api_key
+        try:
+            from core.config import get_gemini_api_key_pool
+            keys = get_gemini_api_key_pool()
+            if keys:
+                return keys[0]
+        except Exception:
+            pass
+        return ""
+
+    def get_gemini_embedding(self, text: str) -> Optional[List[float]]:
+        """
+        Fetches text-embedding-004 float vector from Google Gemini REST API.
+        Uses in-memory cache to eliminate duplicate API requests.
+        """
+        clean_text = text.strip()
+        if not clean_text:
+            return None
+        if clean_text in self._vector_cache:
+            return self._vector_cache[clean_text]
+
+        key = self._get_api_key()
+        if not key:
+            return None
+
+        model_path = self.model_name if self.model_name.startswith("models/") else f"models/{self.model_name}"
+        url = f"https://generativelanguage.googleapis.com/v1beta/{model_path}:embedContent?key={key}"
+        payload = json.dumps({
+            "model": model_path,
+            "content": {"parts": [{"text": clean_text}]}
+        }).encode("utf-8")
+
+        req = urllib.request.Request(
+            url,
+            data=payload,
+            headers={"Content-Type": "application/json", "User-Agent": "MiracleAutoEntry/1.0"}
+        )
+        try:
+            with urllib.request.urlopen(req, timeout=4) as resp:
+                if resp.status == 200:
+                    data = json.loads(resp.read().decode("utf-8"))
+                    values = data.get("embedding", {}).get("values", [])
+                    if values:
+                        # Store in cache (limit max cache size to 2000 entries)
+                        if len(self._vector_cache) > 2000:
+                            self._vector_cache.clear()
+                        self._vector_cache[clean_text] = values
+                        return values
+        except Exception:
+            pass
+        return None
+
+    def _normalize_phonetic(self, text: str) -> str:
+        """Applies Indian accounting phonetic normalization (V/W, EE/I, OU/AU, etc.)."""
+        t = text.upper()
+        t = re.sub(r'\bSHREE\b|\bSHRI\b', 'SRI', t)
+        t = re.sub(r'W', 'V', t)
+        t = re.sub(r'EE', 'I', t)
+        t = re.sub(r'OU', 'AU', t)
+        t = re.sub(r'CHH', 'CH', t)
+        t = re.sub(r'PH', 'F', t)
+        t = re.sub(r'SHT', 'ST', t)
+        t = re.sub(r'ENTERPRISE[S]?', 'ENT', t)
+        t = re.sub(r'TRADER[S]?', 'TRD', t)
+        t = re.sub(r'TRADING', 'TRD', t)
+        t = re.sub(r'COMPANY|CO\b', 'CO', t)
+        t = re.sub(r'LIMITED|LTD\b', 'LTD', t)
+        t = re.sub(r'PRIVATE|PVT\b', 'PVT', t)
+        return re.sub(r'[^A-Z0-9\s]', ' ', t).strip()
 
     def _get_ngram_vector(self, text: str) -> Dict[str, float]:
-        """Offline n-gram character/word TF vectorizer for semantic similarity fallback."""
-        text = re.sub(r'[^A-Z0-9\s]', ' ', text.upper()).strip()
-        words = [w for w in text.split() if len(w) >= 3]
+        """Offline n-gram character/word TF vectorizer with Indian phonetic normalization."""
+        norm_text = self._normalize_phonetic(text)
+        words = [w for w in norm_text.split() if len(w) >= 2]
         features = {}
         
         # Word n-grams & char 3-grams
@@ -65,14 +140,16 @@ class TextEmbeddingEngine:
         
         base_cos = dot / (n1 * n2)
 
-        # Word Token Overlap Boost (e.g. 'SWIGGY' in both)
-        words1 = set(w for w in re.sub(r'[^A-Z0-9\s]', ' ', text1.upper()).split() if len(w) >= 4)
-        words2 = set(w for w in re.sub(r'[^A-Z0-9\s]', ' ', text2.upper()).split() if len(w) >= 4)
+        # Phonetic Word Token Overlap Boost (e.g. 'BHAGVATI' matches 'BHAGWATI')
+        norm1 = self._normalize_phonetic(text1)
+        norm2 = self._normalize_phonetic(text2)
+        words1 = set(w for w in norm1.split() if len(w) >= 3)
+        words2 = set(w for w in norm2.split() if len(w) >= 3)
         shared_words = words1.intersection(words2)
         
         boost = 0.0
         if shared_words:
-            boost = 0.25 * len(shared_words)
+            boost = 0.20 * len(shared_words)
 
         return min(1.0, base_cos + boost)
 
@@ -83,25 +160,61 @@ class TextEmbeddingEngine:
         cutoff: float = 0.50
     ) -> Tuple[Optional[str], float]:
         """
-        Finds the closest ledger for a narration using semantic embedding / similarity.
+        Finds the closest ledger for a narration using 2-Step Hybrid Embedding Engine:
+        Step 1: Fast local N-gram cosine similarity filtering (0ms, 0 cost).
+        Step 2: If score is intermediate, verify top candidates with Google text-embedding-004.
         Returns: (best_ledger_name, match_score)
         """
         if not narration or not existing_ledgers:
             return None, 0.0
 
         clean_narr = narration.strip()
-        best_ledger = None
-        best_score = 0.0
+        if not clean_narr:
+            return None, 0.0
 
-        # Run fast semantic vector matching over candidate ledgers
+        # Step 1: Local N-Gram Fast Filter across all candidate ledgers
+        scored_candidates = []
         for ledger in existing_ledgers:
             if not ledger:
                 continue
-            sim = self.compute_similarity_offline(clean_narr, ledger)
-            if sim > best_score:
-                best_score = sim
-                best_ledger = ledger
+            ledger_str = ledger.get('name') or ledger.get('print_name') or '' if isinstance(ledger, dict) else str(ledger)
+            ledger_str = ledger_str.strip()
+            if not ledger_str:
+                continue
+            sim = self.compute_similarity_offline(clean_narr, ledger_str)
+            scored_candidates.append((ledger_str, sim))
 
-        if best_score >= cutoff:
-            return best_ledger, best_score
-        return None, best_score
+        scored_candidates.sort(key=lambda x: x[1], reverse=True)
+        if not scored_candidates:
+            return None, 0.0
+
+        best_offline_ledger, best_offline_score = scored_candidates[0]
+
+        # High Confidence Local Match (>= 0.85): Accept instantly (0ms, $0 cost)
+        if best_offline_score >= 0.85:
+            return best_offline_ledger, best_offline_score
+
+        # Step 2: Intermediate Confidence (0.45 - 0.84): Elevate Top 3 candidates to Gemini Embedding
+        top_candidates = [item[0] for item in scored_candidates[:3] if item[1] >= 0.35]
+        if top_candidates:
+            narr_vec = self.get_gemini_embedding(clean_narr)
+            if narr_vec:
+                best_gemini_ledger = None
+                best_gemini_score = 0.0
+                for cand in top_candidates:
+                    cand_vec = self.get_gemini_embedding(cand)
+                    if cand_vec:
+                        g_sim = cosine_similarity(narr_vec, cand_vec)
+                        if g_sim > best_gemini_score:
+                            best_gemini_score = g_sim
+                            best_gemini_ledger = cand
+
+                if best_gemini_ledger and best_gemini_score >= cutoff:
+                    return best_gemini_ledger, best_gemini_score
+
+        # Fallback to best offline match if offline score meets cutoff
+        if best_offline_score >= cutoff:
+            return best_offline_ledger, best_offline_score
+
+        return None, best_offline_score
+
