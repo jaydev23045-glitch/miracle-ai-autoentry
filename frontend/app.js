@@ -418,18 +418,34 @@ document.addEventListener('DOMContentLoaded', () => {
             const currentMiraclePath = (typeof miracleBasePathInput !== 'undefined' && miracleBasePathInput && miracleBasePathInput.value)
                 ? miracleBasePathInput.value.trim()
                 : 'C:\\Miracle';
-            const targetUrl = isLocalBridgeOnline
-                ? `${LOCAL_BRIDGE_URL}/api/local-ledgers?client_id=${clientId}&year_folder=${activeYearFolder || 'YR25'}&base_path=${encodeURIComponent(currentMiraclePath)}`
-                : `${API_URL}/api/ledgers${activeYearFolder ? '?year=' + activeYearFolder : ''}`;
-            const res = await fetch(targetUrl);
-            if (!res.ok) throw new Error("Failed to retrieve ledgers.");
-            const data = await res.json();
-            clientLedgers = data.data || data.ledgers || [];
+            
+            let data = null;
+            if (isLocalBridgeOnline) {
+                try {
+                    const localUrl = `${LOCAL_BRIDGE_URL}/api/local-ledgers?client_id=${clientId}&year_folder=${activeYearFolder || 'YR25'}&base_path=${encodeURIComponent(currentMiraclePath)}`;
+                    const res = await fetch(localUrl);
+                    if (res.ok) {
+                        data = await res.json();
+                    }
+                } catch (bridgeErr) {
+                    console.warn("Local bridge ledger fetch notice (falling back to Cloud API):", bridgeErr);
+                }
+            }
+
+            if (!data || !data.data || data.data.length === 0) {
+                const cloudUrl = `${API_URL}/api/ledgers${activeYearFolder ? '?year=' + activeYearFolder : ''}`;
+                const res = await fetch(cloudUrl);
+                if (res.ok) {
+                    data = await res.json();
+                }
+            }
+
+            clientLedgers = (data && (data.data || data.ledgers)) || [];
             window.clientLedgers = clientLedgers; // Expose globally for Bank Statement module
-            console.log(`Loaded ${clientLedgers.length} classified ledgers for financial year ${data.year || activeYearFolder}`);
+            console.log(`Loaded ${clientLedgers.length} classified ledgers for financial year ${data ? (data.year || activeYearFolder) : activeYearFolder}`);
 
             // Automatically sync local PC ledgers to Cloud Server memory for seamless AI mapping
-            if (isLocalBridgeOnline && clientLedgers.length > 0) {
+            if (clientLedgers.length > 0) {
                 fetch(`${API_URL}/api/bridge/sync-masters`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
@@ -549,15 +565,44 @@ document.addEventListener('DOMContentLoaded', () => {
             const clientId = getActiveClientId();
             const currentMiraclePath = (typeof miracleBasePathInput !== 'undefined' && miracleBasePathInput && miracleBasePathInput.value)
                 ? miracleBasePathInput.value.trim() : 'C:\\Miracle';
-            const targetUrl = isLocalBridgeOnline
-                ? `${LOCAL_BRIDGE_URL}/api/local-products?client_id=${clientId}&year_folder=${activeYearFolder || ''}&base_path=${encodeURIComponent(currentMiraclePath)}`
-                : `${API_URL}/api/products${activeYearFolder ? '?year=' + activeYearFolder : ''}`;
-            const res = await fetch(targetUrl);
-            if (!res.ok) throw new Error("Failed to retrieve products.");
-            const data = await res.json();
-            clientProducts = data.data || data.products || [];
+            
+            let data = null;
+            if (isLocalBridgeOnline) {
+                try {
+                    const localUrl = `${LOCAL_BRIDGE_URL}/api/local-products?client_id=${clientId}&year_folder=${activeYearFolder || ''}&base_path=${encodeURIComponent(currentMiraclePath)}`;
+                    const res = await fetch(localUrl);
+                    if (res.ok) {
+                        data = await res.json();
+                    }
+                } catch (bridgeErr) {
+                    console.warn("Local bridge product fetch notice (falling back to Cloud API):", bridgeErr);
+                }
+            }
+
+            if (!data || !data.data || data.data.length === 0) {
+                const cloudUrl = `${API_URL}/api/products${activeYearFolder ? '?year=' + activeYearFolder : ''}`;
+                const res = await fetch(cloudUrl);
+                if (res.ok) {
+                    data = await res.json();
+                }
+            }
+
+            clientProducts = (data && (data.data || data.products)) || [];
             window.clientProducts = clientProducts;
-            console.log(`Loaded ${clientProducts.length} products for financial year ${data.year || activeYearFolder}`);
+            console.log(`Loaded ${clientProducts.length} products for financial year ${data ? (data.year || activeYearFolder) : activeYearFolder}`);
+
+            // Automatically sync local PC products to Cloud Server memory for seamless AI mapping
+            if (clientProducts.length > 0) {
+                fetch(`${API_URL}/api/bridge/sync-masters`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        client_id: clientId,
+                        products: clientProducts
+                    })
+                }).catch(err => console.warn("Bridge product sync notice:", err));
+            }
+
             populateDefaultProductSelect();
         } catch (err) {
             console.error("Error fetching client products:", err);
@@ -1931,17 +1976,17 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     function populateDefaultProductSelect() {
-        if (!defaultProductSelect) return;
-        const savedProduct = localStorage.getItem('defaultProductSelection') || '';
-
-        let html = '<option value="">-- Auto-Detect (AI) --</option>';
-        if (clientProducts && clientProducts.length > 0) {
-            clientProducts.forEach(prod => {
-                const isSelected = prod.name === savedProduct ? 'selected' : '';
-                html += `<option value="${prod.name}" ${isSelected}>${prod.name} (${prod.code}) ${prod.hsn_code ? '- HSN: ' + prod.hsn_code : ''}</option>`;
-            });
+        if (defaultProductSelect) {
+            const savedProduct = localStorage.getItem('defaultProductSelection') || '';
+            let html = '<option value="">-- Auto-Detect (AI) --</option>';
+            if (clientProducts && clientProducts.length > 0) {
+                clientProducts.forEach(prod => {
+                    const isSelected = prod.name === savedProduct ? 'selected' : '';
+                    html += `<option value="${prod.name}" ${isSelected}>${prod.name} (${prod.code}) ${prod.hsn_code ? '- HSN: ' + prod.hsn_code : ''}</option>`;
+                });
+            }
+            defaultProductSelect.innerHTML = html;
         }
-        defaultProductSelect.innerHTML = html;
 
         // Also populate globalProductBulkSelect in grid header
         const globalProductBulkSelect = document.getElementById('globalProductBulkSelect');
@@ -1949,6 +1994,18 @@ document.addEventListener('DOMContentLoaded', () => {
             let bulkHtml = '<option value="">⚡ Select Miracle Product...</option>';
             bulkHtml += generateProductOptions();
             globalProductBulkSelect.innerHTML = bulkHtml;
+        }
+
+        // Refresh row product dropdowns if currently rendered in sales grid
+        const rowSelects = document.querySelectorAll('.product-item-select');
+        if (rowSelects && rowSelects.length > 0 && clientProducts && clientProducts.length > 0) {
+            rowSelects.forEach(select => {
+                if (select.options.length <= 2) {
+                    const currentVal = select.value;
+                    const rowGst = parseFloat(select.dataset.gstPct || 0);
+                    select.innerHTML = generateProductOptions(currentVal, rowGst);
+                }
+            });
         }
     }
 
