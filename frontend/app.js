@@ -433,7 +433,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }
 
             if (!data || !data.data || data.data.length === 0) {
-                const cloudUrl = `${API_URL}/api/ledgers${activeYearFolder ? '?year=' + activeYearFolder : ''}`;
+                const cloudUrl = `${API_URL}/api/ledgers?client_id=${clientId}${activeYearFolder ? '&year=' + activeYearFolder : ''}`;
                 const res = await fetch(cloudUrl);
                 if (res.ok) {
                     data = await res.json();
@@ -580,7 +580,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }
 
             if (!data || !data.data || data.data.length === 0) {
-                const cloudUrl = `${API_URL}/api/products${activeYearFolder ? '?year=' + activeYearFolder : ''}`;
+                const cloudUrl = `${API_URL}/api/products?client_id=${clientId}${activeYearFolder ? '&year=' + activeYearFolder : ''}`;
                 const res = await fetch(cloudUrl);
                 if (res.ok) {
                     data = await res.json();

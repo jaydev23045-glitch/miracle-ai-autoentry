@@ -641,18 +641,25 @@ def normalize_confidence_and_flags(extracted_data: dict, module: str, client_mem
     return extracted_data
 
 @router.get("/api/ledgers")
-def get_ledgers(year: Optional[str] = None, handler: Optional[MiracleDBFHandler] = Depends(get_handler_optional)):
+def get_ledgers(year: Optional[str] = None, client_id: Optional[str] = None, handler: Optional[MiracleDBFHandler] = Depends(get_handler_optional)):
     """Reads all accounting ledgers from the active Miracle DBF or queries Miracle Bridge / Cloud Synced memory."""
     try:
         if not handler or not handler.client_path or not os.path.exists(handler.client_path):
             settings = load_settings()
-            client_id = settings.get("active_client_id", "CMP0013")
-            synced = CLOUD_SYNCED_LEDGERS.get(client_id, [])
+            cid = (client_id or settings.get("active_client_id") or "").strip().upper()
+            synced = CLOUD_SYNCED_LEDGERS.get(cid, [])
+            if not synced and CLOUD_SYNCED_LEDGERS:
+                for k, v in CLOUD_SYNCED_LEDGERS.items():
+                    if v:
+                        synced = v
+                        cid = k
+                        break
+
             if synced:
                 return {"status": "success", "year": year or "", "count": len(synced), "data": synced}
             import requests
             try:
-                r = requests.get(f"http://localhost:9123/api/local-ledgers?client_id={client_id}", timeout=3)
+                r = requests.get(f"http://localhost:9123/api/local-ledgers?client_id={cid}", timeout=3)
                 if r.status_code == 200:
                     return r.json()
             except Exception:
@@ -891,18 +898,25 @@ def sync_masters_from_bridge(payload: MasterSyncPayload):
 
 @router.get("/api/products")
 @router.get("/api/products/")
-def get_products(year: Optional[str] = None, handler: Optional[MiracleDBFHandler] = Depends(get_handler_optional)):
+def get_products(year: Optional[str] = None, client_id: Optional[str] = None, handler: Optional[MiracleDBFHandler] = Depends(get_handler_optional)):
     """Reads all products from active Miracle DBFs across all financial years or Cloud Synced memory."""
     try:
         if not handler or not handler.client_path or not os.path.exists(handler.client_path):
             settings = load_settings()
-            client_id = settings.get("active_client_id", "CMP0013")
-            synced = CLOUD_SYNCED_PRODUCTS.get(client_id, [])
+            cid = (client_id or settings.get("active_client_id") or "").strip().upper()
+            synced = CLOUD_SYNCED_PRODUCTS.get(cid, [])
+            if not synced and CLOUD_SYNCED_PRODUCTS:
+                for k, v in CLOUD_SYNCED_PRODUCTS.items():
+                    if v:
+                        synced = v
+                        cid = k
+                        break
+
             if synced:
                 return {"status": "success", "year": year or "", "count": len(synced), "data": synced}
             import requests
             try:
-                r = requests.get(f"http://localhost:9123/api/local-products?client_id={client_id}&year_folder={year or ''}", timeout=3)
+                r = requests.get(f"http://localhost:9123/api/local-products?client_id={cid}&year_folder={year or ''}", timeout=3)
                 if r.status_code == 200:
                     return r.json()
             except Exception:
@@ -918,18 +932,25 @@ def get_products(year: Optional[str] = None, handler: Optional[MiracleDBFHandler
 
 @router.post("/api/refresh-products")
 @router.post("/api/refresh-products/")
-def refresh_products(year: Optional[str] = None, handler: Optional[MiracleDBFHandler] = Depends(get_handler_optional)):
+def refresh_products(year: Optional[str] = None, client_id: Optional[str] = None, handler: Optional[MiracleDBFHandler] = Depends(get_handler_optional)):
     """Forces re-reading of Miracle DBF files across all years and returns fresh products."""
     try:
         if not handler or not handler.client_path or not os.path.exists(handler.client_path):
             settings = load_settings()
-            client_id = settings.get("active_client_id", "CMP0013")
-            synced = CLOUD_SYNCED_PRODUCTS.get(client_id, [])
+            cid = (client_id or settings.get("active_client_id") or "").strip().upper()
+            synced = CLOUD_SYNCED_PRODUCTS.get(cid, [])
+            if not synced and CLOUD_SYNCED_PRODUCTS:
+                for k, v in CLOUD_SYNCED_PRODUCTS.items():
+                    if v:
+                        synced = v
+                        cid = k
+                        break
+
             if synced:
                 return {"status": "success", "year": year or "", "count": len(synced), "data": synced}
             import requests
             try:
-                r = requests.get(f"http://localhost:9123/api/local-products?client_id={client_id}&year_folder={year or ''}", timeout=3)
+                r = requests.get(f"http://localhost:9123/api/local-products?client_id={cid}&year_folder={year or ''}", timeout=3)
                 if r.status_code == 200:
                     return r.json()
             except Exception:
