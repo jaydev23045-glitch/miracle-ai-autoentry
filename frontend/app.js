@@ -126,10 +126,12 @@ document.addEventListener('DOMContentLoaded', () => {
     let isPaidApiKey = false;
     let discoveredClients = [];
     let activeYearFolder = "";
+    let activeClientId = localStorage.getItem('lastActiveClientId') || "CMP0005";
+
     function getActiveClientId() {
         if (clientSelect && clientSelect.value) return clientSelect.value;
         if (typeof activeClientId !== 'undefined' && activeClientId) return activeClientId;
-        return localStorage.getItem('lastActiveClientId') || '';
+        return localStorage.getItem('lastActiveClientId') || 'CMP0005';
     }
 
     let pendingMockData = []; // Store data while waiting for mapping
@@ -2466,12 +2468,12 @@ document.addEventListener('DOMContentLoaded', () => {
             const activePattern = bulkApplyPopup._patternKey || extractNarrationPatternKey(targetRows[0].narration || targetLedger);
             if (activePattern) {
                 try {
-                    const activeClientId = activeClientSpan ? activeClientSpan.textContent.trim() : "CMP0001";
+                    const memoryClientId = getActiveClientId() || (activeClientSpan ? activeClientSpan.textContent.trim() : "CMP0005");
                     await fetch(`${API_URL}/api/memory-vault/item`, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({
-                            client_id: activeClientId,
+                            client_id: memoryClientId,
                             category: "expense_mappings",
                             key: activePattern,
                             value: targetLedger
@@ -3858,11 +3860,21 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function generateProductOptions(selectedCode = "", rowGstPct = null) {
         let html = '<option value="">-- Select Miracle Product --</option>';
-        const isAuto = selectedCode === 'AUTO_CREATE_PRODUCT' || selectedCode === '';
+        const cleanCode = (selectedCode || "").trim();
+        const isAuto = cleanCode === 'AUTO_CREATE_PRODUCT' || cleanCode === '';
+        
+        let hasExactMatch = false;
+        if (clientProducts && clientProducts.length > 0 && cleanCode && !isAuto) {
+            hasExactMatch = clientProducts.some(p => (p.name || '').toUpperCase() === cleanCode.toUpperCase() || (p.code || '').toUpperCase() === cleanCode.toUpperCase());
+        }
+
         html += `<option value="AUTO_CREATE_PRODUCT" ${isAuto ? 'selected' : ''} class="text-purple-400 font-semibold">✨ [Auto-Create ${rowGstPct !== null && rowGstPct !== undefined ? rowGstPct + '% ' : ''}Product in Miracle]</option>`;
 
+        if (cleanCode && !isAuto && !hasExactMatch) {
+            html += `<option value="${cleanCode}" selected class="text-emerald-400 font-bold">✨ [Auto-Create '${cleanCode}' in Miracle]</option>`;
+        }
+
         if (clientProducts && clientProducts.length > 0) {
-            // Group products by category / commodity
             const categories = {};
             clientProducts.forEach(prod => {
                 const cat = (prod.category || prod.commodity || prod.commodity_type || "General Stock").trim();
@@ -3874,7 +3886,7 @@ document.addEventListener('DOMContentLoaded', () => {
             sortedCategories.forEach(catName => {
                 html += `<optgroup label="📦 ${catName.toUpperCase()}">`;
                 categories[catName].forEach(prod => {
-                    const isSelected = (prod.name === selectedCode || prod.code === selectedCode);
+                    const isSelected = hasExactMatch && (prod.name === cleanCode || prod.code === cleanCode || (prod.name || '').toUpperCase() === cleanCode.toUpperCase());
                     const pName = (prod.name || "").toUpperCase();
                     let matchesGst = false;
                     if (rowGstPct !== null && rowGstPct !== undefined) {
@@ -6464,7 +6476,10 @@ document.addEventListener('DOMContentLoaded', () => {
             const hasTcs = currentExtractedData.some(r => r.tcs > 0);
             const hasTds = currentExtractedData.some(r => r.tds > 0);
 
-            const firstItemName = (row.items && row.items.length > 0 && row.items[0].name) ? row.items[0].name : "";
+            const firstItemName = (row.items && row.items.length > 0 && row.items[0].name) ? row.items[0].name : (row.item_name || row.product_name || row.item || "");
+            if (!row.items || row.items.length === 0) {
+                row.items = [{ name: firstItemName || "AUTO_CREATE_PRODUCT", qty: row.qty || 1, rate: row.taxable || 0, amount: row.taxable || 0 }];
+            }
             const productOptions = generateProductOptions(firstItemName, row.gst_pct);
 
             html = `
