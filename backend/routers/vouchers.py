@@ -95,6 +95,8 @@ CLOUD_SYNCED_PRODUCTS: Dict[str, List[Dict[str, Any]]] = {}
 # Persistent sync cache path — survives container sleep/wake on Render
 _SYNC_CACHE_PATH = "/tmp/miracle_sync_cache.json"
 _sync_cache_loaded = False
+import threading
+_sync_cache_lock = threading.Lock()  # BUG#8 fix: protect against concurrent sync writes
 
 def _load_sync_cache():
     """Load persisted CLOUD_SYNCED data from disk on startup (survives Render sleep/wake)."""
@@ -104,8 +106,9 @@ def _load_sync_cache():
     _sync_cache_loaded = True
     try:
         if os.path.exists(_SYNC_CACHE_PATH):
-            with open(_SYNC_CACHE_PATH, 'r', encoding='utf-8') as f:
-                data = json.load(f)
+            with _sync_cache_lock:
+                with open(_SYNC_CACHE_PATH, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
             ledgers_data = data.get('ledgers', {})
             products_data = data.get('products', {})
             CLOUD_SYNCED_LEDGERS.update(ledgers_data)
@@ -118,13 +121,14 @@ def _load_sync_cache():
         print(f"[SyncCache] Notice loading cache: {e}")
 
 def _save_sync_cache():
-    """Persist CLOUD_SYNCED data to disk after every bridge sync."""
+    """Persist CLOUD_SYNCED data to disk after every bridge sync (thread-safe)."""
     try:
-        with open(_SYNC_CACHE_PATH, 'w', encoding='utf-8') as f:
-            json.dump({
-                'ledgers': CLOUD_SYNCED_LEDGERS,
-                'products': CLOUD_SYNCED_PRODUCTS
-            }, f)
+        with _sync_cache_lock:  # BUG#8 fix: exclusive lock prevents concurrent file corruption
+            with open(_SYNC_CACHE_PATH, 'w', encoding='utf-8') as f:
+                json.dump({
+                    'ledgers': CLOUD_SYNCED_LEDGERS,
+                    'products': CLOUD_SYNCED_PRODUCTS
+                }, f)
     except Exception as e:
         print(f"[SyncCache] Notice saving cache: {e}")
 
@@ -684,6 +688,12 @@ def normalize_confidence_and_flags(extracted_data: dict, module: str, client_mem
 def get_ledgers(year: Optional[str] = None, client_id: Optional[str] = None, handler: Optional[MiracleDBFHandler] = Depends(get_handler_optional)):
     """Reads all accounting ledgers from the active Miracle DBF or queries Miracle Bridge / Cloud Synced memory."""
     try:
+        if client_id:
+            settings = load_settings()
+            requested_path = os.path.join(settings.get("miracle_base_path", ""), sanitize_client_id(client_id))
+            if os.path.exists(requested_path):
+                handler = MiracleDBFHandler(requested_path)
+
         if not handler or not handler.client_path or not os.path.exists(handler.client_path):
             settings = load_settings()
             cid = (client_id or settings.get("active_client_id") or "").strip().upper()
@@ -697,17 +707,20 @@ def get_ledgers(year: Optional[str] = None, client_id: Optional[str] = None, han
 
             if synced:
                 # 🛡️ Sanitize: Fix any wrongly classified 'Bank' ledgers from stale cache
-                # (caused by old dbf_handler name-matching fallback before the fix)
+                # IMPORTANT: Use copies to avoid mutating the shared CLOUD_SYNCED_LEDGERS store (BUG#11 fix)
                 BANK_EXCLUSION_KEYWORDS = ['CHARG', 'INTEREST', 'INTREST', 'FEES', 'FEE', 'LOAN',
                     'SALARY', 'SALARIES', 'RENT', 'PARKING', 'PETROL', 'DIESEL', 'EXPENSE', 'SERVICE']
                 GENUINE_BANK_CODES = {'G0000004', 'G0000016'}
+                sanitized = []
                 for led in synced:
-                    if led.get('classification') == 'Bank':
-                        name_up = str(led.get('name') or '').strip().upper()
-                        group_code = str(led.get('group_code') or '').strip()
-                        if group_code not in GENUINE_BANK_CODES and any(kw in name_up for kw in BANK_EXCLUSION_KEYWORDS):
-                            led['classification'] = 'Expense'
-                return {"status": "success", "year": year or "", "count": len(synced), "data": synced}
+                    led_copy = dict(led)  # shallow copy — never mutate shared store
+                    if led_copy.get('classification') == 'Bank':
+                        name_up = str(led_copy.get('name') or '').strip().upper()
+                        group_code_check = str(led_copy.get('group_code') or '').strip()
+                        if group_code_check not in GENUINE_BANK_CODES and any(kw in name_up for kw in BANK_EXCLUSION_KEYWORDS):
+                            led_copy['classification'] = 'Expense'
+                    sanitized.append(led_copy)
+                return {"status": "success", "year": year or "", "count": len(sanitized), "data": sanitized}
             import requests
             try:
                 r = requests.get(f"http://localhost:9123/api/local-ledgers?client_id={cid}", timeout=3)
@@ -954,17 +967,20 @@ def sync_masters_from_bridge(payload: MasterSyncPayload):
 @router.get("/api/bridge/sync-status")
 def get_sync_status():
     """Diagnostics: Returns all synced clients and their ledger/product counts."""
-    return {
-        "status": "success",
-        "synced_clients": {
+    with _sync_cache_lock:
+        keys = set(list(CLOUD_SYNCED_LEDGERS.keys()) + list(CLOUD_SYNCED_PRODUCTS.keys()))
+        synced_clients = {
             cid: {
                 "ledgers": len(CLOUD_SYNCED_LEDGERS.get(cid, [])),
                 "products": len(CLOUD_SYNCED_PRODUCTS.get(cid, []))
             }
-            for cid in set(list(CLOUD_SYNCED_LEDGERS.keys()) + list(CLOUD_SYNCED_PRODUCTS.keys()))
-        },
+            for cid in keys
+        }
+    return {
+        "status": "success",
+        "synced_clients": synced_clients,
         "cache_file_exists": os.path.exists(_SYNC_CACHE_PATH),
-        "total_clients": len(set(list(CLOUD_SYNCED_LEDGERS.keys()) + list(CLOUD_SYNCED_PRODUCTS.keys())))
+        "total_clients": len(synced_clients)
     }
 
 @router.get("/api/products")
@@ -972,6 +988,12 @@ def get_sync_status():
 def get_products(year: Optional[str] = None, client_id: Optional[str] = None, handler: Optional[MiracleDBFHandler] = Depends(get_handler_optional)):
     """Reads all products from active Miracle DBFs across all financial years or Cloud Synced memory."""
     try:
+        if client_id:
+            settings = load_settings()
+            requested_path = os.path.join(settings.get("miracle_base_path", ""), sanitize_client_id(client_id))
+            if os.path.exists(requested_path):
+                handler = MiracleDBFHandler(requested_path)
+
         if not handler or not handler.client_path or not os.path.exists(handler.client_path):
             settings = load_settings()
             cid = (client_id or settings.get("active_client_id") or "").strip().upper()
@@ -1094,20 +1116,32 @@ async def upload_document(
                 client_memory["existing_ledgers"] = cached[1]
             else:
                 ledgers = handler.read_ledgers()
-                ledger_names = [led['name'] for led in ledgers if led.get('name')]
-                client_memory["existing_ledgers"] = ledger_names
-                _LEDGER_CACHE[client_id] = (now, ledger_names)
-                print(f"💾 [Ledger Cache STORE] Cached {len(ledger_names)} ledgers for '{client_id}'")
+                # 💡 Store FULL DICTS (not just names) so gemini_service can build ledger_classification_map
+                # and the Bank Identity Guard fires correctly based on DBF classification
+                client_memory["existing_ledgers"] = ledgers
+                _LEDGER_CACHE[client_id] = (now, ledgers)
+                print(f"💾 [Ledger Cache STORE] Cached {len(ledgers)} full-dict ledgers for '{client_id}' (classification data included)")
         except Exception as dbf_err:
             print(f"Warning: Could not read local DBF ledgers for Gemini context: {dbf_err}")
             # Primary Fallback 1: Use ledgers_list passed directly from Frontend Form upload
             if ledgers_list:
-                parsed_ledgers = [l.strip() for l in ledgers_list.split(",") if l.strip()]
-                if parsed_ledgers:
-                    client_memory["existing_ledgers"] = parsed_ledgers
-                    print(f"⚡ [Frontend Form Ledger Sync] Received {len(parsed_ledgers)} client ledgers directly from frontend form upload!")
+                raw_names = [l.strip() for l in ledgers_list.split(",") if l.strip()]
+                if raw_names:
+                    synced_map = {}
+                    for k, v in CLOUD_SYNCED_LEDGERS.items():
+                        for s_led in v:
+                            if isinstance(s_led, dict) and s_led.get("name"):
+                                synced_map[s_led["name"].upper()] = s_led
+                    parsed_ledgers_dicts = []
+                    for name in raw_names:
+                        if name.upper() in synced_map:
+                            parsed_ledgers_dicts.append(synced_map[name.upper()])
+                        else:
+                            parsed_ledgers_dicts.append({"name": name, "classification": "Other"})
+                    client_memory["existing_ledgers"] = parsed_ledgers_dicts
+                    print(f"⚡ [Frontend Form Ledger Sync] Received {len(parsed_ledgers_dicts)} client ledgers directly from frontend form upload!")
 
-            # Secondary Fallback 2: Use CLOUD_SYNCED_LEDGERS (populated by Miracle Bridge sync)
+            # Secondary Fallback 2: Use CLOUD_SYNCED_LEDGERS (full dicts with classification data)
             if not client_memory.get("existing_ledgers"):
                 synced_leds = CLOUD_SYNCED_LEDGERS.get(client_id.upper(), [])
                 if not synced_leds and CLOUD_SYNCED_LEDGERS:
@@ -1117,10 +1151,8 @@ async def upload_document(
                             synced_leds = v
                             break
                 if synced_leds:
-                    ledger_names = [led.get('name') if isinstance(led, dict) else str(led) for led in synced_leds if led]
-                    if ledger_names:
-                        client_memory["existing_ledgers"] = ledger_names
-                        print(f"⚡ [Cloud Sync Ledger Fallback] Using {len(ledger_names)} cloud-synced ledgers for '{client_id}' AI mapping!")
+                    client_memory["existing_ledgers"] = synced_leds  # full dicts with classification
+                    print(f"⚡ [Cloud Sync Ledger Fallback] Using {len(synced_leds)} cloud-synced full-dict ledgers for '{client_id}' AI mapping!")
 
             # Tertiary Fallback 3: Query Miracle Bridge on port 9123 if running on cloud/hybrid setup
             if not client_memory.get("existing_ledgers"):
@@ -1245,7 +1277,7 @@ async def upload_document(
                         pass
                 print(f"Detected company state code: {company_state}")
                 from core.excel_parser import parse_excel_to_json as _excel_parser
-                direct_result = _excel_parser(temp_file_path, company_state_code=company_state, instruction=instruction)
+                direct_result = _excel_parser(temp_file_path, company_state_code=company_state, instruction=instruction, module=module)  # 🔧 BUG#1 fix: pass module
                 if direct_result.get("status") == "success":
                     print("Applying AI Brain product mappings & formatting post-processor...")
                     direct_result = gemini.apply_product_mappings(direct_result, client_memory, module, instruction)

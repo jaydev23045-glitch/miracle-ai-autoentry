@@ -87,7 +87,10 @@ def parse_gst_pct(val):
         return rounded
     if round(rounded * 2.0, 2) in VALID_RATES:
         return rounded
-    return 18.0
+    if rounded > 0:
+        print(f"⚠️ Non-standard GST rate {rounded}% — preserving parsed rate instead of defaulting to 18%")
+        return rounded
+    return 0.0
 
 def parse_gst_amt(val):
     val_str = str(val).strip()
@@ -312,8 +315,10 @@ def get_group_key(row):
         return f"{b_clean}|{d_val}"
     return f"NO_INV_{d_val}_{p_val.upper()}"
 
-def parse_excel_to_json(file_path: str, company_state_code: str = '24', instruction: str = '', product_catalog: dict = None) -> dict:
+def parse_excel_to_json(file_path: str, company_state_code: str = '24', instruction: str = '', product_catalog: dict = None, module: str = 'Sales') -> dict:
     """Parses the Sales/Purchases Excel spreadsheet into standard JSON using dynamic column normalization with AI product catalog auto-filling."""
+    is_purchase = module.lower() in ('purchases', 'purchase')
+    synthetic_item_name = "PURCHASES" if is_purchase else "SALES"
     try:
         xl = pd.ExcelFile(file_path)
         sheet_names = xl.sheet_names
@@ -656,20 +661,14 @@ def parse_excel_to_json(file_path: str, company_state_code: str = '24', instruct
                             item_name = "General Product"
 
                         
+                    # Note: qty and rate already read above at lines 639-640; removed duplicate reads (BUG#3 fix)
                     hsn = str(item_row.get("hsn", "")).strip() if pd.notna(item_row.get("hsn")) else ""
-                    if hsn.endswith(".0"): hsn = hsn[:-2]
-                    if hsn.lower() == "nan": hsn = ""
-                        
-                    qty = safe_float(item_row.get("qty", 1.0)) if pd.notna(item_row.get("qty")) else 1.0
-                    rate = safe_float(item_row.get("rate", 0.0)) if pd.notna(item_row.get("rate")) else 0.0
                     
                     gst_pct_val = item_row.get("gst_pct")
                     gst_amt_raw = item_row.get("gst_amt")
                     
-                    if gst_pct_val is None or (isinstance(gst_pct_val, float) and pd.isna(gst_pct_val)):
+                    if (gst_pct_val is None or (isinstance(gst_pct_val, float) and pd.isna(gst_pct_val))) and gst_amt_raw is not None and pd.notna(gst_amt_raw) and "%" in str(gst_amt_raw):
                         gst_pct_val = gst_amt_raw
-                    if gst_amt_raw is None or (isinstance(gst_amt_raw, float) and pd.isna(gst_amt_raw)):
-                        gst_amt_raw = gst_pct_val
                         
                     gst_pct = parse_gst_pct(gst_pct_val) if gst_pct_val is not None and pd.notna(gst_pct_val) else 0.0
                     if gst_pct < 1.0 and gst_pct > 0:
@@ -852,7 +851,7 @@ def parse_excel_to_json(file_path: str, company_state_code: str = '24', instruct
                     cgst, sgst, igst = round(gst_amt_raw / 2.0, 2), round(gst_amt_raw / 2.0, 2), 0.0
 
                 synthetic_item = {
-                    "name": "SALES",
+                    "name": synthetic_item_name,  # 🔧 BUG#1 FIX: use module-appropriate item name
                     "hsn_code": hsn_raw,
                     "uom": "OTH",
                     "qty": 1.0,
@@ -950,7 +949,7 @@ def parse_excel_to_json(file_path: str, company_state_code: str = '24', instruct
                     "party_address": "", "party_city": "", "party_pincode": "",
                     "taxable_amount": round(taxable_raw, 2), "cgst": round(cgst, 2), "sgst": round(sgst, 2),
                     "igst": round(igst, 2), "total": round(total_raw, 2), "discount": round(discount_raw, 2),
-                    "items": [{"name": "SALES", "hsn_code": "", "uom": "OTH", "qty": 1.0,
+                    "items": [{"name": synthetic_item_name, "hsn_code": "", "uom": "OTH", "qty": 1.0,  # BUG#1 fix
                                "rate": taxable_raw, "gst_pct": gst_pct_raw, "taxable": taxable_raw,
                                "amount": taxable_raw, "discount": discount_raw}]
                 })
@@ -975,7 +974,11 @@ def parse_excel_to_json(file_path: str, company_state_code: str = '24', instruct
         
         if "date" in df_items.columns and "party_name" in df_items.columns:
             df_items['date'] = df_items['date'].ffill()
-            df_items['party_name'] = df_items['party_name'].ffill()
+            # 🔧 FIX BUG#10: use groupby bill_no forward-fill to prevent party name leaking across different bills
+            if "bill_no" in df_items.columns:
+                df_items['party_name'] = df_items.groupby("bill_no")["party_name"].ffill()
+            else:
+                df_items['party_name'] = df_items['party_name'].ffill()
         
         df_items['Group_Key'] = df_items.apply(
             lambda row: str(row.get('bill_no', '')).strip() if pd.notna(row.get('bill_no')) and str(row.get('bill_no')).strip() != "nan" else f"NO_INV_{row.get('date', '')}_{row.get('party_name', '')}",

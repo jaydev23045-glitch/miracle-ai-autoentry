@@ -126,12 +126,10 @@ document.addEventListener('DOMContentLoaded', () => {
     let isPaidApiKey = false;
     let discoveredClients = [];
     let activeYearFolder = "";
-    let activeClientId = "CMP0005";
-
     function getActiveClientId() {
         if (clientSelect && clientSelect.value) return clientSelect.value;
         if (typeof activeClientId !== 'undefined' && activeClientId) return activeClientId;
-        return 'CMP0005';
+        return localStorage.getItem('lastActiveClientId') || '';
     }
 
     let pendingMockData = []; // Store data while waiting for mapping
@@ -420,12 +418,14 @@ document.addEventListener('DOMContentLoaded', () => {
                 : 'C:\\Miracle';
             
             let data = null;
+            let fetchedFromLocalBridge = false;
             if (isLocalBridgeOnline) {
                 try {
                     const localUrl = `${LOCAL_BRIDGE_URL}/api/local-ledgers?client_id=${clientId}&year_folder=${activeYearFolder || 'YR25'}&base_path=${encodeURIComponent(currentMiraclePath)}`;
                     const res = await fetch(localUrl);
                     if (res.ok) {
                         data = await res.json();
+                        fetchedFromLocalBridge = true;
                     }
                 } catch (bridgeErr) {
                     console.warn("Local bridge ledger fetch notice (falling back to Cloud API):", bridgeErr);
@@ -444,8 +444,8 @@ document.addEventListener('DOMContentLoaded', () => {
             window.clientLedgers = clientLedgers; // Expose globally for Bank Statement module
             console.log(`Loaded ${clientLedgers.length} classified ledgers for financial year ${data ? (data.year || activeYearFolder) : activeYearFolder}`);
 
-            // Automatically sync local PC ledgers to Cloud Server memory for seamless AI mapping
-            if (clientLedgers.length > 0) {
+            // Automatically sync local PC ledgers to Cloud Server memory ONLY if data came from local bridge (BUG#16 fix)
+            if (fetchedFromLocalBridge && clientLedgers.length > 0) {
                 fetch(`${API_URL}/api/bridge/sync-masters`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
@@ -567,12 +567,14 @@ document.addEventListener('DOMContentLoaded', () => {
                 ? miracleBasePathInput.value.trim() : 'C:\\Miracle';
             
             let data = null;
+            let fetchedFromLocalBridge = false;
             if (isLocalBridgeOnline) {
                 try {
                     const localUrl = `${LOCAL_BRIDGE_URL}/api/local-products?client_id=${clientId}&year_folder=${activeYearFolder || ''}&base_path=${encodeURIComponent(currentMiraclePath)}`;
                     const res = await fetch(localUrl);
                     if (res.ok) {
                         data = await res.json();
+                        fetchedFromLocalBridge = true;
                     }
                 } catch (bridgeErr) {
                     console.warn("Local bridge product fetch notice (falling back to Cloud API):", bridgeErr);
@@ -591,8 +593,8 @@ document.addEventListener('DOMContentLoaded', () => {
             window.clientProducts = clientProducts;
             console.log(`Loaded ${clientProducts.length} products for financial year ${data ? (data.year || activeYearFolder) : activeYearFolder}`);
 
-            // Automatically sync local PC products to Cloud Server memory for seamless AI mapping
-            if (clientProducts.length > 0) {
+            // Automatically sync local PC products to Cloud Server memory ONLY if data came from local bridge (BUG#16 fix)
+            if (fetchedFromLocalBridge && clientProducts.length > 0) {
                 fetch(`${API_URL}/api/bridge/sync-masters`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
@@ -5174,7 +5176,7 @@ document.addEventListener('DOMContentLoaded', () => {
             gridBody.innerHTML = '';
 
             let globalAutoCreateLedgers = [];
-            let autoCreateLedgerHints = {};
+            autoCreateLedgerHints = autoCreateLedgerHints || {}; // BUG#9 fix: use global autoCreateLedgerHints
             if (currentModule === 'Bank Statements' || currentModule === 'Cash Entries') {
                 const uniqueLedgers = new Set();
                 currentExtractedData.forEach(d => {
@@ -5237,7 +5239,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const visibleSlice = displayData.slice(startIndex, endIndex);
 
         let globalAutoCreateLedgers = [];
-        let autoCreateLedgerHints = {};
+        autoCreateLedgerHints = autoCreateLedgerHints || {}; // BUG#9 fix: use global autoCreateLedgerHints
         if (currentModule === 'Bank Statements' || currentModule === 'Cash Entries') {
             const uniqueLedgers = new Set();
             currentExtractedData.forEach(d => {
