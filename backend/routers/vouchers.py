@@ -56,6 +56,8 @@ def zero_risk_sanitize_client_id(client_id: str, default_client: str = "CMP0001"
     clean = re.sub(r'[^A-Za-z0-9_\-]', '', clean)
     return clean if clean else default_client
 
+sanitize_client_id = zero_risk_sanitize_client_id
+
 def get_handler() -> MiracleDBFHandler:
     """
     FastAPI dependency: returns a MiracleDBFHandler for the currently active client.
@@ -932,9 +934,15 @@ def get_debtor_balances(year: Optional[str] = None, handler: Optional[MiracleDBF
         return {"status": "success", "year": year or "", "count": 0, "data": []}
 
 @router.post("/api/refresh-ledgers")
-def refresh_ledgers(year: Optional[str] = None, handler: Optional[MiracleDBFHandler] = Depends(get_handler_optional)):
+def refresh_ledgers(year: Optional[str] = None, client_id: Optional[str] = None, handler: Optional[MiracleDBFHandler] = Depends(get_handler_optional)):
     """Forces re-reading of Miracle DBF files and returns fresh ledgers."""
     try:
+        if client_id:
+            settings = load_settings()
+            requested_path = os.path.join(settings.get("miracle_base_path", ""), sanitize_client_id(client_id))
+            if os.path.exists(requested_path):
+                handler = MiracleDBFHandler(requested_path)
+
         if not handler or not handler.client_path or not os.path.exists(handler.client_path):
             return {"status": "success", "year": year or "", "count": 0, "data": []}
         ledgers = handler.read_ledgers(year_folder=year)
@@ -1028,6 +1036,12 @@ def get_products(year: Optional[str] = None, client_id: Optional[str] = None, ha
 def refresh_products(year: Optional[str] = None, client_id: Optional[str] = None, handler: Optional[MiracleDBFHandler] = Depends(get_handler_optional)):
     """Forces re-reading of Miracle DBF files across all years and returns fresh products."""
     try:
+        if client_id:
+            settings = load_settings()
+            requested_path = os.path.join(settings.get("miracle_base_path", ""), sanitize_client_id(client_id))
+            if os.path.exists(requested_path):
+                handler = MiracleDBFHandler(requested_path)
+
         if not handler or not handler.client_path or not os.path.exists(handler.client_path):
             settings = load_settings()
             cid = (client_id or settings.get("active_client_id") or "").strip().upper()

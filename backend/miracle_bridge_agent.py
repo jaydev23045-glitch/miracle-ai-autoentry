@@ -1090,7 +1090,7 @@ def get_local_products(base_path: str = "C:\\Miracle", client_id: str = "CMP0005
         target_year = year or year_folder or ""
         handler = MiracleDBFHandler(client_path)
         products = handler.get_products(target_year)
-        return {"status": "success", "products": products}
+        return {"status": "success", "products": products, "data": products}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to read products: {str(e)}")
 

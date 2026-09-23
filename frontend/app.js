@@ -434,7 +434,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
             }
 
-            if (!data || !data.data || data.data.length === 0) {
+            const hasLedgersData = data && ((Array.isArray(data.data) && data.data.length > 0) || (Array.isArray(data.ledgers) && data.ledgers.length > 0));
+            if (!hasLedgersData) {
                 const cloudUrl = `${API_URL}/api/ledgers?client_id=${clientId}${activeYearFolder ? '&year=' + activeYearFolder : ''}`;
                 const res = await fetch(cloudUrl);
                 if (res.ok) {
@@ -583,7 +584,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
             }
 
-            if (!data || !data.data || data.data.length === 0) {
+            const hasProductsData = data && ((Array.isArray(data.data) && data.data.length > 0) || (Array.isArray(data.products) && data.products.length > 0));
+            if (!hasProductsData) {
                 const cloudUrl = `${API_URL}/api/products?client_id=${clientId}${activeYearFolder ? '&year=' + activeYearFolder : ''}`;
                 const res = await fetch(cloudUrl);
                 if (res.ok) {
