@@ -5328,7 +5328,17 @@ Return ONLY valid JSON.
 
                 gh_upper = str(row.get("group_hint", "")).upper()
                 dbf_cls_for_matched = ledger_classification_map.get(matched_ledger.upper(), "")
-                if dbf_cls_for_matched == "Bank":
+                # 🏦 BANK IDENTITY GUARD — ONLY apply if the mapped_ledger is TRULY a bank account name,
+                # NOT a payment to a vendor/person/expense that happens to have 'Bank' in classification
+                # due to overly-broad DBF name fallback. Extra check: group_hint from AI must also point to Bank.
+                is_genuine_bank_ledger = (
+                    dbf_cls_for_matched == "Bank"
+                    and not any(exp_kw in matched_ledger.upper() for exp_kw in [
+                        'CHARG', 'INTEREST', 'INTREST', 'FEES', 'FEE', 'LOAN', 'SALARY', 'SALARIES',
+                        'RENT', 'PARKING', 'PETROL', 'DIESEL', 'EXPENSE', 'EXPENSES', 'SERVICE'
+                    ])
+                )
+                if is_genuine_bank_ledger:
                     row["group_hint"] = "Bank Accounts"
                 elif "BANK" in gh_upper and dbf_cls_for_matched not in ("Bank", ""):
                     row["group_hint"] = "Sundry Creditors" if tx_type == "Payment" else "Sundry Debtors"
@@ -5345,11 +5355,18 @@ Return ONLY valid JSON.
                 row["party"] = matched_ledger
                 # 🏦 BANK IDENTITY GUARD — trust RKACCM11 hierarchy classification above all else:
                 # If dbf_cls='Bank' → this ledger IS a real bank account (e.g. Saurashtra Gramin Bank).
-                # Client may have assigned wrong group_name in Miracle, but the RKACCM11 walk correctly identifies it.
-                # RULE: dbf_cls='Bank' → keep group_hint as Bank Accounts regardless of group_name in client's books.
+                # SAFETY: Only apply when mapped_ledger is a REAL bank account name, NOT an expense/party
+                # that got wrongly tagged 'Bank' from name-matching fallback (e.g. 'Bank Charges', 'Bank Interest').
                 gh_upper = str(row.get("group_hint", "")).upper()
                 dbf_cls_for_matched = ledger_classification_map.get(matched_ledger.upper(), "")
-                if dbf_cls_for_matched == "Bank":
+                is_genuine_bank_ledger = (
+                    dbf_cls_for_matched == "Bank"
+                    and not any(exp_kw in matched_ledger.upper() for exp_kw in [
+                        'CHARG', 'INTEREST', 'INTREST', 'FEES', 'FEE', 'LOAN', 'SALARY', 'SALARIES',
+                        'RENT', 'PARKING', 'PETROL', 'DIESEL', 'EXPENSE', 'EXPENSES', 'SERVICE'
+                    ])
+                )
+                if is_genuine_bank_ledger:
                     # Real bank ledger — ensure group_hint reflects Bank Accounts
                     row["group_hint"] = "Bank Accounts"
                 elif "BANK" in gh_upper and dbf_cls_for_matched not in ("Bank", ""):

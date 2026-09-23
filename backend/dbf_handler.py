@@ -903,7 +903,15 @@ class MiracleDBFHandler:
                 if classification == 'Other':
                     if 'CASH' in name_up or code_up == 'ACASHACT':
                         classification = 'Cash'
-                    elif any(brand in name_up for brand in ['BANK', 'HDFC', 'ICICI', 'SBI', 'AXIS', 'KOTAK', 'CANARA', 'UNION']):
+                    elif (
+                        # Only mark as Bank if the ledger is CLEARLY a bank account — not Bank Charges/Interest/Fees
+                        # Exclude: BANK CHARG, BANK INTEREST, BANK FEES, BANK SERVICE, BANK COMM, BANK PENALT
+                        not any(excl in name_up for excl in ['BANK CHARG', 'BANK INTEREST', 'BANK INTREST', 'BANK FEES', 'BANK FEE', 'BANK SERVICE', 'BANK COMM', 'BANK PENALT', 'BANK LOAN', 'BANK OVERDR'])
+                        and any(brand in name_up for brand in ['HDFC', 'ICICI', 'SBI', 'AXIS', 'KOTAK', 'CANARA', 'UNION BANK', 'INDUSIND', 'IDFC', 'PUNJAB NATIONAL', 'BANK OF BARODA', 'BANK OF INDIA', 'CENTRAL BANK', 'FEDERAL BANK', 'KARUR VYSYA', 'SARASWAT BANK', 'SURAT DIST CO-OP', 'SAURASHTRA GRAMIN', 'YES BANK'])
+                    ):
+                        classification = 'Bank'
+                    elif group_code in ('G0000004', 'G0000016') and classification == 'Other':
+                        # Explicitly bank group codes — always Bank
                         classification = 'Bank'
                 
                 MIRACLE_GROUP_CODE_MAP = {

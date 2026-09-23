@@ -5585,7 +5585,7 @@ document.addEventListener('DOMContentLoaded', () => {
             return isPayment ? 'Indirect Expenses' : 'Indirect Income';
         }
 
-        // 2. Check master Miracle ledgers (clientLedgers) loaded from RKACCM01 DBF (Ground Truth)
+         // 2. Check master Miracle ledgers (clientLedgers) loaded from RKACCM01 DBF (Ground Truth)
         // Uses 'classification' from RKACCM11 group hierarchy walk (Bank, Expense, Debtor, Creditor, Investment, etc.)
         // NO hardcoded keyword lists — the accounting group nature IS the truth.
         if (typeof clientLedgers !== 'undefined' && clientLedgers && clientLedgers.length > 0 && legUp && legUp !== 'SUSPENSE ACCOUNT') {
@@ -5598,12 +5598,17 @@ document.addEventListener('DOMContentLoaded', () => {
                 // Read the DBF hierarchy-resolved classification (Bank/Expense/Debtor/Creditor/Investment/Capital/Cash...)
                 const dbfClass = (masterMatch.classification || '').trim();
 
-                // 🏦 BANK IDENTITY GUARD — trust RKACCM11 hierarchy walk above all else:
-                // If the DBF hierarchy walk resolved this ledger as 'Bank', it IS a real bank account.
-                // Many clients have bank ledgers wrongly assigned to incorrect groups in Miracle (e.g. "Direct Income"),
-                // but the RKACCM11 parent-chain walk correctly identifies them as Bank via group ancestry.
-                // RULE: dbfClass='Bank' → ALWAYS Bank Accounts (bank ledger is bank ledger, regardless of wrong group_name in client books).
-                if (dbfClass === 'Bank') {
+                // 🏦 BANK IDENTITY GUARD — trust RKACCM11 hierarchy walk, BUT only for genuine bank account ledgers.
+                // Prevent expense/party ledgers that were incorrectly tagged 'Bank' (due to name-matching fallback
+                // in dbf_handler) from forcing group_hint = 'Bank Accounts'.
+                // SAFE Bank: HDFC A/C, ICICI Bank, Saurashtra Gramin Bank etc.
+                // UNSAFE (exclude): Bank Charges, Bank Interest, Bank Loan, Parking (via bank), Salary etc.
+                const EXPENSE_EXCLUSION_KEYWORDS = ['CHARG', 'INTEREST', 'INTREST', 'FEES', 'FEE', 'LOAN',
+                    'SALARY', 'SALARIES', 'RENT', 'PARKING', 'PETROL', 'DIESEL', 'EXPENSE', 'EXPENSES', 'SERVICE'];
+                const isGenuineBankLedger = dbfClass === 'Bank' &&
+                    !EXPENSE_EXCLUSION_KEYWORDS.some(kw => legUp.includes(kw));
+
+                if (isGenuineBankLedger) {
                     return 'Bank Accounts';
                 }
 

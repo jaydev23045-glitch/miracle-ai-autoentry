@@ -656,6 +656,17 @@ def get_ledgers(year: Optional[str] = None, client_id: Optional[str] = None, han
                         break
 
             if synced:
+                # 🛡️ Sanitize: Fix any wrongly classified 'Bank' ledgers from stale cache
+                # (caused by old dbf_handler name-matching fallback before the fix)
+                BANK_EXCLUSION_KEYWORDS = ['CHARG', 'INTEREST', 'INTREST', 'FEES', 'FEE', 'LOAN',
+                    'SALARY', 'SALARIES', 'RENT', 'PARKING', 'PETROL', 'DIESEL', 'EXPENSE', 'SERVICE']
+                GENUINE_BANK_CODES = {'G0000004', 'G0000016'}
+                for led in synced:
+                    if led.get('classification') == 'Bank':
+                        name_up = str(led.get('name') or '').strip().upper()
+                        group_code = str(led.get('group_code') or '').strip()
+                        if group_code not in GENUINE_BANK_CODES and any(kw in name_up for kw in BANK_EXCLUSION_KEYWORDS):
+                            led['classification'] = 'Expense'
                 return {"status": "success", "year": year or "", "count": len(synced), "data": synced}
             import requests
             try:
