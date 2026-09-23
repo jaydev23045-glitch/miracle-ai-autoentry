@@ -6479,7 +6479,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     </div>
                     <div class="mt-1 flex items-center gap-1">
                         <span class="text-[10px] text-indigo-400 font-bold uppercase tracking-tight whitespace-nowrap"><i class="fa-solid fa-box text-indigo-400 mr-0.5"></i>Item:</span>
-                        <select class="bg-slate-950 border border-indigo-500/30 text-indigo-300 text-[11px] font-bold rounded-lg px-2 py-0.5 focus:outline-none transition product-item-select cursor-pointer hover:border-indigo-400 w-full" title="Select product item from Miracle DBF">
+                        <select class="bg-slate-950 border border-indigo-500/30 text-indigo-300 text-[11px] font-bold rounded-lg px-2 py-0.5 focus:outline-none transition product-item-select cursor-pointer hover:border-indigo-400 w-full" data-gst-pct="${row.gst_pct !== undefined && row.gst_pct !== null ? row.gst_pct : 0}" title="Select product item from Miracle DBF">
                             ${productOptions}
                         </select>
                     </div>
@@ -6598,6 +6598,22 @@ document.addEventListener('DOMContentLoaded', () => {
             }
             const productItemSelect = tr.querySelector('.product-item-select');
             if (productItemSelect) {
+                const ensureRowProductsPopulated = async () => {
+                    if (productItemSelect.options.length <= 2) {
+                        if (!clientProducts || clientProducts.length === 0) {
+                            try { await fetchProducts(); } catch(e) {}
+                        }
+                        if (clientProducts && clientProducts.length > 0) {
+                            const currentVal = productItemSelect.value;
+                            const rowGst = parseFloat(productItemSelect.dataset.gstPct || row.gst_pct || 0);
+                            productItemSelect.innerHTML = generateProductOptions(currentVal, rowGst);
+                        }
+                    }
+                };
+                productItemSelect.addEventListener('focus', ensureRowProductsPopulated);
+                productItemSelect.addEventListener('click', ensureRowProductsPopulated);
+                productItemSelect.addEventListener('mouseenter', ensureRowProductsPopulated);
+
                 productItemSelect.addEventListener('change', () => {
                     const newProd = productItemSelect.value;
                     if (row.items && row.items.length > 0) {
