@@ -92,6 +92,46 @@ _LEDGER_CACHE_TTL_SECONDS = 60  # Refresh ledger list every 60 seconds
 CLOUD_SYNCED_LEDGERS: Dict[str, List[Dict[str, Any]]] = {}
 CLOUD_SYNCED_PRODUCTS: Dict[str, List[Dict[str, Any]]] = {}
 
+# Persistent sync cache path — survives container sleep/wake on Render
+_SYNC_CACHE_PATH = "/tmp/miracle_sync_cache.json"
+_sync_cache_loaded = False
+
+def _load_sync_cache():
+    """Load persisted CLOUD_SYNCED data from disk on startup (survives Render sleep/wake)."""
+    global _sync_cache_loaded
+    if _sync_cache_loaded:
+        return
+    _sync_cache_loaded = True
+    try:
+        if os.path.exists(_SYNC_CACHE_PATH):
+            with open(_SYNC_CACHE_PATH, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+            ledgers_data = data.get('ledgers', {})
+            products_data = data.get('products', {})
+            CLOUD_SYNCED_LEDGERS.update(ledgers_data)
+            CLOUD_SYNCED_PRODUCTS.update(products_data)
+            total_clients = len(ledgers_data)
+            total_ledgers = sum(len(v) for v in ledgers_data.values())
+            total_products = sum(len(v) for v in products_data.values())
+            print(f"[SyncCache] ✅ Loaded {total_clients} clients, {total_ledgers} ledgers, {total_products} products from disk cache.")
+    except Exception as e:
+        print(f"[SyncCache] Notice loading cache: {e}")
+
+def _save_sync_cache():
+    """Persist CLOUD_SYNCED data to disk after every bridge sync."""
+    try:
+        with open(_SYNC_CACHE_PATH, 'w', encoding='utf-8') as f:
+            json.dump({
+                'ledgers': CLOUD_SYNCED_LEDGERS,
+                'products': CLOUD_SYNCED_PRODUCTS
+            }, f)
+    except Exception as e:
+        print(f"[SyncCache] Notice saving cache: {e}")
+
+# Load cache immediately at module import (runs on every server startup)
+_load_sync_cache()
+
+
 class MasterSyncPayload(BaseModel):
     client_id: str
     year_folder: Optional[str] = None
@@ -898,13 +938,33 @@ def sync_masters_from_bridge(payload: MasterSyncPayload):
     client_id = payload.client_id or "CMP0013"
     if payload.ledgers:
         CLOUD_SYNCED_LEDGERS[client_id] = payload.ledgers
+        print(f"[BridgeSync] 📚 Stored {len(payload.ledgers)} ledgers for client '{client_id}'")
     if payload.products:
         CLOUD_SYNCED_PRODUCTS[client_id] = payload.products
+        print(f"[BridgeSync] 📦 Stored {len(payload.products)} products for client '{client_id}'")
+    # 💾 Persist to disk so data survives server sleep/wake on Render
+    _save_sync_cache()
     return {
         "status": "success",
         "client_id": client_id,
         "synced_ledgers_count": len(CLOUD_SYNCED_LEDGERS.get(client_id, [])),
         "synced_products_count": len(CLOUD_SYNCED_PRODUCTS.get(client_id, []))
+    }
+
+@router.get("/api/bridge/sync-status")
+def get_sync_status():
+    """Diagnostics: Returns all synced clients and their ledger/product counts."""
+    return {
+        "status": "success",
+        "synced_clients": {
+            cid: {
+                "ledgers": len(CLOUD_SYNCED_LEDGERS.get(cid, [])),
+                "products": len(CLOUD_SYNCED_PRODUCTS.get(cid, []))
+            }
+            for cid in set(list(CLOUD_SYNCED_LEDGERS.keys()) + list(CLOUD_SYNCED_PRODUCTS.keys()))
+        },
+        "cache_file_exists": os.path.exists(_SYNC_CACHE_PATH),
+        "total_clients": len(set(list(CLOUD_SYNCED_LEDGERS.keys()) + list(CLOUD_SYNCED_PRODUCTS.keys())))
     }
 
 @router.get("/api/products")
@@ -1047,11 +1107,25 @@ async def upload_document(
                     client_memory["existing_ledgers"] = parsed_ledgers
                     print(f"⚡ [Frontend Form Ledger Sync] Received {len(parsed_ledgers)} client ledgers directly from frontend form upload!")
 
-            # Secondary Fallback 2: Query Miracle Bridge on port 9123 if running on cloud/hybrid setup
+            # Secondary Fallback 2: Use CLOUD_SYNCED_LEDGERS (populated by Miracle Bridge sync)
+            if not client_memory.get("existing_ledgers"):
+                synced_leds = CLOUD_SYNCED_LEDGERS.get(client_id.upper(), [])
+                if not synced_leds and CLOUD_SYNCED_LEDGERS:
+                    # Try any synced client if specific one not found
+                    for k, v in CLOUD_SYNCED_LEDGERS.items():
+                        if v:
+                            synced_leds = v
+                            break
+                if synced_leds:
+                    ledger_names = [led.get('name') if isinstance(led, dict) else str(led) for led in synced_leds if led]
+                    if ledger_names:
+                        client_memory["existing_ledgers"] = ledger_names
+                        print(f"⚡ [Cloud Sync Ledger Fallback] Using {len(ledger_names)} cloud-synced ledgers for '{client_id}' AI mapping!")
+
+            # Tertiary Fallback 3: Query Miracle Bridge on port 9123 if running on cloud/hybrid setup
             if not client_memory.get("existing_ledgers"):
                 try:
                     import urllib.request
-                    import json
                     bridge_url = f"http://localhost:9123/api/local-ledgers?client_id={client_id}"
                     req = urllib.request.Request(bridge_url, headers={"User-Agent": "MiracleServer/1.0"})
                     with urllib.request.urlopen(req, timeout=1.5) as resp:
