@@ -1,5 +1,5 @@
 from pydantic import BaseModel, Field
-from typing import List, Optional
+from typing import List, Optional, Any, Union
 
 class InvoiceItemSchema(BaseModel):
     name: str = ""
@@ -22,6 +22,8 @@ class InvoiceSchema(BaseModel):
     sgst: float = 0.0
     igst: float = 0.0
     gst: float = 0.0
+    gst_pct: Optional[Any] = None
+    payment_type: str = ""
     discount: float = 0.0
     freight: float = 0.0
     tcs: float = 0.0

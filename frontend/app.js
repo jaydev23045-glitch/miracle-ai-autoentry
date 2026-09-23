@@ -2537,16 +2537,63 @@ document.addEventListener('DOMContentLoaded', () => {
                         }
                     }, 1500);
 
-                    if (currentModule === 'Opening Balances') {
-                        res = await fetch(`${API_URL}/api/opening-balances/extract`, {
-                            method: "POST",
-                            body: formData
-                        });
-                    } else {
-                        res = await fetch(`${API_URL}/api/upload`, {
-                            method: "POST",
-                            body: formData
-                        });
+                    let localParsedSuccess = false;
+
+                    // ⚡ Hybrid Client PC Extraction Route: Extract PDF text locally on port 9123 if Miracle Bridge is online!
+                    if (isLocalBridgeOnline && currentFile.name.toLowerCase().endsWith('.pdf') && currentModule !== 'Opening Balances') {
+                        try {
+                            loadingMsg.innerText = `⚡ Miracle Bridge Local PC Extraction (${i + 1} of ${files.length})...`;
+                            loadingSub.innerText = `Parsing ${currentFile.name} locally on Client PC (Zero Cloud AI cost)...`;
+                            
+                            const localFormData = new FormData();
+                            localFormData.append("file", currentFile);
+                            localFormData.append("client_id", activeClient || "CMP0001");
+
+                            const localRes = await fetch(`${LOCAL_BRIDGE_URL}/api/local/parse-pdf`, {
+                                method: "POST",
+                                body: localFormData
+                            });
+
+                            if (localRes.ok) {
+                                const localData = await localRes.json();
+                                if (localData && localData.transactions && localData.transactions.length > 0) {
+                                    // Send pre-extracted JSON array to Cloud API for ledger mapping without re-parsing PDF
+                                    const jsonPayload = {
+                                        client_id: activeClient || "CMP0001",
+                                        vouchers: localData.transactions,
+                                        module_type: currentModule === 'Cash Entries' ? 'cash' : 'bank'
+                                    };
+
+                                    const cloudProcessRes = await fetch(`${API_URL}/api/bank/process-json`, {
+                                        method: "POST",
+                                        headers: { "Content-Type": "application/json" },
+                                        body: JSON.stringify(jsonPayload)
+                                    });
+
+                                    if (cloudProcessRes.ok) {
+                                        res = cloudProcessRes;
+                                        localParsedSuccess = true;
+                                        console.log("✅ Successfully extracted PDF text locally on Client PC via Miracle Bridge!");
+                                    }
+                                }
+                            }
+                        } catch (localErr) {
+                            console.warn("⚠️ Local bridge PDF parsing warning, falling back to cloud upload:", localErr);
+                        }
+                    }
+
+                    if (!localParsedSuccess) {
+                        if (currentModule === 'Opening Balances') {
+                            res = await fetch(`${API_URL}/api/opening-balances/extract`, {
+                                method: "POST",
+                                body: formData
+                            });
+                        } else {
+                            res = await fetch(`${API_URL}/api/upload`, {
+                                method: "POST",
+                                body: formData
+                            });
+                        }
                     }
                 } finally {
                     if (pollInterval) {
@@ -2708,6 +2755,8 @@ document.addEventListener('DOMContentLoaded', () => {
                                 const igst2 = Number(inv.igst || 0);
                                 grouped[key].igst = igst1 + igst2;
 
+                                grouped[key].gst = grouped[key].cgst + grouped[key].sgst + grouped[key].igst;
+
                                 const discount1 = Number(grouped[key].discount || 0);
                                 const discount2 = Number(inv.discount || 0);
                                 grouped[key].discount = discount1 + discount2;
@@ -2727,6 +2776,13 @@ document.addEventListener('DOMContentLoaded', () => {
                                 grouped[key].total = existingTotal + total;
 
                                 grouped[key].items.push(...invItems);
+
+                                const rates = new Set(grouped[key].items.map(it => Number(it.gst_pct)).filter(r => !isNaN(r)));
+                                if (rates.size > 1) {
+                                    grouped[key].gst_pct = "Multi";
+                                } else if (rates.size === 1) {
+                                    grouped[key].gst_pct = Array.from(rates)[0];
+                                }
                             }
                         });
                         extractedArray = Object.values(grouped);
@@ -2820,26 +2876,46 @@ document.addEventListener('DOMContentLoaded', () => {
                         const cgst = row.cgst || 0;
                         const sgst = row.sgst || 0;
                         const igst = row.igst || 0;
-                        const gst = cgst + sgst + igst || row.gst || row.GST || 0;
+                        const gst = (cgst + sgst + igst) || row.gst || row.GST || 0;
                         const discount = row.discount || row.Discount || 0;
                         const freight = row.freight || row.Freight || 0;
                         const tcs = row.tcs || row.Tcs || row.TCS || 0;
                         const tds = row.tds || row.Tds || row.TDS || 0;
                         const total = row.total || row.total_amount || row.Total || 0;
 
+                        // Determine GST % (detect Multi rate)
+                        let itemRates = [];
+                        if (row.items && Array.isArray(row.items)) {
+                            itemRates = row.items.map(it => Number(it.gst_pct)).filter(r => !isNaN(r));
+                        }
+                        let uniqueRates = Array.from(new Set(itemRates));
+                        let rootGstPct = row.gst_pct;
+                        if (row.gst_pct === "Multi" || uniqueRates.length > 1) {
+                            rootGstPct = "Multi";
+                        } else if (uniqueRates.length === 1) {
+                            rootGstPct = uniqueRates[0];
+                        }
+
+                        // Payment type & Cash sale handling (Rule 34)
+                        const payType = String(row.payment_type || row.payment_mode || "").trim();
+                        const isCashMode = /cash/i.test(payType) || /cash/i.test(String(party));
+
                         const partyGstin = String(row.party_gstin || row.gstin || "").trim();
                         const isUnregistered = !partyGstin || /^(urd|unregistered|b2c|consumer|none|na|-)$/i.test(partyGstin);
 
                         let partyStr = String(party).trim();
                         if (!partyStr || partyStr.toLowerCase() === 'nan' || partyStr.toLowerCase() === 'none' || partyStr.toLowerCase() === 'null' || partyStr.toLowerCase() === 'undefined') {
-                            partyStr = 'Unmapped Party';
+                            partyStr = isCashMode ? 'Cash Account' : 'Unmapped Party';
                         }
                         let finalParty = partyStr;
                         let status = 'Ready';
                         let isB2C = false;
                         let autoCreateB2B = false;
 
-                        if (partyStr.startsWith('UNKNOWN_PARTY:') || partyStr.startsWith('UNKNOWN_NARRATION:') || partyStr.includes('Missing') || partyStr === "" || partyStr === 'Unmapped Party') {
+                        if (isCashMode && (finalParty === 'Unmapped Party' || finalParty.startsWith('UNKNOWN_PARTY:'))) {
+                            finalParty = 'Cash Account';
+                            status = 'Ready';
+                        } else if (partyStr.startsWith('UNKNOWN_PARTY:') || partyStr.startsWith('UNKNOWN_NARRATION:') || partyStr.includes('Missing') || partyStr === "" || partyStr === 'Unmapped Party') {
                             status = 'Review';
                         } else {
                             const cleanParty = partyStr.toUpperCase();
@@ -2910,6 +2986,8 @@ document.addEventListener('DOMContentLoaded', () => {
                             sgst: Number(sgst),
                             igst: Number(igst),
                             gst: Number(gst),
+                            gst_pct: rootGstPct,
+                            payment_type: payType,
                             discount: Number(discount),
                             freight: Number(freight),
                             tcs: Number(tcs),
@@ -5670,7 +5748,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
         // 🚨 DBF Product GST Mismatch Check (Rule 35) 🚨
         let gstMismatchDetected = false;
-        if (currentModule === 'Sales' || currentModule === 'Purchases') {
+        const isMultiGstRow = String(row.gst_pct || "").toLowerCase() === "multi" || String(row.gst_pct || "").toLowerCase() === "multiple";
+        if (!isMultiGstRow && (currentModule === 'Sales' || currentModule === 'Purchases')) {
             const mappedItemName = (row.items && row.items.length > 0) ? (row.items[0].name || "") : "";
             const rowGst = Math.round(parseFloat(row.gst_pct) || 0);
 
@@ -6387,7 +6466,11 @@ document.addEventListener('DOMContentLoaded', () => {
             }
 
             let rawPct = row.gst_pct;
-            if (rawPct === undefined || rawPct === null || isNaN(rawPct)) {
+            const hasMultiItems = row.items && Array.isArray(row.items) && row.items.length > 1;
+            const itemRatesSet = hasMultiItems ? new Set(row.items.map(it => Number(it.gst_pct)).filter(r => !isNaN(r))) : new Set();
+            if (rawPct === 'Multi' || itemRatesSet.size > 1) {
+                rawPct = 'Multi';
+            } else if (rawPct === undefined || rawPct === null || isNaN(rawPct)) {
                 const tx = parseFloat(row.taxable) || 0;
                 const g = parseFloat(row.gst) || 0;
                 if (tx > 0 && g > 0) {
@@ -6400,10 +6483,12 @@ document.addEventListener('DOMContentLoaded', () => {
             }
             row.gst_pct = rawPct;
 
+            const badgeDisplayStr = rawPct === 'Multi' ? 'Multi' : `${rawPct}%`;
+
             html += `
                 <td class="px-2 py-2 border-r border-slate-800/50 text-center">
                     <span class="inline-flex items-center px-2 py-1 rounded-md text-xs font-extrabold bg-cyan-500/10 text-cyan-400 border border-cyan-500/20 gst-pct-badge" title="Effective GST Tax Rate">
-                        ${rawPct}%
+                        ${badgeDisplayStr}
                     </span>
                 </td>
                 <td class="px-3 py-2 border-r border-slate-800/50 text-right">
@@ -6518,15 +6603,31 @@ document.addEventListener('DOMContentLoaded', () => {
                     }
                 } else {
                     // User edited Taxable Amount, Discount, Freight, TCS, or TDS!
-                    // Preserve current GST % and recalculate GST Amount!
-                    let pct = row.gst_pct;
-                    if (pct === undefined || pct === null || isNaN(pct)) {
-                        pct = 18.0;
+                    const hasMultiItems = row.items && Array.isArray(row.items) && row.items.length > 1;
+                    const isMultiRate = row.gst_pct === 'Multi' || (hasMultiItems && new Set(row.items.map(i => Number(i.gst_pct))).size > 1);
+
+                    if (isMultiRate) {
+                        // Preserve exact GST amount calculated from line-item taxes for multi-rate bills
+                        if (!row.gst || row.gst === 0) {
+                            row.gst = row.items.reduce((acc, it) => {
+                                const itTaxable = parseFloat(it.taxable_amount || it.taxable || 0);
+                                const itPct = parseFloat(it.gst_pct || 0);
+                                const itAmt = parseFloat(it.gst_amount || (itTaxable * (itPct / 100)));
+                                return acc + (isNaN(itAmt) ? 0 : itAmt);
+                            }, 0);
+                            row.gst = Math.round(row.gst * 100) / 100;
+                        }
+                    } else {
+                        let pct = parseFloat(row.gst_pct);
+                        if (isNaN(pct)) pct = 18.0;
+                        row.gst_pct = pct;
+                        if (sourceEl === taxableInput || !row.gst) {
+                            row.gst = Math.round((row.taxable * (pct / 100)) * 100) / 100;
+                        }
                     }
-                    row.gst_pct = pct;
-                    row.gst = Math.round((row.taxable * (pct / 100)) * 100) / 100;
+
                     if (gstInput && document.activeElement !== gstInput) {
-                        gstInput.value = `₹${row.gst.toLocaleString('en-IN', { minimumFractionDigits: 2 })}`;
+                        gstInput.value = `₹${(row.gst || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}`;
                     }
                 }
 
@@ -8047,10 +8148,57 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         try {
-            const res = await fetch(`${API_URL}/api/upload`, {
-                method: "POST",
-                body: formData
-            });
+            let res;
+            let localParsedSuccess = false;
+
+            if (isLocalBridgeOnline && file.name.toLowerCase().endsWith('.pdf') && module !== 'Opening Balances') {
+                try {
+                    loadingMsg.innerText = `⚡ Miracle Bridge Unlocking PDF (${file.name})...`;
+                    loadingSub.innerText = `Decrypting ${file.name} locally on Client PC (Zero Cloud AI cost)...`;
+
+                    const localFormData = new FormData();
+                    localFormData.append("file", file);
+                    localFormData.append("password", password || "");
+                    localFormData.append("client_id", activeClient || "CMP0001");
+
+                    const localRes = await fetch(`${LOCAL_BRIDGE_URL}/api/local/parse-pdf`, {
+                        method: "POST",
+                        body: localFormData
+                    });
+
+                    if (localRes.ok) {
+                        const localData = await localRes.json();
+                        if (localData && localData.transactions && localData.transactions.length > 0) {
+                            const jsonPayload = {
+                                client_id: activeClient || "CMP0001",
+                                vouchers: localData.transactions,
+                                module_type: module === 'Cash Entries' ? 'cash' : 'bank'
+                            };
+
+                            const cloudProcessRes = await fetch(`${API_URL}/api/bank/process-json`, {
+                                method: "POST",
+                                headers: { "Content-Type": "application/json" },
+                                body: JSON.stringify(jsonPayload)
+                            });
+
+                            if (cloudProcessRes.ok) {
+                                res = cloudProcessRes;
+                                localParsedSuccess = true;
+                                console.log("✅ Successfully decrypted and extracted password-protected PDF locally on Client PC via Miracle Bridge!");
+                            }
+                        }
+                    }
+                } catch (localErr) {
+                    console.warn("⚠️ Local bridge password-protected PDF parsing warning, falling back to cloud upload:", localErr);
+                }
+            }
+
+            if (!localParsedSuccess) {
+                res = await fetch(`${API_URL}/api/upload`, {
+                    method: "POST",
+                    body: formData
+                });
+            }
 
             if (!res.ok) {
                 const errorData = await res.json().catch(() => ({}));

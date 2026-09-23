@@ -406,13 +406,14 @@ def self_heal_sales_purchase_data(extracted_data: dict, module: str, client_memo
         total = safe_float(row.get("total"))
 
         # Compute and normalize effective GST Rate (%)
-        if taxable > 0 and gst_total > 0:
-            raw_pct = (gst_total / taxable) * 100.0
-            slabs = [0.0, 0.25, 1.5, 3.0, 5.0, 12.0, 18.0, 28.0]
-            closest_slab = min(slabs, key=lambda x: abs(x - raw_pct))
-            row["gst_pct"] = closest_slab
-        elif "gst_pct" not in row or row["gst_pct"] is None:
-            row["gst_pct"] = 0.0
+        if row.get("gst_pct") not in ("Multi", "multiple"):
+            if taxable > 0 and gst_total > 0:
+                raw_pct = (gst_total / taxable) * 100.0
+                slabs = [0.0, 0.25, 1.5, 3.0, 5.0, 12.0, 18.0, 28.0]
+                closest_slab = min(slabs, key=lambda x: abs(x - raw_pct))
+                row["gst_pct"] = closest_slab
+            elif "gst_pct" not in row or row["gst_pct"] is None:
+                row["gst_pct"] = 0.0
 
         # Determine whether 'taxable' is Net Taxable (already minus discount) or Gross Taxable
         exp_total_net = round(taxable + gst_total + freight + tcs - tds, 2)

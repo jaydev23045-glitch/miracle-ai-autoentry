@@ -549,24 +549,77 @@ def extract_pdf_stream_locally(pdf_path: str, password: str = "") -> List[Dict[s
     return parsed_rows
 
 
-@app.post("/api/local/parse-pdf")
-def parse_pdf_locally(req: LocalPDFParseRequest):
-    """
-    Parses a local PDF statement on the Client PC with page-by-page streaming + GC.
-    Returns lightweight JSON array ready for Cloud transmission.
-    """
-    if not os.path.exists(req.pdf_path):
-        raise HTTPException(status_code=404, detail=f"PDF file not found at {req.pdf_path}")
+try:
+    import multipart
+    HAS_MULTIPART = True
+except ImportError:
+    HAS_MULTIPART = False
 
-    rows = extract_pdf_stream_locally(req.pdf_path, req.password or "")
-    
-    return {
-        "status": "success",
-        "client_id": req.client_id,
-        "pdf_path": req.pdf_path,
-        "extracted_count": len(rows),
-        "transactions": rows
-    }
+if HAS_MULTIPART:
+    from fastapi import File, UploadFile, Form
+
+    @app.post("/api/local/parse-pdf")
+    async def parse_pdf_locally(
+        req: Optional[LocalPDFParseRequest] = None,
+        file: Optional[UploadFile] = File(None),
+        password: Optional[str] = Form(""),
+        client_id: Optional[str] = Form("CMP0001")
+    ):
+        """
+        Parses a PDF statement locally on the Client PC with page-by-page streaming + GC.
+        Supports both local file paths and direct browser UploadFile stream.
+        Returns lightweight JSON array ready for Cloud transmission (Zero Cloud AI cost).
+        """
+        target_path = ""
+        pdf_pass = ""
+        cid = "CMP0001"
+
+        if file and file.filename:
+            temp_dir = tempfile.gettempdir()
+            temp_pdf = os.path.join(temp_dir, f"bridge_local_{int(time.time())}_{file.filename}")
+            contents = await file.read()
+            with open(temp_pdf, "wb") as f:
+                f.write(contents)
+            target_path = temp_pdf
+            pdf_pass = password or ""
+            cid = client_id or "CMP0001"
+        elif req and req.pdf_path:
+            target_path = req.pdf_path
+            pdf_pass = req.password or ""
+            cid = req.client_id or "CMP0001"
+        else:
+            raise HTTPException(status_code=400, detail="No PDF file or pdf_path provided.")
+
+        if not os.path.exists(target_path):
+            raise HTTPException(status_code=404, detail=f"PDF file not found at {target_path}")
+
+        rows = extract_pdf_stream_locally(target_path, pdf_pass)
+
+        if file and os.path.exists(target_path):
+            try:
+                os.remove(target_path)
+            except Exception:
+                pass
+
+        return {
+            "status": "success",
+            "client_id": cid,
+            "extracted_count": len(rows),
+            "transactions": rows
+        }
+else:
+    @app.post("/api/local/parse-pdf")
+    def parse_pdf_locally_json(req: LocalPDFParseRequest):
+        """Fallback endpoint when python-multipart is not installed."""
+        if not req or not req.pdf_path or not os.path.exists(req.pdf_path):
+            raise HTTPException(status_code=404, detail="Valid pdf_path required when multipart is unavailable.")
+        rows = extract_pdf_stream_locally(req.pdf_path, req.password or "")
+        return {
+            "status": "success",
+            "client_id": req.client_id or "CMP0001",
+            "extracted_count": len(rows),
+            "transactions": rows
+        }
 
 
 # ── CLIENT-SIDE IMAGE OPTIMIZATION, DEDUPLICATION & SELF-LEARNING ENGINE ─────

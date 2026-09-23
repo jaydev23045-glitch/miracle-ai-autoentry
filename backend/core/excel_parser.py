@@ -7,20 +7,24 @@ from datetime import datetime
 from core.utils import parse_currency
 
 COLUMN_MAPS = {
-    "bill_no": ["invoiceno", "invoiceno.", "invoice_no", "invoice_no.", "invno", "invno.", "billinvoiceno", "billno", "billno.", "bill_no.", "billnumber", "invoicenumber", "voucherno", "vchno", "vchno.", "bill/invoiceno", "bill/invoice_no.", "srno", "srno.", "sr_no.", "docno", "docno.", "serialno", "refno", "refno.", "reference_no"],
-    "date": ["date", "invoicedate", "billdate", "voucherdate", "vchdate", "bill/invoicedate", "invoicedt", "billdt", "invoice_date"],
-    "party_name": ["partyname", "party", "party_name", "customername", "suppliername", "vendorname", "customer", "vendor", "supplier", "accountname", "ledgername", "partysname", "party's_name"],
-    "party_gstin": ["partysgstinno", "partysgstin", "gstin", "gstno", "partygst", "tin", "gstinno", "partygstin", "partygstinno", "party's_gstin_no."],
-    "item_name": ["itemname", "item", "productname", "product", "stockitem", "stockname", "item_name", "particulars", "particular", "itemdescription", "descriptionofgoods", "goods", "items", "productdescription", "itemdetails", "productdetails", "stock", "stockitemname", "billingitem", "item/service", "product/service", "description", "material", "itemname&description", "name", "service", "servicedescription"],
-    "hsn": ["hsnsac", "hsn", "sac", "hsncode", "saccode", "hsn/sac", "hsn_code"],
-    "qty": ["quantity", "qty", "qnty", "nos", "pieces", "volume"],
-    "rate": ["price/unit", "price", "rate", "unitprice", "rate/unit", "unitrate", "price_unit"],
-    "gst_pct": ["gst%", "gstpct", "tax%", "taxpct", "taxrate", "gstrate", "gst_percentage", "gst_rate", "gst"],
-    "gst_amt": ["gstamount", "gstamt", "taxamount", "taxamt", "gst_amount", "gst"],
-    "discount": ["discountamount", "discount", "disc", "discamount", "discount_amount"],
-    "freight": ["freight", "freightamount", "freightcharges", "transport", "transportcharges", "packing", "forwarding", "loading"],
-    "taxable_amt": ["taxableamount", "taxable", "taxablevalue", "taxableamt", "basicamount", "basic"],
-    "total_amt": ["totalamount", "total", "invoicetotal", "billamount", "totalvalue", "invvalue", "nettotal", "grandtotal", "total_amount", "billtotal", "nettotalamount", "amount", "itemamount"]
+    "bill_no": ["invoiceno", "invoiceno.", "invoice_no", "invoice_no.", "invno", "invno.", "inv_no", "billinvoiceno", "billno", "billno.", "bill_no", "bill_no.", "billnumber", "invoicenumber", "voucherno", "vchno", "vchno.", "vch_no", "voucher_no", "bill/invoiceno", "bill/invoice_no.", "docno", "docno.", "refno", "refno.", "reference_no", "bill", "invoice", "inv#", "bill#", "vouchernumber", "suppinvoiceno", "supplierinvoiceno", "purinvoiceno", "purchaseinvoiceno", "bill_num", "inv_num", "bill_id", "inv_id", "invoice_number", "bill_number"],
+    "date": ["date", "invoicedate", "billdate", "voucherdate", "vchdate", "bill/invoicedate", "invoicedt", "billdt", "invoice_date", "vch_date", "voucher_date", "txn_date", "transaction_date", "entry_date", "dt", "pur_date", "purchase_date", "sale_date", "sales_date"],
+    "party_name": ["partyname", "party", "party_name", "customername", "suppliername", "vendorname", "customer", "vendor", "supplier", "accountname", "ledgername", "partysname", "party's_name", "party_name/ledger", "clientname", "client", "buyername", "buyer", "party/account", "name_of_party", "name_of_customer", "name_of_supplier", "name_of_vendor", "party_details", "vendor_details", "supplier_details", "customer_details"],
+    "party_gstin": ["partysgstinno", "partysgstin", "gstin", "gstno", "partygst", "tin", "gstinno", "partygstin", "partygstinno", "party's_gstin_no.", "party_gstin_no", "customer_gstin", "supplier_gstin", "vendor_gstin", "gstin/uin", "gst_no", "party_gst", "vendor_gstin_no"],
+    "item_name": ["itemname", "item", "productname", "product", "stockitem", "stockname", "item_name", "particulars", "particular", "itemdescription", "descriptionofgoods", "goods", "items", "productdescription", "itemdetails", "productdetails", "stock", "stockitemname", "billingitem", "item/service", "product/service", "description", "material", "itemname&description", "name", "service", "servicedescription", "goods_description", "item_desc", "product_desc", "items_name"],
+    "hsn": ["hsnsac", "hsn", "sac", "hsncode", "saccode", "hsn/sac", "hsn_code", "sac_code", "hsn_sac_code", "hsn/sac_code"],
+    "qty": ["quantity", "qty", "qnty", "nos", "pieces", "volume", "quantity(nos)", "total_qty", "units", "count", "qnty(nos)"],
+    "rate": ["price/unit", "price", "rate", "unitprice", "rate/unit", "unitrate", "price_unit", "unit_price", "item_rate", "selling_price", "purchase_price", "price_per_unit", "rate_per_unit"],
+    "gst_pct": ["gst%", "gstpct", "tax%", "taxpct", "taxrate", "gstrate", "gst_percentage", "gst_rate", "gst", "tax_rate", "tax_percentage", "gst_val", "gst_rate%"],
+    "gst_amt": ["gstamount", "gstamt", "taxamount", "taxamt", "gst_amount", "total_gst", "tax_val", "tax_amt", "total_tax_amount"],
+    "cgst": ["cgst", "cgstamt", "cgstamount", "cgst_amount", "cgst_amt", "central_tax", "cgst_val"],
+    "sgst": ["sgst", "sgstamt", "sgstamount", "sgst_amount", "sgst_amt", "state_tax", "sgst_val"],
+    "igst": ["igst", "igstamt", "igstamount", "igst_amount", "igst_amt", "integrated_tax", "igst_val"],
+    "discount": ["discountamount", "discount", "disc", "discamount", "discount_amount", "disc_amt", "trade_discount", "less_discount"],
+    "freight": ["freight", "freightamount", "freightcharges", "transport", "transportcharges", "packing", "forwarding", "loading", "cartage", "shipping", "freight_charges"],
+    "taxable_amt": ["taxableamount", "taxable", "taxablevalue", "taxableamt", "basicamount", "basic", "assessablevalue", "netvalue", "taxable_val", "basic_value", "net_value", "taxable_amount"],
+    "total_amt": ["totalamount", "total", "invoicetotal", "billamount", "totalvalue", "invvalue", "nettotal", "grandtotal", "total_amount", "billtotal", "nettotalamount", "amount", "itemamount", "invoice_value", "net_amount", "gross_total", "bill_val", "final_amount", "payable_amount"],
+    "payment_type": ["paymenttype", "payment_type", "paymentmode", "modeofpayment", "paytype", "pay_type", "payment_mode", "payment", "pay_mode", "trx_type", "transaction_type", "payment_terms"]
 }
 
 INVALID_ITEM_WORDS = {"sale", "sales", "purchase", "purchases", "creditnote", "debitnote", "credit", "debit", "journal", "receipt", "payment", "voucher"}
@@ -66,6 +70,8 @@ def safe_float(val, default=0.0):
 
 def parse_gst_pct(val):
     val_str = str(val).strip()
+    if val_str.lower() in ("multi", "multiple"):
+        return "Multi"
     if "(" in val_str and ")" in val_str:
         try:
             inside = val_str.split("(")[1].split(")")[0]
@@ -124,8 +130,8 @@ def clean_extracted_bill_no(val: str, party_name: str = "") -> str:
         prefix_upper = prefix_part.upper()
         prefix_words = set(re.findall(r'[A-Z]{2,}', prefix_upper))
 
-        # Check if prefix is a standard invoice prefix or year pattern (e.g. "INV-3354", "SS/3354", "2026-27/3354")
-        is_standard_inv = bool(prefix_words.intersection(STANDARD_INV_PREFIXES)) or bool(re.match(r'^(?:INV|GST|BILL|VCH|SS|PP|PB|PU|SL|SR|SA|SB|SC|SD|20\d\d|\d{2}-\d{2})$', prefix_upper))
+        # Check if prefix is a standard invoice prefix or year pattern (e.g. "INV-3354", "SS/3354", "2025-26/3354", "2026-27/3354")
+        is_standard_inv = bool(prefix_words.intersection(STANDARD_INV_PREFIXES)) or bool(re.match(r'^(?:INV|GST|BILL|VCH|SS|PP|PB|PU|SL|SR|SA|SB|SC|SD|CR|20\d\d|20\d\d-\d\d|\d{2}-\d{2}|\d{4}-\d{2})$', prefix_upper))
 
         if not is_standard_inv:
             return num_part
@@ -188,12 +194,14 @@ def normalize_sheet_columns(df):
             rename_dict[matched_col] = key
             used_orig_cols.add(matched_col)
 
-    # Pass 2: Substring / Partial Match Fallback for essential fields (bill_no, date, party_name)
+    # Pass 2: Substring / Partial Match Fallback for essential fields (bill_no, date, party_name, item_name)
     if not resolved.get("bill_no"):
-        bill_keywords = ["invoice", "invoiceno", "bill", "billno", "vch", "voucherno", "docno", "refno", "srno", "serial"]
+        bill_keywords = ["invoice", "invoiceno", "bill", "billno", "vch", "voucherno", "docno", "refno", "suppinv"]
         for c in df_copy.columns:
             if c in used_orig_cols: continue
             c_clean = clean_str(c)
+            if any(kw in c_clean for kw in ["srno", "serialno", "sno", "rowno", "slno"]):
+                continue
             if any(kw in c_clean for kw in bill_keywords):
                 resolved["bill_no"] = c
                 rename_dict[c] = "bill_no"
@@ -202,7 +210,7 @@ def normalize_sheet_columns(df):
                 break
 
     if not resolved.get("date"):
-        date_keywords = ["date", "dt", "invoicedate", "billdate", "vchdate"]
+        date_keywords = ["date", "dt", "invoicedate", "billdate", "vchdate", "txndate"]
         for c in df_copy.columns:
             if c in used_orig_cols: continue
             c_clean = clean_str(c)
@@ -211,6 +219,18 @@ def normalize_sheet_columns(df):
                 rename_dict[c] = "date"
                 used_orig_cols.add(c)
                 print(f"🎯 Substring Column Match: '{c}' mapped to 'date'")
+                break
+
+    if not resolved.get("party_name"):
+        party_keywords = ["party", "customer", "vendor", "supplier", "account", "ledger", "buyer", "client"]
+        for c in df_copy.columns:
+            if c in used_orig_cols: continue
+            c_clean = clean_str(c)
+            if any(kw in c_clean for kw in party_keywords):
+                resolved["party_name"] = c
+                rename_dict[c] = "party_name"
+                used_orig_cols.add(c)
+                print(f"🎯 Substring Column Match: '{c}' mapped to 'party_name'")
                 break
 
     if not resolved.get("item_name"):
@@ -227,8 +247,20 @@ def normalize_sheet_columns(df):
                 print(f"🎯 Substring Column Match: '{c}' mapped to 'item_name'")
                 break
 
-    # Pass 3: Data Content Pattern Fallback for bill_no if header was custom or unmapped
+    # Pass 3A: Data Pattern Fallback for GSTIN
+    if not resolved.get("party_gstin"):
+        gstin_pattern = re.compile(r'\b\d{2}[A-Z]{5}\d{4}[A-Z]{1}[A-Z0-9]{1}Z[A-Z0-9]{1}\b', re.I)
+        for c in df_copy.columns:
+            if c in used_orig_cols: continue
+            sample_vals = df_copy[c].dropna().astype(str).str.strip().tolist()[:10]
+            if sum(1 for val in sample_vals if gstin_pattern.search(val)) >= 1:
+                resolved["party_gstin"] = c
+                rename_dict[c] = "party_gstin"
+                used_orig_cols.add(c)
+                print(f"🔮 Data Pattern Match: Column '{c}' auto-detected as 'party_gstin'")
+                break
 
+    # Pass 3B: Data Content Pattern Fallback for bill_no if header was custom or unmapped
     if not resolved.get("bill_no"):
         inv_pattern = re.compile(r'^[A-Za-z0-9\-_]{2,10}[/\-][A-Za-z0-9\-_]{1,12}$|^INV[-_]?\d+|^BILL[-_]?\d+', re.I)
         for c in df_copy.columns:
@@ -267,11 +299,18 @@ def normalize_sheet_columns(df):
 def get_group_key(row):
     b_val = row.get("bill_no")
     b_str = str(b_val).strip() if pd.notna(b_val) else ""
-    if b_str and b_str.lower() != "nan":
-        return b_str
     d_val = str(row.get("date", "")).strip()
     p_val = str(row.get("party_name", "")).strip()
-    return f"NO_INV_{d_val}_{p_val}"
+    if p_val.lower() in ("nan", "none", "null", "undefined"):
+        p_val = ""
+    
+    if b_str and b_str.lower() != "nan":
+        b_clean = b_str.upper()
+        if b_clean.endswith(".0"): b_clean = b_clean[:-2]
+        if p_val:
+            return f"{b_clean}|{d_val}|{p_val.upper()}"
+        return f"{b_clean}|{d_val}"
+    return f"NO_INV_{d_val}_{p_val.upper()}"
 
 def parse_excel_to_json(file_path: str, company_state_code: str = '24', instruction: str = '', product_catalog: dict = None) -> dict:
     """Parses the Sales/Purchases Excel spreadsheet into standard JSON using dynamic column normalization with AI product catalog auto-filling."""
@@ -317,7 +356,7 @@ def parse_excel_to_json(file_path: str, company_state_code: str = '24', instruct
                     df_raw = find_and_clean_header(df_raw)
                     if len(df_raw) > 0:
                         df_norm, resolved = normalize_sheet_columns(df_raw)
-                        if resolved["bill_no"] and resolved["date"] and resolved["party_name"]:
+                        if resolved.get("bill_no") and resolved.get("date") and resolved.get("party_name"):
                             for col_name in ["date", "bill_no"]:
                                 if col_name in df_norm.columns:
                                     df_norm[col_name] = df_norm[col_name].ffill()
@@ -444,7 +483,7 @@ def parse_excel_to_json(file_path: str, company_state_code: str = '24', instruct
                         df_raw = pd.read_excel(file_path, sheet_name=sheet)
                         df_raw = find_and_clean_header(df_raw)
                         df_norm, resolved = normalize_sheet_columns(df_raw)
-                        if resolved["bill_no"] and resolved["date"] and resolved["party_name"]:
+                        if resolved.get("bill_no") and resolved.get("date") and resolved.get("party_name"):
                             for col_name in ["date", "bill_no"]:
                                 if col_name in df_norm.columns:
                                     df_norm[col_name] = df_norm[col_name].ffill()
@@ -453,7 +492,7 @@ def parse_excel_to_json(file_path: str, company_state_code: str = '24', instruct
                                     if col_name in df_norm.columns:
                                         df_norm[col_name] = df_norm.groupby("bill_no")[col_name].ffill()
                             
-                            if resolved["item_name"]:
+                            if resolved.get("item_name"):
                                 flat_sheets_data.append((sheet, df_norm))
                             else:
                                 header_only_sheets_data.append((sheet, df_norm))
@@ -488,7 +527,11 @@ def parse_excel_to_json(file_path: str, company_state_code: str = '24', instruct
                 if removed_count > 0:
                     print(f"🧹 Smart Deduplicator removed {removed_count} redundant transactions across duplicate sheets.")
             
-            summary_keywords = ["total for", "subtotal", "grand total", "total amount", "total gst"]
+            summary_keywords = [
+                "total for", "subtotal", "sub total", "sub-total", "grand total", "total amount",
+                "total gst", "page total", "page subtotal", "balance c/f", "balance b/f",
+                "carried forward", "brought forward", "net total", "amount in words", "total:"
+            ]
             
             def is_summary_row(row):
                 p_val = str(row.get("party_name", "")).strip().lower()
@@ -496,7 +539,11 @@ def parse_excel_to_json(file_path: str, company_state_code: str = '24', instruct
                 b_val = str(row.get("bill_no", "")).strip().lower()
                 d_val = str(row.get("date", "")).strip().lower()
                 combined = f"{p_val} {i_val} {b_val} {d_val}"
-                return any(kw in combined for kw in summary_keywords)
+                if any(kw in combined for kw in summary_keywords):
+                    return True
+                if p_val in ("total", "subtotal", "grand total") or i_val in ("total", "subtotal", "grand total"):
+                    return True
+                return False
                 
             df_flat = df_flat[~df_flat.apply(is_summary_row, axis=1)]
             total_rows = len(df_flat)
@@ -545,17 +592,30 @@ def parse_excel_to_json(file_path: str, company_state_code: str = '24', instruct
                 if not party_name or party_name.lower() in ("nan", "none", "null", "undefined"):
                     party_name = "Unmapped Party"
 
+                party_gstin = ""
+                payment_type = ""
                 for _, g_row in group.iterrows():
                     gst_val = str(g_row.get("party_gstin", "")).strip() if pd.notna(g_row.get("party_gstin")) else ""
                     if gst_val and gst_val.lower() not in ("nan", "none", "null", "undefined"):
                         party_gstin = gst_val
                         break
+
+                for _, g_row in group.iterrows():
+                    pt_val = str(g_row.get("payment_type", "")).strip() if pd.notna(g_row.get("payment_type")) else ""
+                    if pt_val and pt_val.lower() not in ("nan", "none", "null", "undefined"):
+                        payment_type = pt_val
+                        break
                     
                 inv_no = ""
-                if not str(group_key).startswith("NO_INV_"):
-                    inv_no = str(group_key)
-                    if inv_no.endswith(".0"):
-                        inv_no = inv_no[:-2]
+                for _, g_row in group.iterrows():
+                    b_val = str(g_row.get("bill_no", "")).strip() if pd.notna(g_row.get("bill_no")) else ""
+                    if b_val and b_val.lower() not in ("nan", "none", "null", "undefined") and not b_val.startswith("NO_INV_"):
+                        if b_val.endswith(".0"): b_val = b_val[:-2]
+                        inv_no = b_val
+                        break
+                        
+                if not inv_no and not str(group_key).startswith("NO_INV_"):
+                    inv_no = str(group_key).split("|")[0]
                         
                 items_list = []
                 taxable_sum = 0.0
@@ -582,7 +642,7 @@ def parse_excel_to_json(file_path: str, company_state_code: str = '24', instruct
                     total_val = safe_float(item_row.get("total_amt", 0.0)) if pd.notna(item_row.get("total_amt")) else 0.0
 
                     if not item_name or item_name.lower() == "nan":
-                        if qty > 0 or rate > 0 or taxable_val > 0 or total_val > 0:
+                        if rate > 0 or taxable_val > 0 or total_val > 0:
                             item_name = "General Product"
                         else:
                             continue
@@ -685,6 +745,15 @@ def parse_excel_to_json(file_path: str, company_state_code: str = '24', instruct
                     freight_sum += freight
                     
                 if items_list:
+                    item_gst_rates = set(it["gst_pct"] for it in items_list if it.get("gst_pct") is not None)
+                    if len(item_gst_rates) == 1:
+                        vch_gst_pct = list(item_gst_rates)[0]
+                    elif len(item_gst_rates) > 1:
+                        vch_gst_pct = "Multi"
+                    else:
+                        vch_gst_pct = 18.0
+
+                    total_gst_sum = round(cgst_sum + sgst_sum + igst_sum, 2)
                     extracted_data.append({
                         "date": date_str,
                         "bill_no": inv_no,
@@ -697,7 +766,10 @@ def parse_excel_to_json(file_path: str, company_state_code: str = '24', instruct
                         "cgst": round(cgst_sum, 2),
                         "sgst": round(sgst_sum, 2),
                         "igst": round(igst_sum, 2),
-                        "total": round(total_amt, 2) if total_amt > 0 else round(taxable_sum + cgst_sum + sgst_sum + igst_sum + freight_sum - discount_sum, 2),
+                        "gst": total_gst_sum,
+                        "gst_pct": vch_gst_pct,
+                        "payment_type": payment_type,
+                        "total": round(total_amt, 2) if total_amt > 0 else round(taxable_sum + total_gst_sum + freight_sum - discount_sum, 2),
                         "discount": round(discount_sum, 2),
                         "freight": round(freight_sum, 2),
                         "items": items_list
@@ -724,13 +796,14 @@ def parse_excel_to_json(file_path: str, company_state_code: str = '24', instruct
             if removed_count > 0:
                 print(f"🧹 Smart Deduplicator removed {removed_count} redundant header-only rows.")
                 
-            df_header = df_header[df_header["date"].notna()]
+            if "date" in df_header.columns:
+                df_header = df_header[df_header["date"].notna()]
             df_header['Group_Key'] = df_header.apply(get_group_key, axis=1)
             print(f"Detected Header-Only Excel: {len(df_header)} invoice rows with no product column. Building synthetic items.")
             extracted_data = []
             for _, row in df_header.iterrows():
                 group_key = row["Group_Key"]
-                date_raw = row["date"]
+                date_raw = row.get("date", "")
                 if isinstance(date_raw, datetime):
                     date_str = date_raw.strftime("%Y-%m-%d")
                 else:
@@ -832,9 +905,10 @@ def parse_excel_to_json(file_path: str, company_state_code: str = '24', instruct
             print(f"⚠️ Report and Items sheet are the same ('{report_sheet}'). Treating as header-only.")
             df_report_raw = pd.read_excel(file_path, sheet_name=report_sheet)
             df_report, report_res = normalize_sheet_columns(df_report_raw)
-            df_report = df_report[df_report["date"].notna()]
+            if "date" in df_report.columns:
+                df_report = df_report[df_report["date"].notna()]
             df_report['Group_Key'] = df_report.apply(
-                lambda row: str(row['bill_no']).strip() if pd.notna(row.get('bill_no')) and str(row.get('bill_no')).strip() != "nan" else f"NO_INV_{row.get('date')}_{row.get('party_name')}",
+                lambda row: str(row.get('bill_no', '')).strip() if pd.notna(row.get('bill_no')) and str(row.get('bill_no')).strip() != "nan" else f"NO_INV_{row.get('date', '')}_{row.get('party_name', '')}",
                 axis=1
             )
             extracted_data = []
@@ -893,10 +967,11 @@ def parse_excel_to_json(file_path: str, company_state_code: str = '24', instruct
         df_items, items_res = normalize_sheet_columns(df_items_raw)
         
         df_report['Group_Key'] = df_report.apply(
-            lambda row: str(row['bill_no']).strip() if pd.notna(row.get('bill_no')) and str(row.get('bill_no')).strip() != "nan" else f"NO_INV_{row.get('date')}_{row.get('party_name')}",
+            lambda row: str(row.get('bill_no', '')).strip() if pd.notna(row.get('bill_no')) and str(row.get('bill_no')).strip() != "nan" else f"NO_INV_{row.get('date', '')}_{row.get('party_name', '')}",
             axis=1
         )
-        df_report = df_report[df_report["date"].notna()]
+        if "date" in df_report.columns:
+            df_report = df_report[df_report["date"].notna()]
         
         if "date" in df_items.columns and "party_name" in df_items.columns:
             df_items['date'] = df_items['date'].ffill()
@@ -909,8 +984,8 @@ def parse_excel_to_json(file_path: str, company_state_code: str = '24', instruct
         
         extracted_data = []
         for _, row in df_report.iterrows():
-            group_key = row["Group_Key"]
-            date_raw = row["date"]
+            group_key = row.get("Group_Key", "")
+            date_raw = row.get("date", "")
             
             if isinstance(date_raw, datetime):
                 date_str = date_raw.strftime("%Y-%m-%d")
@@ -958,7 +1033,7 @@ def parse_excel_to_json(file_path: str, company_state_code: str = '24', instruct
                 total_val = safe_float(item_row.get("total_amt", 0.0)) if pd.notna(item_row.get("total_amt")) else 0.0
 
                 if not item_name or item_name.lower() == "nan":
-                    if qty > 0 or rate > 0 or taxable_val > 0 or total_val > 0:
+                    if rate > 0 or taxable_val > 0 or total_val > 0:
                         item_name = "General Product"
                     else:
                         continue

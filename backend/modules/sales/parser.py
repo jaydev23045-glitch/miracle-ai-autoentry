@@ -26,8 +26,10 @@ class SalesParser:
             
         return 18.0
 
-    def parse_gst_pct(self, val) -> float:
+    def parse_gst_pct(self, val):
         val_str = str(val).strip()
+        if val_str.lower() in ("multi", "multiple"):
+            return "Multi"
         if "(" in val_str and ")" in val_str:
             try:
                 inside = val_str.split("(")[1].split(")")[0]
@@ -120,8 +122,22 @@ class SalesParser:
             gst_val = row.get("gst_pct")
             if gst_val is None or (isinstance(gst_val, float) and pd.isna(gst_val)):
                 gst_val = row.get("gst_amt", 0.0)
-                
             raw_gst = self.parse_gst_pct(gst_val)
+
+            # Determine root gst_pct from items or row
+            items_rates = [it.gst_pct for it in valid_items if it.gst_pct is not None]
+            unique_rates = set(items_rates)
+            if row.get("gst_pct") == "Multi" or len(unique_rates) > 1:
+                root_gst_pct = "Multi"
+            elif len(unique_rates) == 1:
+                root_gst_pct = list(unique_rates)[0]
+            else:
+                root_gst_pct = raw_gst
+
+            total_cgst = float(row.get("cgst", 0.0))
+            total_sgst = float(row.get("sgst", 0.0))
+            total_igst = float(row.get("igst", 0.0))
+            total_gst = float(row.get("gst", 0.0)) or round(total_cgst + total_sgst + total_igst, 2)
 
             # Build cleaned voucher
             cleaned_vouchers.append(InvoiceSchema(
@@ -130,10 +146,12 @@ class SalesParser:
                 party_name=str(row.get("party_name", "")).strip(),
                 party_gstin=str(row.get("party_gstin", "")).strip(),
                 taxable_amount=float(row.get("taxable_amount" if "taxable_amount" in row else "taxable", 0.0)),
-                cgst=float(row.get("cgst", 0.0)),
-                sgst=float(row.get("sgst", 0.0)),
-                igst=float(row.get("igst", 0.0)),
-                gst=float(row.get("gst", 0.0)),
+                cgst=total_cgst,
+                sgst=total_sgst,
+                igst=total_igst,
+                gst=total_gst,
+                gst_pct=root_gst_pct,
+                payment_type=str(row.get("payment_type", "")).strip(),
                 discount=float(row.get("discount", 0.0)),
                 freight=float(row.get("freight", 0.0)),
                 tcs=float(row.get("tcs", 0.0)),
