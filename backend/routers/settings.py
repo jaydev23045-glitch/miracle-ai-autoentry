@@ -83,6 +83,11 @@ def update_settings(payload: SystemSettings):
     payload_dict = payload.model_dump()
     if "gemini_api_key" in payload_dict:
         payload_dict["gemini_api_key"] = clean_api_key(payload_dict["gemini_api_key"])
+
+    # Detect if path or client changed — if so, caches must be cleared (Smart Rule 39)
+    old_base_path = settings.get("miracle_base_path", "")
+    old_client_id = settings.get("active_client_id", "")
+
     for k, v in payload_dict.items():
         if k in ['sales_series', 'sales_prefix', 'purchase_prefix', 'gemini_api_key', 'miracle_base_path', 'memory_path']:
             if not v and settings.get(k):
@@ -90,6 +95,22 @@ def update_settings(payload: SystemSettings):
         settings[k] = v
         
     save_settings_to_file(settings)
+
+    # Smart Rule 39: Clear all ledger/product caches whenever path or client changes
+    # This prevents stale empty-list cache poison after user fixes path in Settings
+    new_base_path = settings.get("miracle_base_path", "")
+    new_client_id = settings.get("active_client_id", "")
+    if old_base_path != new_base_path or old_client_id != new_client_id:
+        try:
+            from routers.vouchers import _LEDGER_CACHE
+            _LEDGER_CACHE.clear()
+        except Exception:
+            pass
+        try:
+            MiracleDBFHandler.clear_cross_year_cache()
+        except Exception:
+            pass
+
     return {"status": "success", "settings": settings}
 
 @router.get("/api/clients")

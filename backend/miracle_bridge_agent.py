@@ -691,6 +691,8 @@ def start_offline_sync_loop():
     """
     Background worker: Monitors connectivity to Render Cloud server every 30s.
     Automatically flushes pending offline vouchers when network restores.
+    Also implements Wake-Push: If cloud lost its in-RAM ledger cache (after Render restart),
+    immediately re-pushes all local masters so web UI shows ledgers/products right away.
     """
     def run_offline_sync():
         init_client_intelligence_db()
@@ -704,6 +706,30 @@ def start_offline_sync_loop():
                 # Ping cloud health endpoint
                 h_res = requests.get(f"{CLOUD_URL}/health", timeout=5)
                 if h_res.status_code == 200:
+                    # CLOUD BUG FIX — Wake-Push Protocol:
+                    # After Render restarts, CLOUD_SYNCED_LEDGERS is empty (RAM wiped).
+                    # Bridge checks /api/bridge/wake-push — if cloud says needs_resync=true,
+                    # immediately re-push ALL local masters so web UI doesn't stay empty.
+                    try:
+                        discovered_clients = scan_all_miracle_paths()
+                        for item in (discovered_clients or []):
+                            c_id = item.get("client_id", "").upper()
+                            if not c_id:
+                                continue
+                            wake_res = requests.get(
+                                f"{CLOUD_URL}/api/bridge/wake-push?client_id={c_id}",
+                                timeout=5
+                            )
+                            if wake_res.status_code == 200:
+                                wake_data = wake_res.json()
+                                if wake_data.get("needs_resync"):
+                                    # Cloud lost its data — trigger immediate re-push
+                                    print(f"☁️ [Wake-Push] Cloud has 0 ledgers for {c_id} — pushing masters immediately!")
+                                    push_masters_to_cloud()
+                                    break  # push_masters_to_cloud handles ALL clients at once
+                    except Exception as wake_err:
+                        pass  # Non-critical — next 30s cycle will retry
+
                     with sqlite3.connect(LOCAL_INTEL_DB) as conn:
                         conn.row_factory = sqlite3.Row
                         cur = conn.cursor()
@@ -734,6 +760,7 @@ def start_offline_sync_loop():
     t = threading.Thread(target=run_offline_sync, daemon=True)
     t.start()
     print("🟢 MiracleBridge Offline Auto-Sync Daemon Thread started.")
+
 
 
 class ImageOptimizationRequest(BaseModel):

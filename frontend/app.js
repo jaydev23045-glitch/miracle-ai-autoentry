@@ -447,6 +447,41 @@ document.addEventListener('DOMContentLoaded', () => {
             window.clientLedgers = clientLedgers; // Expose globally for Bank Statement module
             console.log(`Loaded ${clientLedgers.length} classified ledgers for financial year ${data ? (data.year || activeYearFolder) : activeYearFolder}`);
 
+            // Smart Rule 39 diagnostic: warn if 0 ledgers loaded — helps identify path/cache issues
+            if (clientLedgers.length === 0) {
+                console.warn(
+                    `⚠️ [Ledger Load] 0 ledgers returned for client ${clientId} / year ${activeYearFolder}.\n` +
+                    `Check: (1) miracle_base_path in Settings matches server OS path.\n` +
+                    `(2) Open ${API_URL}/api/ledgers?client_id=${clientId}&year=${activeYearFolder} to verify.\n` +
+                    `(3) Call ${API_URL}/api/clear-cache to reset stale cache.`
+                );
+
+                // CLOUD FIX — Wake-Push Protocol:
+                // If running on Render (bridge NOT online) and cloud returned 0 ledgers,
+                // the Render container likely restarted and lost its RAM cache.
+                // Signal the cloud to tell the client's Bridge to re-push masters.
+                // Then retry fetching ledgers after a 6-second delay.
+                if (!isLocalBridgeOnline) {
+                    try {
+                        const wakeRes = await fetch(`${API_URL}/api/bridge/wake-push?client_id=${clientId}`);
+                        if (wakeRes.ok) {
+                            const wakeData = await wakeRes.json();
+                            if (wakeData.needs_resync) {
+                                console.warn(`☁️ [Wake-Push] Cloud signalled needs_resync. Bridge will re-push in ~30s. Retrying ledger fetch in 6s...`);
+                                // Retry once after 6 seconds — Bridge gets the wake signal and re-pushes within its next 30s cycle
+                                setTimeout(async () => {
+                                    console.log('🔄 [Wake-Push Retry] Re-fetching ledgers after wake-push signal...');
+                                    await fetchLedgers();
+                                }, 6000);
+                            }
+                        }
+                    } catch (wakeErr) {
+                        // Non-critical — just a best-effort retry signal
+                    }
+                }
+            }
+
+
             // Automatically sync local PC ledgers to Cloud Server memory ONLY if data came from local bridge (BUG#16 fix)
             if (fetchedFromLocalBridge && clientLedgers.length > 0) {
                 fetch(`${API_URL}/api/bridge/sync-masters`, {
@@ -488,7 +523,10 @@ document.addEventListener('DOMContentLoaded', () => {
             const targetBankSelect = document.getElementById('targetBankAccount');
             if (targetBankSelect) {
                 targetBankSelect.innerHTML = '';
-                const NON_BANK_TERMS = ['EXPENSE', 'EXPENSES', 'PURCHASE', 'SALES', 'SUNDRY', 'DEBTOR', 'CREDITOR', 'PROFIT', 'P&L', 'LOSS', 'TRADING', 'CAPITAL', 'DRAWINGS', 'TAX', 'DUTY', 'GST', 'IGST', 'CGST', 'SGST', 'CHARGES', 'CHARGE', 'INTREST', 'INTEREST', 'COMMISSION', 'FD', 'FIXED DEPOSIT'];
+                // Smart Rule 40: Strict but not over-filtered bank exclusion list
+                // Removed 'CHARGE', 'INTEREST', 'COMMISSION' as standalone terms — they cause false negatives
+                // (e.g. "HDFC BANK CURRENT A/C" should NOT be excluded if name has CHARGE in group_name)
+                const NON_BANK_TERMS = ['EXPENSE', 'EXPENSES', 'PURCHASE', 'SALES', 'SUNDRY', 'DEBTOR', 'CREDITOR', 'PROFIT', 'P&L', 'LOSS', 'TRADING', 'CAPITAL', 'DRAWINGS', 'TAX', 'DUTY', 'GST', 'IGST', 'CGST', 'SGST', 'BANK CHARGES', 'BANK INTEREST', 'BANK INTREST', 'BANK COMMISSION', 'FD', 'FIXED DEPOSIT'];
                 const bankLedgers = clientLedgers.filter(led => {
                     const cat = (led.classification || '').toUpperCase();
                     const grp = (led.group_code || '').toUpperCase();
@@ -499,8 +537,10 @@ document.addEventListener('DOMContentLoaded', () => {
                     const isBad = NON_BANK_TERMS.some(term => name.includes(term) || printName.includes(term)) || led.code === 'PROFLOSS';
                     if (isBad) return false;
 
-                    // Strictly include Bank Accounts under G0000004 or true Bank classification
-                    return grp === 'G0000004' || grpName === 'BANK ACCOUNTS' || grpName === 'BANK ACCOUNTS (BANKS)' || (cat === 'BANK' && grp !== 'G0000017' && grp !== 'G0000024' && grp !== 'G0000023');
+                    // Smart Rule 40: Accept any ledger classified as Bank by DBF group walk,
+                    // not just G0000004. Custom bank groups (Coop banks, NBFC current a/c etc.) 
+                    // get 'Bank' classification from classify_group() in dbf_handler.py
+                    return grp === 'G0000004' || grp === 'G0000016' || grpName === 'BANK ACCOUNTS' || grpName === 'BANK ACCOUNTS (BANKS)' || (cat === 'BANK' && grp !== 'G0000017' && grp !== 'G0000024' && grp !== 'G0000023');
                 });
 
                 const seenBankKeys = new Set();

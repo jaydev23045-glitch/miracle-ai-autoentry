@@ -81,6 +81,24 @@ When a new party ledger is created in `RKACCM01.DBF`:
 - Registers a GUID record in `RKACCGID.DBF` with `FIELD04 = 'Y'` (25 characters padded).
 - Syncs the ledger across all financial year directories (`YR27`, `YR26`, `YR25`), ensuring cross-year dropdown lookup visibility in Miracle Desktop UI.
 
+### Cache Integrity Rules (Rules 38, 39, 40 — Added 2026-09-25)
+
+**Rule 38 — Never Cache Empty Ledger Results (`dbf_handler.py`):**
+- `_CROSS_YEAR_CACHE` in `MiracleDBFHandler.read_ledgers_all_years()` MUST NEVER store an empty `[]` result.
+- Empty result = path was misconfigured. Caching it poisons all requests for 300 seconds.
+- Fix: `if result: MiracleDBFHandler._CROSS_YEAR_CACHE[cache_key] = (now, result)`
+
+**Rule 39 — Clear All Caches On Settings Change (`routers/settings.py`, `routers/vouchers.py`):**
+- On every `POST /api/settings` that changes `miracle_base_path` OR `active_client_id`:
+  - Call `_LEDGER_CACHE.clear()` (router-level 60s TTL cache)
+  - Call `MiracleDBFHandler.clear_cross_year_cache()` (handler-level 300s TTL cache)
+- A new `GET/POST /api/clear-cache` endpoint is available for manual flush from UI or tests.
+
+**Rule 40 — Bank Ledger Filter Must Include G0000016 and All DBF-Classified Bank Ledgers (`frontend/app.js`):**
+- The `NON_BANK_TERMS` exclusion list MUST use compound terms (`'BANK CHARGES'`, `'BANK INTEREST'`) NOT standalone terms (`'CHARGES'`, `'INTEREST'`) to avoid false-negative exclusions.
+- The bank filter return condition MUST include `grp === 'G0000016'` (Bank Accounts alternate group) alongside `grp === 'G0000004'`.
+- Any ledger with `classification === 'Bank'` from DBF group walk in `classify_group()` is authoritative and must be accepted.
+
 ---
 
 ## 4. The 7-Check Automated Accounting Validator (`validators.py`)

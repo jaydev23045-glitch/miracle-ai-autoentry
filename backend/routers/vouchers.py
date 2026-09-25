@@ -94,8 +94,24 @@ _LEDGER_CACHE_TTL_SECONDS = 60  # Refresh ledger list every 60 seconds
 CLOUD_SYNCED_LEDGERS: Dict[str, List[Dict[str, Any]]] = {}
 CLOUD_SYNCED_PRODUCTS: Dict[str, List[Dict[str, Any]]] = {}
 
-# Persistent sync cache path — survives container sleep/wake on Render
-_SYNC_CACHE_PATH = "/tmp/miracle_sync_cache.json"
+# Persistent sync cache path — MUST use a project-relative path, NOT /tmp
+# Render Free tier wipes /tmp on every container restart — use AI_Memory_Vault or data/ dir instead
+# Fallback chain: env var MIRACLE_SYNC_CACHE_PATH → project-relative data/ dir → /tmp
+def _resolve_sync_cache_path() -> str:
+    env_path = os.environ.get("MIRACLE_SYNC_CACHE_PATH", "")
+    if env_path:
+        return env_path
+    # Try project-relative persistent path (inside backend/data/ which is part of the repo)
+    backend_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    data_dir = os.path.join(backend_dir, "data")
+    try:
+        os.makedirs(data_dir, exist_ok=True)
+        return os.path.join(data_dir, "miracle_sync_cache.json")
+    except Exception:
+        pass
+    return "/tmp/miracle_sync_cache.json"  # Last resort fallback
+
+_SYNC_CACHE_PATH = _resolve_sync_cache_path()
 _sync_cache_loaded = False
 import threading
 _sync_cache_lock = threading.Lock()  # BUG#8 fix: protect against concurrent sync writes
@@ -686,6 +702,18 @@ def normalize_confidence_and_flags(extracted_data: dict, module: str, client_mem
                 
     return extracted_data
 
+@router.post("/api/clear-cache")
+@router.get("/api/clear-cache")
+def clear_all_caches():
+    """
+    Smart Rule 39 — Force clear all in-memory ledger/product caches.
+    Call this whenever settings change or when ledgers appear empty after path correction.
+    Clears: _LEDGER_CACHE (router-level 60s TTL) + MiracleDBFHandler._CROSS_YEAR_CACHE (300s TTL).
+    """
+    _LEDGER_CACHE.clear()
+    MiracleDBFHandler.clear_cross_year_cache()
+    return {"status": "success", "message": "All ledger and product caches cleared. Next fetch will read fresh from DBF files."}
+
 @router.get("/api/ledgers")
 def get_ledgers(year: Optional[str] = None, client_id: Optional[str] = None, handler: Optional[MiracleDBFHandler] = Depends(get_handler_optional)):
     """Reads all accounting ledgers from the active Miracle DBF or queries Miracle Bridge / Cloud Synced memory."""
@@ -695,8 +723,13 @@ def get_ledgers(year: Optional[str] = None, client_id: Optional[str] = None, han
             requested_path = os.path.join(settings.get("miracle_base_path", ""), sanitize_client_id(client_id))
             if os.path.exists(requested_path):
                 handler = MiracleDBFHandler(requested_path)
+            else:
+                # Diagnostic log — helps identify path mismatch (Root Cause #1)
+                print(f"[get_ledgers] ⚠️ Requested client path does not exist: {requested_path}. "
+                      f"Check miracle_base_path in settings.json and ensure it matches this OS.")
 
         if not handler or not handler.client_path or not os.path.exists(handler.client_path):
+
             settings = load_settings()
             cid = (client_id or settings.get("active_client_id") or "").strip().upper()
             synced = CLOUD_SYNCED_LEDGERS.get(cid, [])
@@ -956,7 +989,9 @@ def refresh_ledgers(year: Optional[str] = None, client_id: Optional[str] = None,
 @router.post("/api/bridge/sync-masters/")
 def sync_masters_from_bridge(payload: MasterSyncPayload):
     """Receives local Miracle ledgers and products pushed from Miracle Bridge Agent on user's PC."""
-    client_id = payload.client_id or "CMP0013"
+    # CLOUD BUG FIX: Always normalize client_id to UPPERCASE before storing.
+    # Bridge agent sends 'CMP0006', frontend reads with .upper() → both must match.
+    client_id = (payload.client_id or "CMP0013").strip().upper()
     if payload.ledgers:
         CLOUD_SYNCED_LEDGERS[client_id] = payload.ledgers
         print(f"[BridgeSync] 📚 Stored {len(payload.ledgers)} ledgers for client '{client_id}'")
@@ -970,6 +1005,28 @@ def sync_masters_from_bridge(payload: MasterSyncPayload):
         "client_id": client_id,
         "synced_ledgers_count": len(CLOUD_SYNCED_LEDGERS.get(client_id, [])),
         "synced_products_count": len(CLOUD_SYNCED_PRODUCTS.get(client_id, []))
+    }
+
+@router.post("/api/bridge/wake-push")
+@router.get("/api/bridge/wake-push")
+def request_bridge_wake_push(client_id: Optional[str] = None):
+    """
+    Cloud Wake Signal: When Render cold-starts and has no synced data, this endpoint
+    is called by the frontend to signal the client's local Bridge to re-push masters.
+    The Bridge polls this endpoint every 30s via its cloud connectivity monitor.
+    The Bridge then calls push_masters_to_cloud() immediately to repopulate the cloud store.
+    
+    This is the fix for the 'cloud empty on first load after Render restart' bug.
+    """
+    cid = (client_id or "").strip().upper()
+    has_data = bool(CLOUD_SYNCED_LEDGERS.get(cid)) or bool(CLOUD_SYNCED_PRODUCTS.get(cid))
+    return {
+        "status": "success",
+        "needs_resync": not has_data,
+        "client_id": cid,
+        "message": "Bridge should re-push masters" if not has_data else "Data already present",
+        "synced_ledgers_count": len(CLOUD_SYNCED_LEDGERS.get(cid, [])),
+        "synced_products_count": len(CLOUD_SYNCED_PRODUCTS.get(cid, []))
     }
 
 @router.get("/api/bridge/sync-status")

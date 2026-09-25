@@ -4,7 +4,7 @@ services:
     env: python
     region: singapore
     plan: free
-    buildCommand: "pip install -r backend/requirements.txt"
+    buildCommand: "pip install -r backend/requirements.txt && mkdir -p backend/data"
     startCommand: "cd backend && uvicorn main:app --host 0.0.0.0 --port $PORT --workers 1 --limit-concurrency 10 --backlog 100 --timeout-keep-alive 30"
     envVars:
       - key: GEMINI_API_KEY
@@ -13,4 +13,7 @@ services:
         value: "1"
       - key: MALLOC_TRIM_THRESHOLD_
         value: "65536"
-
+      - key: MIRACLE_SYNC_CACHE_PATH
+        # Points to backend/data/ inside project dir — NOT /tmp which Render wipes on restart
+        # backend/data/miracle_sync_cache.json persists across sleep/wake cycles
+        value: "/opt/render/project/src/backend/data/miracle_sync_cache.json"

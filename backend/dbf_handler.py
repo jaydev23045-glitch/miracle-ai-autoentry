@@ -1098,9 +1098,12 @@ class MiracleDBFHandler:
         
         result = list(merged_by_name.values())
         logger.info(f"[cross-year ledger merge] {len(result)} unique ledgers found across {len(folder_names)} year folders.")
-        with MiracleDBFHandler._CROSS_YEAR_CACHE_LOCK:
-            MiracleDBFHandler._CROSS_YEAR_CACHE[cache_key] = (now, result)
+        # Smart Rule 38: NEVER cache an empty result — empty cache poisons all subsequent requests for 300s
+        if result:
+            with MiracleDBFHandler._CROSS_YEAR_CACHE_LOCK:
+                MiracleDBFHandler._CROSS_YEAR_CACHE[cache_key] = (now, result)
         return result
+
 
 
     def get_debtor_balances(self, year_folder: str | None = None) -> list:
